@@ -88,10 +88,10 @@ heading or Nogra-owned report title. Verification words are the product surface:
    different agent/runtime needs.
 
    Also notice tool needs. If the approved brief already includes
-   `executionShape`, treat it as Manager-authored guidance for the runtime. If
-   it does not, do not invent a provider-tool checklist during dispatch; use
-   the conservative default unless the missing tool shape changes scope or risk,
-   in which case stop and ask the operator.
+   `executionShape.toolFamilies`, treat it as Manager-authored guidance for the
+   runtime toolbank. If it does not, do not invent a provider-tool checklist
+   during dispatch; use the conservative default unless the missing tool shape
+   changes scope or risk, in which case stop and ask the operator.
 
    Use phases only when the work has distinct purpose, dependency boundaries,
    decision points or different agent/runtime needs. Do not split just to split.
