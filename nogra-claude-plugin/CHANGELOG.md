@@ -4,9 +4,9 @@
 
 - Added Nogra dispatch scope-shaping guidance for one-run, phased and review
   execution choices without turning execution shapes into hard enums.
-- Added optional brief `executionShape.toolFamilies` guidance so adapter tools
-  can follow Manager-authored toolbank families without requiring a
-  provider-tool enum.
+- Added optional brief execution-shape guidance so adapter tools can derive
+  toolbank families from Manager-authored evidence/tool needs without requiring
+  a provider-tool enum.
 - Added the local ledger helper for safe `.nogra/` writes, terminal run
   finalization and consistency checks.
 - Added statusline support for active local transport runs without provider

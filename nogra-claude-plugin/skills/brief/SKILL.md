@@ -166,9 +166,10 @@ call dispatch from this skill. A brief is not GO.
    - `stopCriteria`
    - `evidenceRequired`
    - optional `executionShape` only when the approved work materially needs a
-     non-default tool/runtime shape. Use capability families such as
-     `toolFamilies: ["web-research", "read-only"]` plus optional `toolNeeds`
-     rationale; do not write a provider-tool enum or required-tools checklist.
+     non-default tool/runtime shape. Prefer `toolNeeds` evidence/tool need
+     declarations such as source review, read-only inspection or screenshot
+     evidence. The adapter derives capability families through the toolbank; do
+     not write a provider-tool enum or required-tools checklist.
    - `target` and `targetModel` when routing matters. Prefer the local
      `runtimePolicy.roles.agent.model` value when present; otherwise use the
      workspace/MCP default.
@@ -214,10 +215,10 @@ call dispatch from this skill. A brief is not GO.
   bounded piece.
 - If the work needs research, browser verification, read-only scouting or other
   non-default execution/tool shape, include optional `executionShape` guidance.
-  Prefer toolbank family names such as `web-research`, `browser-verification`
-  or `read-only`, and use `toolNeeds` only as human rationale. Keep it as a
-  guide for Manager judgment and adapter translation, not a hard picker or
-  exhaustive tool list. If the default file executor is enough, leave it blank.
+  Prefer `toolNeeds` evidence/tool need declarations and let the adapter derive
+  toolbank families mechanically. Use explicit `toolFamilies` only as a
+  compatibility override, never as a required picker or exhaustive tool list. If
+  the default file executor is enough, leave it blank.
 - Use Nogra language in user-facing copy. The user-facing Nogra object is the
   brief.
 - Do not turn current-phase guardrails into executor scope. If the user says

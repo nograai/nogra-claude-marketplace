@@ -87,11 +87,12 @@ heading or Nogra-owned report title. Verification words are the product surface:
    chained vs fanned scope, distinct purpose, decision/evidence boundaries and
    different agent/runtime needs.
 
-   Also notice tool needs. If the approved brief already includes
-   `executionShape.toolFamilies`, treat it as Manager-authored guidance for the
-   runtime toolbank. If it does not, do not invent a provider-tool checklist
-   during dispatch; use the conservative default unless the missing tool shape
-   changes scope or risk, in which case stop and ask the operator.
+   Also notice tool needs. If the approved brief includes evidence/tool need
+   declarations under `executionShape.toolNeeds`, the adapter will derive
+   toolbank families mechanically. If the brief has no tool-shape guidance, do
+   not invent a provider-tool checklist during dispatch; use the conservative
+   default unless the missing tool shape changes scope or risk, in which case
+   stop and ask the operator.
 
    Use phases only when the work has distinct purpose, dependency boundaries,
    decision points or different agent/runtime needs. Do not split just to split.
