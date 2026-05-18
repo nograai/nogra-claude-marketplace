@@ -4,8 +4,6 @@ Nogra adds a brief-first workflow to Claude Code. It helps a workspace move from
 fuzzy intent to an approved brief, dispatches approved work, and asks for
 evidence before calling work done.
 
-Nogra gives you the workflow. Nogra Pro keeps it with you.
-
 ## Install
 
 After installing this plugin:
@@ -27,10 +25,10 @@ created only when `/nogra:init` runs.
 ## Beta Updates
 
 The beta marketplace publishes from the git commit SHA of the marketplace/plugin
-source. During beta, publish changes by pushing the marketplace/plugin repo;
-testers can run `/plugin update` and `/reload-plugins`, or enable marketplace
-auto-update in Claude Code. The plugin metadata also declares the beta package
-version for human-readable marketplace surfaces.
+source. During beta, release changes land in the marketplace/plugin repo; to
+pick up a released plugin version, run `/plugin update` and `/reload-plugins`,
+or enable marketplace auto-update in Claude Code. The plugin metadata also
+declares the beta package version for human-readable marketplace surfaces.
 
 If you ask Claude whether Nogra can be installed without overwriting existing
 files, Claude should walk through the file plan before writing anything. In
@@ -70,8 +68,8 @@ still use Nogra skills for the workflow and wait for the user's choice before
 entering brief flow. `/nogra:on` and `/nogra:off` control this automatic
 routing only. Explicit `/nogra:*` commands still work while automatic offers
 are off.
-If the user explicitly asks for direct work, skip brief, no ceremony, or "uden
-Nogra", automatic routing stays direct regardless of sensitivity.
+If the user explicitly asks for direct work, skip brief, or no ceremony,
+automatic routing stays direct regardless of sensitivity.
 
 Extension plugins own their own `/nogra-*` commands and hooks. If an installed
 Nogra extension handles a prompt or command, Nogra stays out of the way and does
@@ -114,9 +112,9 @@ Nogra suggestions are controlled locally by `.nogra/config.json`:
     "pureQuestion": -50
   },
   "dictionary": {
-    "createIntent": ["byg", "lav", "ret"],
-    "evidenceNeed": ["tjek", "verificer"],
-    "directOverride": ["direkte", "uden nogra"]
+    "createIntent": [],
+    "evidenceNeed": [],
+    "directOverride": []
   }
 }
 ```
@@ -130,7 +128,9 @@ changing the plugin. Explicit `/nogra:*` commands always work.
 Language handling is English-first plus `dictionary`; `defaultLanguage` tells
 Claude the workspace's preferred language, and `translationFallback` means
 Claude may use current-prompt understanding without making an external
-translation call.
+translation call. `dictionary` lets a workspace add localized trigger phrases
+on top of the English-first defaults. Leave the arrays empty for English-only
+workspaces, or fill them with phrases in your workspace's language.
 
 Runtime and spend preferences are also controlled locally:
 
@@ -183,16 +183,7 @@ Nogra Auto OFF | Nogra Sensitivity 50% 0% ++++++------ 100% | Profile balanced |
 
 Use `/nogra:statusline` to install or explain this optional display. The script
 also uses Claude Code's current `context_window` fields so 1M-context sessions
-show correct token math such as `440k/1.0M tokens`, not `0/1.0M tokens`.
-
-For local development, load the plugin with an absolute path:
-
-```bash
-claude --plugin-dir /path/to/nogra-claude-marketplace/nogra-claude-plugin
-```
-
-Relative `--plugin-dir` paths are resolved from the folder where Claude Code is
-started.
+show token math such as `440k/1.0M tokens`.
 
 ## What Init Writes
 
