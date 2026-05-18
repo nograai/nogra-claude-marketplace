@@ -1,0 +1,20 @@
+{
+  "name": "nogra",
+  "version": "0.1.0",
+  "description": "Brief-first Nogra workspace discipline for Claude Code: install per folder, write briefs before execution, dispatch approved work, verify evidence, and refresh guidance on demand.",
+  "author": {
+    "name": "Patrick Larsen",
+    "email": "patrick@y26.dk",
+    "url": "https://nogra.ai"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://nogra.ai",
+  "repository": "https://github.com/nograai/nogra-claude-marketplace",
+  "keywords": [
+    "nogra",
+    "briefs",
+    "verification",
+    "mcp",
+    "claude-code"
+  ]
+}

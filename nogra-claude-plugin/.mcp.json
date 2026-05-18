@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "nogra": {
+      "type": "http",
+      "url": "https://mcp.nogra.ai/mcp",
+      "note": "Hosted Nogra MCP. Uses OAuth on first use. Nogra is installed per folder by running /nogra:init or asking Claude to install Nogra in this folder."
+    }
+  }
+}
