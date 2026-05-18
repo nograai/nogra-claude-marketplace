@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 - 2026-05-18
+
+- Clarified execution-shape guidance so Manager declares evidence/tool needs
+  once and the adapter derives toolbank families mechanically.
+
 ## 0.1.0-beta - 2026-05-18
 
 - Added Nogra dispatch scope-shaping guidance for one-run, phased and review

@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "nogra",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "source": "./",
       "description": "Brief-first Nogra workspace discipline for Claude Code.",
       "author": {

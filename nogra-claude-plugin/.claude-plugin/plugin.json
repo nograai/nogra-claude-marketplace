@@ -1,6 +1,6 @@
 {
   "name": "nogra",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Brief-first Nogra workspace discipline for Claude Code: install per folder, write briefs before execution, dispatch approved work, verify evidence, and refresh guidance on demand.",
   "author": {
     "name": "Patrick Larsen",
