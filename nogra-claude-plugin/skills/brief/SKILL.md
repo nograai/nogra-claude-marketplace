@@ -165,6 +165,10 @@ call dispatch from this skill. A brief is not GO.
    - `successCriteria`
    - `stopCriteria`
    - `evidenceRequired`
+   - optional `executionShape` only when the approved work materially needs a
+     non-default tool/runtime shape. Use freeform capability guidance such as
+     `toolNeeds: ["web research", "read-only scout"]`; do not write a
+     provider-tool enum or a required-tools checklist.
    - `target` and `targetModel` when routing matters. Prefer the local
      `runtimePolicy.roles.agent.model` value when present; otherwise use the
      workspace/MCP default.
@@ -208,6 +212,11 @@ call dispatch from this skill. A brief is not GO.
 - Separate idea shaping from approval. A useful idea is not yet an approved run.
 - If the work is too large for one brief, decompose it and brief the first
   bounded piece.
+- If the work needs research, browser verification, read-only scouting or other
+  non-default execution/tool shape, include optional `executionShape` guidance.
+  Keep it as a guide for Manager judgment and adapter translation, not a hard
+  picker or exhaustive tool list. If the default file executor is enough, leave
+  it blank.
 - Use Nogra language in user-facing copy. The user-facing Nogra object is the
   brief.
 - Do not turn current-phase guardrails into executor scope. If the user says
