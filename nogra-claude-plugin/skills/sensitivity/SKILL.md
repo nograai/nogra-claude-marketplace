@@ -1,6 +1,6 @@
 ---
 name: sensitivity
-description: Adjust Nogra automatic routing sensitivity for the current workspace. Use when the user says /nogra:sensitivity, asks to set Nogra sensitivity/heat to a percent, or asks Nogra to offer more or less often.
+description: Adjust Nogra automatic routing sensitivity for the current workspace. Use when the user says /nogra:sensitivity, asks to set Nogra sensitivity to a percent, or asks Nogra to offer more or less often.
 ---
 
 # Nogra Sensitivity
@@ -8,14 +8,12 @@ description: Adjust Nogra automatic routing sensitivity for the current workspac
 Adjust automatic Nogra offer sensitivity by updating only local
 `.nogra/config.json`.
 
-This does not call hosted Nogra and does not start a brief. It only changes the
-local heat that hooks use before work starts.
-
-Do not call Nogra MCP tools for this. Do not draft a brief. Do not dispatch.
+This only changes the local sensitivity that hooks use before work starts.
+Brief drafting, dispatch and verification stay in their own skills.
 
 ## Meaning
 
-`sensitivityPercent` is the user-facing heat control:
+`sensitivityPercent` is the user-facing sensitivity control:
 
 - `0%`: very conservative, almost explicit-only.
 - `50%`: balanced default, effective thresholds `60/80`.
@@ -25,9 +23,9 @@ Higher sensitivity lowers effective thresholds. Lower sensitivity raises them.
 Values snap to `sensitivityStepPercent`; default step is `5%`. Use `10%` for
 coarser calibration passes.
 
-Sensitivity controls proactive Nogra offers. It does not override explicit user
-intent. Extension commands such as `/nogra-*` are owned by their installed
-extension plugins and are not converted into Nogra brief offers.
+Sensitivity controls proactive Nogra offers. Explicit user intent still wins.
+Extension commands such as `/nogra-*` stay with their installed extension
+plugins instead of becoming Nogra brief offers.
 
 Use this formula for derived legacy thresholds:
 
@@ -54,7 +52,8 @@ Examples:
      points.
    - If the user says "less sensitive" without a number, subtract 10 percentage
      points.
-   - If there is no number or direction, ask for a percentage.
+   - If there is no number or direction, show the current sensitivity with one
+     sentence of context, then ask for a percentage.
 4. Snap the result to `routingPolicy.sensitivityStepPercent` if present,
    otherwise to `5%`. Examples: with step `5`, `73%` becomes `75%`; with step
    `10`, `73%` becomes `70%`.
@@ -71,15 +70,17 @@ Examples:
 
 Preserve existing `routingPolicy` fields such as `autoOfferEnabled`,
 `offerOncePerIntent`, `topicGate`, `defaultLanguage`, `translationFallback`,
-`dictionary`, `scoring` and unknown keys.
+`scoring` and unknown keys.
 
 6. Write the JSON back with pretty two-space formatting and a trailing newline.
 7. Return a short confirmation:
 
 ```text
-Nogra sensitivity is now 65% (effective thresholds 50/70). The statusline will show the updated heat.
+Nogra sensitivity is now 65% (effective thresholds 50/70).
 ```
 
 Always report the thresholds that were just written to `.nogra/config.json`.
+Include whether automatic offers are currently on or off, because 0% sensitivity
+and `/nogra:off` are different controls.
 Do not reuse threshold values from an example after snapping a different
 percentage.

@@ -1,7 +1,8 @@
 {
   "name": "nogra",
-  "version": "0.1.1",
-  "description": "Brief-first Nogra workspace discipline for Claude Code: install per folder, write briefs before execution, dispatch approved work, verify evidence, and refresh guidance on demand.",
+  "displayName": "nogra",
+  "version": "0.4.0",
+  "description": "Nogra gives Claude Code a brief-first workflow with explicit dispatch, evidence and verification discipline.",
   "author": {
     "name": "Patrick Larsen",
     "email": "patrick@y26.dk",
@@ -9,12 +10,14 @@
   },
   "license": "Apache-2.0",
   "homepage": "https://nogra.ai",
-  "repository": "https://github.com/nograai/nogra-claude-marketplace",
+  "repository": "https://github.com/nograai/nogra-marketplace",
   "keywords": [
     "nogra",
-    "briefs",
+    "claude-code",
+    "agents",
+    "discipline",
     "verification",
-    "mcp",
-    "claude-code"
+    "brief-driven",
+    "agent-orchestration"
   ]
 }

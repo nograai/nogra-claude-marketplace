@@ -134,12 +134,40 @@ function cleanLabel(value, fallback = "") {
   return typeof value === "string" && value.trim() !== "" ? value.trim().replace(/\s+/g, " ") : fallback;
 }
 
+function roleValue(role, key) {
+  return cleanLabel(role && typeof role === "object" ? role[key] : "", "").toLowerCase();
+}
+
+function isStockLegacyBalancedRuntime(runtime) {
+  if (!runtime || typeof runtime !== "object") return false;
+  const roles = runtime.roles && typeof runtime.roles === "object" ? runtime.roles : {};
+  const budget = runtime.budget && typeof runtime.budget === "object" ? runtime.budget : {};
+  const manager = roles.manager && typeof roles.manager === "object" ? roles.manager : {};
+  const agent = roles.agent && typeof roles.agent === "object" ? roles.agent : {};
+  const verifier = roles.verifier && typeof roles.verifier === "object" ? roles.verifier : {};
+  return cleanLabel(runtime.profile, "").toLowerCase() === "balanced" &&
+    roleValue(manager, "model") === "inherit" &&
+    roleValue(manager, "effort") === "auto" &&
+    roleValue(agent, "model") === "sonnet" &&
+    roleValue(agent, "effort") === "high" &&
+    roleValue(verifier, "model") === "sonnet" &&
+    roleValue(verifier, "effort") === "medium" &&
+    ["", "balanced"].includes(cleanLabel(budget.mode, "").toLowerCase());
+}
+
 function runtimeSummary(config) {
   const runtime = config.runtimePolicy && typeof config.runtimePolicy === "object" ? config.runtimePolicy : {};
   const roles = runtime.roles && typeof runtime.roles === "object" ? runtime.roles : {};
-  const budget = runtime.budget && typeof runtime.budget === "object" ? runtime.budget : {};
-  const roleLine = (name, fallbackModel, fallbackEffort) => {
-    const role = roles[name] && typeof roles[name] === "object" ? roles[name] : {};
+  const rawProfile = cleanLabel(runtime.profile, "default").toLowerCase();
+  const profile = rawProfile === "custom" || (rawProfile && rawProfile !== "default" && !isStockLegacyBalancedRuntime(runtime))
+    ? "custom"
+    : "default";
+  const roleLine = (name, fallbackModel, fallbackEffort, legacy = "") => {
+    const role = roles[name] && typeof roles[name] === "object"
+      ? roles[name]
+      : legacy && roles[legacy] && typeof roles[legacy] === "object"
+        ? roles[legacy]
+        : {};
     const model = cleanLabel(role.model, fallbackModel);
     const effort = cleanLabel(role.effort, fallbackEffort);
     const context = cleanLabel(role.context, "");
@@ -147,12 +175,11 @@ function runtimeSummary(config) {
   };
 
   return {
-    profile: cleanLabel(runtime.profile, "balanced"),
+    profile,
+    rawProfile: rawProfile || "default",
     manager: roleLine("manager", "inherit", "auto"),
-    agent: roleLine("agent", "sonnet", "high"),
-    verifier: roleLine("verifier", "sonnet", "medium"),
-    budgetMode: cleanLabel(budget.mode, "balanced"),
-    maxUsdPerRun: typeof budget.maxUsdPerRun === "number" && Number.isFinite(budget.maxUsdPerRun) ? String(budget.maxUsdPerRun) : "none"
+    executor: profile === "custom" ? roleLine("executor", "sonnet", "medium", "agent") : "executor=default",
+    verifier: profile === "custom" ? roleLine("verifier", "sonnet", "medium") : "verifier=default"
   };
 }
 
@@ -178,7 +205,7 @@ if (!config) {
 Current installed Nogra plugin: ${plugin.id} ref=${plugin.ref}.
 This folder is not Nogra-initialized yet because .nogra/config.json was not found.
 
-When the user asks for Nogra status or version, include this plugin ref. If hosted MCP is available, also call registry for hosted MCP version/status and initBundleVersion. If the user asks what to do next, suggest /nogra:init.
+When the user asks for Nogra status or version, include this plugin ref and say the folder is not initialized. If the user asks what to do next, suggest /nogra:setup.
 </NOGRA_PLUGIN_STATUS>`);
   process.exit(0);
 }
@@ -198,7 +225,7 @@ This workspace has .nogra/config.json. Nogra automatic routing is ${autoOfferEna
 
 Use Nogra skills as the first move for Nogra decisions:
 - For explicit /nogra:* commands or direct Nogra requests, use the matching Nogra skill.
-- When automatic routing is on, consider nogra:offer before implementation skills when the request has scope, risk, ambiguity, verification needs, multiple files, browser/screenshot/build/test evidence, deploy, auth, data, or production impact.
+- When automatic routing is on, make the brief/direct offer before implementation skills when the request has scope, risk, ambiguity, verification needs, multiple files, browser/screenshot/build/test evidence, deploy, auth, data, or production impact.
 - When automatic routing is off, do not proactively offer Nogra. Explicit /nogra:* commands still work.
 - When the user explicitly asks for direct work, skip/no brief, or "uden Nogra", respect that and stay direct.
 - Simple low-risk edits and pure Q&A stay direct.
@@ -206,13 +233,13 @@ Use Nogra skills as the first move for Nogra decisions:
 
 Current local routingPolicy: autoOfferEnabled=${autoOfferEnabled}, sensitivityPercent=${sensitivityPercent}, sensitivityStepPercent=${sensitivityStepPercent}, effectiveAutoOfferThreshold=${autoOfferThreshold}, effectiveStrongOfferThreshold=${strongOfferThreshold}, topicGate=${topicGate}.
 
-Language routing is English-first plus local dictionary. defaultLanguage=${defaultLanguage}, translationFallback=${translationFallback}. translationFallback=claude-current-prompt is Claude's own current-prompt understanding, not an external translation call or transcript/history read.
+Language routing is English-first. defaultLanguage=${defaultLanguage}, translationFallback=${translationFallback}. translationFallback=claude-current-prompt is Claude's own current-prompt understanding, not an external translation call or transcript/history read.
 
-Current local runtimePolicy: profile=${runtime.profile}, ${runtime.manager}, ${runtime.agent}, ${runtime.verifier}, budget=${runtime.budgetMode}, maxUsdPerRun=${runtime.maxUsdPerRun}.
+Current local runtimePolicy: profile=${runtime.profile}, rawProfile=${runtime.rawProfile}, ${runtime.manager}, ${runtime.executor}, ${runtime.verifier}. Default runtime uses the release default executor/verifier preferences without writing those concrete choices into default config.
 
-Current installed Nogra plugin: ${plugin.id} ref=${plugin.ref}. When the user asks for Nogra status, include this plugin ref plus hosted MCP version from registry and workspace playbookVersion from .nogra/config.json when available.
+Current installed Nogra plugin: ${plugin.id} ref=${plugin.ref}. When the user asks for Nogra status, include this plugin ref and workspace releaseVersion from .nogra/config.json. Use the local runtime for status.
 
-runtimePolicy is a user-facing Nogra preference. Manager/main-session model is advisory unless the user also changes native Claude Code /model and /effort. Agent/verifier model and effort should be included in Nogra briefs, dispatch handoffs and run-agent instructions when the client/runtime can honor them. Interactive plugin budget is advisory; hard budget limits require a headless runtime that supports max-budget flags.
+runtimePolicy is a user-facing Nogra preference. Default/custom is the Nogra-level state. Concrete executor/verifier model and effort belong in config only when profile=custom, and should be included in dispatch handoffs and run-agent instructions when the client/runtime can honor them. Claude Code's native /model, /effort and subagent UI remain the source of truth for the actual running model/effort shown by Claude Code.
 
-Hooks are soft timing guardrails only. They read local .nogra/config.json and do not call MCP, write files, dispatch, verify, spawn agents, run extension plugins, or draft briefs. MCP calls belong to explicit Nogra actions such as init, update, brief validation/save/promote, dispatch and verify. If Nogra is offered, stop and wait for the user to choose brief flow or direct work.
+Hooks are soft timing guardrails only. They read local .nogra/config.json and do not write files, dispatch, verify, spawn agents, run extension plugins, or draft briefs. Nogra actions use the local runtime and local .nogra/ records. If Nogra is offered, stop and wait for the user to choose brief flow or direct work.
 </NOGRA_ROUTING_POLICY>`);

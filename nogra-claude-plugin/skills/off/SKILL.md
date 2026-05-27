@@ -1,16 +1,21 @@
 ---
 name: off
-description: Turn off Nogra automatic routing offers for the current workspace. Use when the user says /nogra:off, /nogra off, disable Nogra, or a local dictionary toggleOff alias.
+description: Turn off Nogra automatic routing offers for the current workspace. Use when the user says /nogra:off, /nogra off, disable Nogra, or turn off Nogra.
 ---
 
 # Nogra Off
 
-For normal `/nogra:off`, the routing hook already set `.nogra/config.json`
-`routingPolicy.autoOfferEnabled` to `false`. If no hook context is present, set
-that field yourself.
+This skill is the actor for `/nogra:off`, `/nogra off` and natural-language
+disable requests. Hooks may detect the request and add context, but hooks do not
+write config and do not block the user prompt.
 
-Preserve existing `routingPolicy` fields. Do not call Nogra MCP, draft a
-brief, dispatch, verify or spawn an agent.
+Read `.nogra/config.json` and set `routingPolicy.autoOfferEnabled` to `false`.
+If `.nogra/config.json` is missing, tell the user Nogra is not initialized in
+this folder and do not write files.
+
+Preserve existing `routingPolicy` fields. This toggle only updates local
+config; brief drafting, dispatch, verification and agent spawning stay in their
+own skills.
 
 Return only:
 

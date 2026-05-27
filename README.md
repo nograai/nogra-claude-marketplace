@@ -6,18 +6,18 @@ Claude Code marketplace for Nogra plugins.
 
 ```bash
 claude plugin marketplace add nograai/nogra-claude-marketplace
-claude plugin install nogra@nogra-beta
+claude plugin install nogra@nogra-claude
 ```
 
 Optional Codex provider plugin:
 
 ```bash
-claude plugin install nogra-codex@nogra-beta
+claude plugin install nogra-codex@nogra-claude
 ```
 
 ## Plugins
 
-- `nogra` - brief-first workspace discipline for Claude Code.
+- `nogra` - brief-first workflow with explicit dispatch, evidence and verification discipline.
 - `nogra-codex` - optional Codex consult provider for Nogra.
 
 ## License

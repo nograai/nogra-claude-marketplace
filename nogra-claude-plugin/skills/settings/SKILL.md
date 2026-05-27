@@ -1,144 +1,61 @@
 ---
 name: settings
-description: Show or update local Nogra settings for routing, runtime role models, effort and advisory budget. Use when the user runs /nogra:settings or asks to configure Nogra manager/agent/verifier model, effort, profile, budget, language or auto behavior.
+description: Show or update local Nogra settings for routing, executor/verifier runtime profile, effort, language and auto behavior. Use when the user runs /nogra:settings or asks to configure Nogra executor/verifier model, effort, profile, language or automatic offers.
 ---
 
 # Nogra Settings
 
 Show or update local Nogra settings in `.nogra/config.json`.
 
-This is a local workspace control surface. It does not call hosted Nogra, does
-not draft a brief, does not dispatch, and does not change Claude Code global
-settings.
+This is a local workspace control surface for routing, runtime preferences,
+language and automatic offers.
 
 ## Boundary
 
-Read and write only `.nogra/config.json`.
-
-Do not edit app files, `.claude/`, `CLAUDE.md`, package files, hooks, plugin
-files or MCP config. Do not call Nogra MCP tools for settings. Do not spawn an
-agent.
+Read and write only `.nogra/config.json`. App files, `.claude/`, `CLAUDE.md`,
+package files, hooks, plugin files, Claude Code configuration and agent
+spawning stay outside this skill.
 
 If `.nogra/config.json` is missing, say Nogra is not initialized in this folder
 and stop. If it is invalid JSON, stop and ask before replacing it.
 
-## Runtime Policy Shape
+## Runtime Policy
 
-Ensure the config has this shape, preserving user-set values and unknown keys:
+Use `skills/help/references/runtime.md` for canonical runtime-policy details.
+In this settings surface, expose only the choices a user can act on:
 
-```json
-"runtimePolicy": {
-  "profile": "balanced",
-  "roles": {
-    "manager": {
-      "model": "inherit",
-      "effort": "auto",
-      "context": "session",
-      "enforcement": "advisory-main-session"
-    },
-    "agent": {
-      "model": "sonnet",
-      "effort": "high",
-      "context": "default",
-      "maxTurns": null
-    },
-    "verifier": {
-      "model": "sonnet",
-      "effort": "medium",
-      "context": "default",
-      "maxTurns": null
-    }
-  },
-  "budget": {
-    "mode": "balanced",
-    "maxUsdPerRun": null,
-    "warnUsdPerRun": null
-  }
-}
-```
+- `default`: use Nogra's release default executor/verifier runtime preferences.
+- `custom`: use the executor/verifier model and effort values the user chooses.
 
-`manager` is advisory for the active Claude Code main conversation. To actually
-switch the current conversation, tell the user the matching native commands,
-such as `/model opus[1m]` and `/effort xhigh`.
-
-The plugin registers `executor` and `verifier` from its own
-`agents/` directory with default Sonnet/high frontmatter. Plugin mode does not
-install these agents into the workspace's `.claude/agents/`. `agent` and
-`verifier` settings describe desired disposable run-agent routing for each
-Nogra run; Manager passes them into dispatch handoff and requests them directly
-when the client/runtime can honor per-run model and effort overrides. If the
-runtime cannot honor them, Manager must report the limitation rather than
-silently pretending.
-
-Budget is advisory in interactive plugin mode. A hard `maxUsdPerRun` applies
-only to headless runtimes that support budget flags such as
-`--max-budget-usd`.
+Default does not write concrete executor or verifier runtime values. Custom
+writes only the selected executor/verifier values. Claude Code's native
+`/model` and `/effort` remain the live source of truth for the current chat.
 
 ## Profiles
 
-When the user sets a profile, replace only `runtimePolicy.profile`,
-`runtimePolicy.roles` and `runtimePolicy.budget`. Preserve unknown keys inside
-`runtimePolicy`.
+Support only two user-facing profiles:
 
-Use these presets:
-
-```json
-{
-  "frugal": {
-    "roles": {
-      "manager": { "model": "inherit", "effort": "auto", "context": "session", "enforcement": "advisory-main-session" },
-      "agent": { "model": "sonnet", "effort": "medium", "context": "default", "maxTurns": 20 },
-      "verifier": { "model": "haiku", "effort": "low", "context": "default", "maxTurns": 12 }
-    },
-    "budget": { "mode": "frugal", "maxUsdPerRun": 2, "warnUsdPerRun": 1 }
-  },
-  "balanced": {
-    "roles": {
-      "manager": { "model": "inherit", "effort": "auto", "context": "session", "enforcement": "advisory-main-session" },
-      "agent": { "model": "sonnet", "effort": "high", "context": "default", "maxTurns": null },
-      "verifier": { "model": "sonnet", "effort": "medium", "context": "default", "maxTurns": null }
-    },
-    "budget": { "mode": "balanced", "maxUsdPerRun": null, "warnUsdPerRun": null }
-  },
-  "max": {
-    "roles": {
-      "manager": { "model": "opus[1m]", "effort": "xhigh", "context": "1m", "enforcement": "advisory-main-session" },
-      "agent": { "model": "sonnet", "effort": "high", "context": "default", "maxTurns": null },
-      "verifier": { "model": "sonnet", "effort": "high", "context": "default", "maxTurns": null }
-    },
-    "budget": { "mode": "max", "maxUsdPerRun": null, "warnUsdPerRun": null }
-  }
-}
-```
-
-Important: current Claude Code docs support `xhigh` on Opus 4.7. Sonnet may
-fall back to `high` if `xhigh` is requested. If the user asks for Sonnet xhigh,
-preserve their requested value only after noting that runtime support depends on
-the active Claude Code/model version.
-
-There is no native 250k context switch in Claude Code settings. Use
-`context: "default"` for the normal context window, or model aliases such as
-`opus[1m]` / `sonnet[1m]` when the user explicitly wants 1M and their plan
-supports it.
+- `default`: remove concrete executor and verifier model/effort choices unless
+  unknown role keys must be preserved.
+- `custom`: keep or write the user-selected executor/verifier role values.
 
 ## Commands To Support
 
 Interpret these forms:
 
 - `/nogra:settings` -> show current settings menu only.
-- `/nogra:settings profile frugal|balanced|max` -> apply preset.
-- `/nogra:settings manager <model> <effort>` -> update manager role.
-- `/nogra:settings agent <model> <effort>` -> update agent role.
+- `/nogra:settings profile default` -> reset runtime policy to default.
+- `/nogra:settings profile custom` -> mark runtime policy custom without
+  inventing concrete values.
+- `/nogra:settings executor <model> <effort>` -> set `profile: "custom"` and
+  update `roles.executor`.
 - `/nogra:settings verifier <model> <effort>` -> update verifier role.
-- `/nogra:settings budget frugal|balanced|max` -> update budget mode only.
-- `/nogra:settings budget <number>` -> set `maxUsdPerRun` to that number and
-  budget mode to `custom`.
 - `/nogra:settings language <code>` -> set
   `routingPolicy.defaultLanguage`.
 - `/nogra:settings auto on|off` -> set `routingPolicy.autoOfferEnabled`.
 
-For sensitivity, prefer `/nogra:sensitivity <percent>` but it is fine to show
-the current value in the settings menu.
+For sensitivity changes, prefer `/nogra:sensitivity <percent>`. The settings
+menu may show the current value with context.
 
 ## Write Rules
 
@@ -164,27 +81,26 @@ For the sensitivity bar, use exactly 12 characters. Filled characters are
 │ NOGRA SETTINGS                         │
 ╰────────────────────────────────────────╯
 
-Profile      balanced
+Profile      default
 Auto         ON
 Sensitivity  50%   0% ++++++------ 100%
 Language     en
 
-Manager      inherit · auto   (main session advisory)
-Agent        sonnet  · high
-Verifier     sonnet  · medium
-Budget       balanced
+Runtime      Default
+Executor     default
+Verifier     default
 
 Commands:
-  /nogra:settings profile max
-  /nogra:settings agent sonnet high
-  /nogra:settings manager opus[1m] xhigh
+  /nogra:settings profile default
+  /nogra:settings executor opus medium
+  /nogra:settings verifier sonnet medium
   /nogra:sensitivity 70%
 ```
 
 When a setting changes, start with one short confirmation:
 
 ```text
-Nogra profile is now max.
+Nogra runtime profile is now custom.
 ```
 
 Then show the menu.

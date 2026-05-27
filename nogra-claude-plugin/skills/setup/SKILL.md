@@ -1,0 +1,120 @@
+---
+name: setup
+description: Set this folder up for Nogra. Use when the user runs /nogra:setup, asks to set up Nogra in this folder, enable this project for Nogra, or prepare a workspace after installing the Nogra plugin.
+---
+
+# Nogra Setup
+
+Nogra enables the current folder as a workspace. The plugin provides the Nogra
+skills and local runtime; this setup flow creates only the minimal local config
+needed to recognize the current folder.
+
+Use this flow when the user runs `/nogra:setup` or asks to set up Nogra in this
+folder. If the user asks whether Nogra can be installed without overwriting
+their files, use wording like:
+
+```text
+Yes. We can go through exactly what Nogra will write before I change anything.
+Setup writes `.nogra/config.json` and preserves app files, `.claude/`,
+package files, git config, hooks, presets and templates. It may create a
+minimal root `CLAUDE.md` only when the workspace does not already have one, so
+Claude has a visible local Nogra orientation on future sessions.
+Project-specific state files are created later by `/nogra:adapt`, after Nogra
+has actually read this workspace.
+```
+
+If the user just installed or updated the plugin inside an already-running
+Claude Code session, tell them to restart or reopen Claude Code first. Plugin
+changes load at session startup.
+
+## Flow
+
+1. Confirm the current working directory in one short sentence.
+2. Inspect the folder and report whether it is empty, already Nogra-enabled or
+   an existing project.
+3. Ask the user to proceed with value-first language and make the merge-safe
+   boundary explicit. Use wording like:
+
+   "I'll set up Nogra in this folder so you can write briefs, dispatch approved
+   work, and verify evidence before calling it done. This only adds the minimal
+   local config Nogra needs; your existing code stays untouched. Project-specific
+   notes are created later by `/nogra:adapt`, after Nogra has read this
+   workspace. Before I write anything, I'll show the file groups Nogra plans to
+   create or merge. Ready to proceed?"
+
+   Adapt the tone to the conversation. Lead with what the user gains, not with
+   what the system writes.
+4. Ask for explicit GO before writing files. This explicit Nogra GO is required
+   even in auto-mode or greenfield sessions.
+5. Read the local init bundle from the local runtime:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init-bundle --root "$PWD" --json
+```
+
+   Pass `--workspace-name "<name>"` only when the user explicitly names the
+   workspace.
+6. Before writing anything, verify the returned bundle is the local plugin
+   setup bundle and contains only allowed setup files. Use
+   `references/validation.md` for the exact validation checklist. If any check
+   fails, stop immediately and do not write files.
+7. Treat the returned plugin-mode bundle as the local source of truth. Write
+   only the returned files into this folder, using each file's `path`,
+   `content`, `writePolicy` and `installPlan`.
+8. Before writing files, present a compact preview:
+   - the folder being initialized;
+   - the number of files to create, merge, preserve or skip;
+   - the fact that plugin-mode setup creates only `.nogra/config.json`, except
+     root `CLAUDE.md` when missing;
+   - any existing files that will be preserved or merged.
+9. For `.nogra/config.json`, use merge-preserve behavior:
+   - If the file does not exist, create it from the returned content.
+   - If it exists and is valid JSON, add missing default keys from the returned
+     config while preserving existing user-set values, thresholds and unknown
+     keys.
+   - If it is an older plugin config, preserve user-set values and merge missing
+     defaults; the local runtime resolves it as local.
+   - If it exists and is invalid JSON, stop and ask before replacing it.
+   - Report which config values were preserved.
+10. For all other files, preserve the returned `writePolicy`.
+   - `create_if_missing`: create only if absent; otherwise preserve.
+   - `create_or_update`: update only Nogra-owned files returned by plugin-mode
+     setup; do not apply this to app files because plugin-mode bundles must not
+     include app paths.
+   - `ask_before_overwrite`: show the path and wait for explicit user approval.
+   - For an existing root `CLAUDE.md`, preserve it and report that Nogra root
+     guidance already exists.
+11. Before deleting or editing old Nogra workspace files, inspect
+   `migration.clientScanTargets`; if matching files exist, show
+   `migration.userPrompt` and wait for explicit user approval.
+12. Never overwrite, remove or rename Claude Code connection config entries
+    from this setup flow. If a reserved Nogra connection-name conflict exists,
+    surface it and stop.
+13. Use Claude Code Write/Edit/read-then-rewrite to apply the previewed files,
+    or use the local runtime apply path only after explicit GO:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init --apply --root "$PWD" --json
+```
+
+14. Show final written, updated, preserved and failed counts plus the returned
+    post-install message. Include that the default workflow used local `.nogra/`
+    records.
+15. Offer `/nogra:adapt` as the next step for existing projects:
+
+```text
+Nogra is installed. If this is an existing project, I can run `/nogra:adapt`
+next to read the workspace and write Nogra's project map and resume notes into
+`.nogra/` without changing app files.
+```
+
+## Boundaries
+
+- During setup, do not write any `.claude/` files. The plugin owns Nogra
+  behavior; the workspace owns its local Nogra records under `.nogra/`.
+- Create root `CLAUDE.md` only when missing. Preserve an existing project
+  `CLAUDE.md`.
+- Do not write providers, presets, provider handoff templates, skills, commands
+  or wrappers from plugin setup.
+- Do not edit application files.
+- Do not run wrappers, daemons, archive installers or repository checkouts.

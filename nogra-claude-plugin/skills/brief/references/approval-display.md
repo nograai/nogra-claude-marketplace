@@ -1,7 +1,7 @@
-# Pretty-Print Guide
+# Approval Display
 
-Use this as a visual guide when the user asks to pretty-print a Nogra brief.
-This is not a rigid template. Do not map every brief into the same box. Pick the
+Use this as a visual guide for presenting a Nogra brief for approval. This is
+not a rigid template. Do not map every brief into the same box. Pick the
 sections and visual devices that make the specific brief easy to approve.
 
 The goal is a compact approval artifact: the user should be able to scan scope,
@@ -9,7 +9,7 @@ risk, no-go areas, user-owned actions and success criteria in seconds.
 
 ## Strong Anatomy
 
-A strong pretty print usually has:
+A strong approval display usually has:
 
 - a title block with brief title and path/id;
 - a short goal;
@@ -49,7 +49,7 @@ way around.
 For execution flow, show the real shape without over-specifying implementation:
 
 ```text
-user/trigger -> manager/brief -> dispatch -> executor -> evidence -> verification
+user trigger -> manager brief -> dispatch -> executor -> evidence -> verification
 ```
 
 or:
@@ -65,7 +65,7 @@ result/evidence
 ```
 
 Use the actual nouns from the task. Avoid generic placeholders in the final
-pretty print.
+approval display.
 
 ## Phase Pattern Ideas
 
@@ -88,7 +88,7 @@ Phase 3  Verify and return
 Change the phase names and count for the actual brief. One phase is fine. Five
 phases are fine if the work actually needs it.
 
-## Good Pretty-Print Traits
+## Good Approval Display Traits
 
 - It is shorter than the full brief.
 - It makes scope and no-go areas impossible to miss.
@@ -100,8 +100,8 @@ phases are fine if the work actually needs it.
 
 ## Anti-Patterns
 
-- Do not paste raw markdown as the "pretty print".
-- Do not paste JSON, MCP payloads, handoff prompts, transport internals or schemas.
+- Do not paste raw markdown as the approval display.
+- Do not paste JSON, runtime payloads, handoff prompts, transport internals or schemas.
 - Do not force every brief into the same exact layout.
 - Do not use decorative boxes that make the text harder to read.
 - Do not hide important uncertainty inside dense paragraphs.
@@ -109,4 +109,4 @@ phases are fine if the work actually needs it.
 - Do not turn evidence collection chores such as "take a screenshot" or "open
   the file" into success criteria. Show the outcome being proven; keep the
   evidence method separate.
-- Do not let the pretty print become longer than the actual brief.
+- Do not let the approval display become longer than the actual brief.

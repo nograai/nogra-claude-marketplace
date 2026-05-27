@@ -1,37 +1,36 @@
 ---
 name: adapt
-description: Teach Nogra an existing workspace after init. Use when the user runs /nogra:adapt, asks Nogra to adapt to this project, or wants Claude to map the current workspace without changing app files.
+description: Teach Nogra an existing workspace after setup. Use when the user runs /nogra:adapt, asks Nogra to adapt to this project, or wants Claude to map the current workspace without changing app files.
 ---
 
 # Nogra Adapt
 
-Use this skill after `/nogra:init` when the current folder is an existing
+Use this skill after `/nogra:setup` when the current folder is an existing
 project and the user wants Nogra to understand it.
 
-Adapt is local workspace understanding. It is not an MCP authority gate, not a
-brief, not dispatch, and not verification.
+Adapt is local workspace understanding. It is not a brief, dispatch, or
+verification.
 
 ## Boundary
 
 Adapt may read project files and write only local `.nogra/` notes. It must not
 edit app files, `CLAUDE.md`, `.claude/`, package files, git config, hooks,
-presets, templates or optional pinboard files.
+presets or templates.
 
-Do not call Nogra MCP tools for adapt. Do not draft a brief unless the user
-separately asks for one. Do not spawn agents.
+Drafting a brief or spawning agents belongs to separate explicit user asks.
 
 ## Entry
 
 1. Confirm the current working directory in one short sentence.
 2. Verify `.nogra/config.json` exists.
-   - If it is missing, stop and tell the user to run `/nogra:init` first.
+   - If it is missing, stop and tell the user to run `/nogra:setup` first.
    - If it exists but is invalid JSON, stop and ask before touching `.nogra/`.
 3. Tell the user what adapt will do:
 
 ```text
 I can adapt Nogra to this existing project by reading the workspace and writing
-a small project map under `.nogra/`. I will not change app files or Claude Code
-config. I will show the planned `.nogra/` updates before writing them.
+Nogra project notes under `.nogra/`. App files and Claude Code config stay as
+they are. I will show the planned `.nogra/` updates before writing them.
 ```
 
 ## Read Pass

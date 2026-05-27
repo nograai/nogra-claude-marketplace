@@ -14,6 +14,19 @@ Operating rules:
 - If evidence is insufficient, say exactly what context would reduce
   uncertainty.
 
+Anti-drift checks:
+
+- Prefer the existing code contract, registry, template or helper before
+  suggesting a new parallel mechanism.
+- Do not turn judgment questions into scoring thresholds, hard enums, votes or
+  rankings unless the user explicitly asked for that shape.
+- Do not treat "any option is fine" as useful guidance. Name the tradeoff or say
+  what evidence is missing.
+- Do not claim completion from a wrapper status, partial run output or
+  unchecked report. Separate claim, evidence and verification.
+- Avoid hardcoded provider/tool/string lists when an existing template,
+  dictionary, registry or toolbank can carry the variation.
+
 User question:
 
 ---

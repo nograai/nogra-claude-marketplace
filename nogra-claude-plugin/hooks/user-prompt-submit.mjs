@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 function readStdin() {
   try {
@@ -72,18 +72,18 @@ const DEFAULT_SCORING = {
 const DEFAULT_SENSITIVITY_PERCENT = 50;
 const DEFAULT_SENSITIVITY_STEP_PERCENT = 5;
 const DEFAULT_DICTIONARY = {
-  createIntent: ["byg", "bygge", "lav", "lave", "skab", "ret", "aendr", "ændr", "implementer", "verificer", "tjek"],
-  productSurface: ["side", "flere filer", "fuld viewport"],
-  evidenceNeed: ["verificer", "tjek", "bevis"],
-  completionClaim: ["faerdig", "færdig"],
-  qualityCritical: ["flot", "fed", "laekkert", "lækkert"],
-  riskyDomain: [],
-  ambiguity: ["tvetydig", "usikker", "svaer at fortryde", "svær at fortryde"],
-  lowRiskEdit: ["en saetning", "en sætning", "én sætning"],
-  singleFileLowScope: ["en fil", "én fil"],
-  directOverride: ["direkte", "uden nogra", "skip nogra", "no nogra", "without nogra", "bare byg"],
-  toggleOn: [],
-  toggleOff: []
+  createIntent: ["build", "create", "make", "scaffold", "implement", "write", "edit", "change", "design", "fix", "debug", "refactor", "deploy", "verify", "test", "check"],
+  productSurface: ["app", "site", "website", "page", "landing page", "dashboard", "ui", "ux", "frontend", "component", "view", "screen", "hero", "full viewport", "viewport", "react", "tailwind", "html", "css", "browser", "screenshot", "inspiration"],
+  evidenceNeed: ["test", "build check", "screenshot", "browser", "evidence", "verify", "verification", "check", "qa"],
+  completionClaim: ["done", "finished", "complete", "actually done", "claim checked"],
+  qualityCritical: ["visual", "polished", "beautiful", "design", "brand", "animation", "motion", "inspiration"],
+  riskyDomain: ["auth", "database", "db", "schema", "migration", "payment", "security", "deploy", "production", "prod", "api", "backend", "permission", "permissions"],
+  ambiguity: ["unclear", "risky", "hard to revert"],
+  lowRiskEdit: ["readme", "one sentence", "single sentence", "hello nogra"],
+  singleFileLowScope: ["single file", "one file"],
+  directOverride: ["direct", "skip brief", "skip nogra", "no nogra", "without nogra", "no ceremony", "just build"],
+  toggleOn: ["nogra on", "enable nogra", "turn on nogra", "use nogra here", "use nogra for this"],
+  toggleOff: ["nogra off", "disable nogra", "turn off nogra"]
 };
 
 function numericSetting(value, fallback) {
@@ -272,6 +272,53 @@ function scorePrompt(prompt, scoring = DEFAULT_SCORING, dictionary = DEFAULT_DIC
   return { score, reasons, topicRelated: signals.topicRelated, directOverride: signals.directOverride };
 }
 
+function semanticText(prompt) {
+  return prompt
+    .toLowerCase()
+    .replace(/[‐‑‒–—]/gu, "-")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function judgmentFallback(prompt, { score, topicRelated, directOverride }, threshold) {
+  const text = semanticText(prompt);
+  if (directOverride || score >= threshold) {
+    return { active: false, reasons: [] };
+  }
+
+  const genericScoreQuestion =
+    /\b(score|scorer|scoring|procent|percent|threshold|tærskel|taerskel)\b/u.test(text) &&
+    !/\b(build|byg|bygger|rebuild|re-build|redesign|re-design|design|research|researcher|change|ændr|aendr)\b/u.test(text);
+
+  if (genericScoreQuestion) {
+    return { active: false, reasons: [] };
+  }
+
+  const actionLanguage =
+    /^(?:please\s+)?(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|make|create|research|design)\b/u.test(text) ||
+    /\b(?:we|vi)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|byg|bygger|bygge|laver|lav|ændr|ændrer|aendr|aendrer|redesign|redesigner|ombyg|ombygger)\b/u.test(text) ||
+    /\b(?:jeg kunne godt tænke mig|jeg kunne godt taenke mig|jeg vil gerne|i want|i would like|i'd like)\b.{0,120}\b(?:research|researcher|undersøg|undersog|undersøge|undersoege|redesign|re-design|design|byg|bygge|change|fix|lav|lave)\b/u.test(text) ||
+    /\b(?:kan du|gider du|could you|can you)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|research|researcher|undersøg|undersog|design|change|fix|byg|bygge|lav|lave|ret|rette)\b/u.test(text);
+
+  const productSurface =
+    /\b(?:blog|bloggen|blogsiden|blogside|blogpost|blog post|post|article|artikel|side|siden|page|site|website|app|produkt|product|cms|frontend|ui|ux|route|component|komponent|dashboard|flow|schema|database|auth|metadata|meta felter|meta fields)\b/u.test(text);
+
+  const workContext =
+    /\b(?:my|our|vores|min|mit|this|denne|det her|projekt|project|workspace|repo|boligscout|nogra)\b/u.test(text) ||
+    /^(?:please\s+)?(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|make|create|research|design)\b/u.test(text) ||
+    /\b(?:kan du|gider du|could you|can you|jeg kunne godt tænke mig|jeg kunne godt taenke mig|jeg vil gerne|i want|i would like|i'd like)\b/u.test(text);
+
+  const reasons = [];
+  if (actionLanguage) reasons.push("semantic build/change/design language");
+  if (productSurface) reasons.push("product-surface object");
+  if (workContext) reasons.push("workspace/product work context");
+
+  return {
+    active: (score < threshold || !topicRelated) && actionLanguage && productSurface && workContext,
+    reasons
+  };
+}
+
 function emitContext(context) {
   process.stdout.write(
     JSON.stringify({
@@ -283,34 +330,17 @@ function emitContext(context) {
   );
 }
 
-function emitBlock(reason) {
-  process.stdout.write(
-    JSON.stringify({
-      decision: "block",
-      reason
-    })
-  );
-}
+function emitJudgmentFallback({ score, threshold, sensitivityPercent, reasons }) {
+  emitContext(`<!-- nogra-plugin:judgment-fallback primaryScore=${score} threshold=${threshold} reasons=${reasons.join("; ")} -->
+<NOGRA_JUDGMENT_FALLBACK>
+Primary Nogra routing template scored ${score}, below the workspace threshold ${threshold}. Current sensitivity is ${sensitivityPercent}%.
 
-function normalizeCommandText(value) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/[.!?]+$/u, "")
-    .trim();
-}
+The template missed, but the prompt has product-work signals: ${reasons.join("; ")}.
 
-function unwrapCommandMessage(prompt) {
-  const trimmed = prompt.trim();
-  const match = trimmed.match(/^<command-message\b[^>]*>\s*([\s\S]*?)\s*<\/command-message>\s*$/iu);
-  return match ? match[1] : trimmed;
-}
+Apply the 70/30 rule now: use current-prompt judgment as the fallback. If the user is asking to build, change, redesign, research or verify a product/workspace surface, make the Nogra brief/direct offer before tool use. If it is meta chat, pure Q&A, or clearly direct/simple work, continue directly.
 
-function dictionaryHasExact(dictionary, key, text) {
-  const normalized = normalizeCommandText(text);
-  const terms = Array.isArray(dictionary[key]) ? dictionary[key] : [];
-  return terms.some((term) => normalizeCommandText(term) === normalized);
+Offer first and wait if your judgment says it is product work. Brief drafting starts only after the user accepts the workflow.
+</NOGRA_JUDGMENT_FALLBACK>`);
 }
 
 function toggleIntent(prompt, dictionary = DEFAULT_DICTIONARY) {
@@ -334,28 +364,6 @@ function toggleIntent(prompt, dictionary = DEFAULT_DICTIONARY) {
   return "";
 }
 
-function isToggleOnlyPrompt(prompt, toggle, dictionary = DEFAULT_DICTIONARY) {
-  const text = normalizeCommandText(unwrapCommandMessage(prompt));
-  if (new RegExp(`^handle this nogra request:\\s*${toggle}$`, "u").test(text)) {
-    return true;
-  }
-  if (new RegExp(`^/nogra[:\\s-]?${toggle}$`, "u").test(text)) {
-    return true;
-  }
-
-  if (toggle === "off") {
-    return /^(nogra off|disable nogra|turn off nogra)$/u.test(text) ||
-      dictionaryHasExact(dictionary, "toggleOff", text);
-  }
-
-  if (toggle === "on") {
-    return /^(nogra on|enable nogra|turn on nogra|use nogra(?: here| for this)?)$/u.test(text) ||
-      dictionaryHasExact(dictionary, "toggleOn", text);
-  }
-
-  return false;
-}
-
 function isNograExtensionCommand(prompt) {
   return /^\s*\/nogra-[a-z0-9-]+(?::|\s|$)/iu.test(prompt);
 }
@@ -374,19 +382,35 @@ function isGeneratedWrapperPrompt(prompt) {
   return false;
 }
 
-function applyToggle(configInfo, enabled) {
-  const nextConfig = configInfo.config && typeof configInfo.config === "object" ? configInfo.config : {};
-  const routingPolicy =
-    nextConfig.routingPolicy && typeof nextConfig.routingPolicy === "object"
-      ? nextConfig.routingPolicy
-      : {};
+function workspaceRootFromConfig(configPath) {
+  return dirname(dirname(configPath));
+}
 
-  nextConfig.routingPolicy = {
-    ...routingPolicy,
-    autoOfferEnabled: enabled
-  };
+function hitPercent(score) {
+  return Math.max(0, Math.min(100, Math.round(numericSetting(score, 0))));
+}
 
-  writeFileSync(configInfo.configPath, `${JSON.stringify(nextConfig, null, 2)}\n`);
+function writeRoutingScore(configInfo, scoreState) {
+  try {
+    const root = workspaceRootFromConfig(configInfo.configPath);
+    const runtimeDir = join(root, ".nogra", "runtime");
+    mkdirSync(runtimeDir, { recursive: true });
+    writeFileSync(
+      join(runtimeDir, "last-routing-score.json"),
+      `${JSON.stringify(
+        {
+          schema: "nogra.routingScore.v1",
+          updatedAt: new Date().toISOString(),
+          ...scoreState,
+          hitPercent: hitPercent(scoreState.score)
+        },
+        null,
+        2
+      )}\n`
+    );
+  } catch {
+    // Routing telemetry is advisory. Never fail or emit context because of it.
+  }
 }
 
 const input = parseInput(readStdin());
@@ -412,26 +436,16 @@ const dictionary = dictionaryPolicy(policy);
 
 const toggle = toggleIntent(prompt, dictionary);
 if (toggle) {
-  const enabled = toggle === "on";
-  applyToggle(configInfo, enabled);
-  if (isToggleOnlyPrompt(prompt, toggle, dictionary)) {
-    const reason = enabled
-      ? "Nogra automatic offers are on."
-      : "Nogra automatic offers are off. Explicit /nogra:* commands still work.";
-    emitBlock(reason);
-    process.exit(0);
-  }
-
   emitContext(`<!-- nogra-plugin:routing-toggle intent=${toggle} -->
-<NOGRA_ROUTING_TOGGLE>
-Nogra automatic routing is now ${toggle} for this workspace.
+<NOGRA_ROUTING_TOGGLE_REQUEST>
+The user asked to turn Nogra automatic offers ${toggle} for this workspace.
 
-The hook updated local .nogra/config.json only. Do not call Nogra MCP for this toggle. Do not draft a brief, dispatch, verify, or spawn an agent because of the toggle itself.
+Hooks are soft guardrails only. Do not treat this hook as the actor, and do not say the hook already changed config.
 
-If the same prompt also asks for implementation work, continue according to the new setting:
-- on: automatic Nogra offers are allowed again
-- off: work hands-on/direct by default; explicit /nogra:* commands still work
-</NOGRA_ROUTING_TOGGLE>`);
+Use the nogra:${toggle} skill now. The skill owns reading and updating local .nogra/config.json, then reporting the result visibly to the user.
+
+If the same prompt also asks for implementation work, first apply the toggle through the skill, then continue according to the new setting.
+</NOGRA_ROUTING_TOGGLE_REQUEST>`);
   process.exit(0);
 }
 
@@ -452,12 +466,51 @@ if (!autoOfferEnabled) {
 
 const { sensitivityPercent, autoOfferThreshold, strongOfferThreshold } = routingThresholds(policy);
 const topicGate = policy.topicGate !== false;
+const fallback = judgmentFallback(prompt, { score, topicRelated, directOverride }, autoOfferThreshold);
+const offerTriggered =
+  autoOfferEnabled &&
+  !directOverride &&
+  !(topicGate && !topicRelated) &&
+  score >= autoOfferThreshold;
+
+writeRoutingScore(configInfo, {
+  score,
+  reasons,
+  topicRelated,
+  directOverride,
+  autoOfferEnabled,
+  topicGate,
+  threshold: autoOfferThreshold,
+  strongThreshold: strongOfferThreshold,
+  sensitivityPercent,
+  offerTriggered,
+  judgmentFallback: {
+    active: fallback.active,
+    reasons: fallback.reasons
+  }
+});
 
 if (directOverride || (topicGate && !topicRelated)) {
+  if (!directOverride && fallback.active) {
+    emitJudgmentFallback({
+      score,
+      threshold: autoOfferThreshold,
+      sensitivityPercent,
+      reasons: fallback.reasons
+    });
+  }
   process.exit(0);
 }
 
 if (score < autoOfferThreshold) {
+  if (fallback.active) {
+    emitJudgmentFallback({
+      score,
+      threshold: autoOfferThreshold,
+      sensitivityPercent,
+      reasons: fallback.reasons
+    });
+  }
   process.exit(0);
 }
 
@@ -470,8 +523,8 @@ emitContext(`<!-- nogra-plugin:offer-gate score=${score} threshold=${autoOfferTh
 <NOGRA_OFFER_GATE>
 This user prompt locally scores ${score} for Nogra routing, which meets the workspace threshold ${autoOfferThreshold}. Current Nogra sensitivity is ${sensitivityPercent}%.
 
-Before Bash, Write, Edit, Task, browser automation, package install, app scaffolding, Nogra MCP calls, dispatch, verification, or brief drafting:
-1. Use the nogra:offer skill as the first Nogra move, or make the equivalent brief/direct offer.
+Before Bash, Write, Edit, Task, browser automation, package install, app scaffolding, dispatch, verification, or brief drafting:
+1. Make the brief/direct offer before entering the Nogra workflow.
 2. Stop after the offer and wait for the user's choice.
 3. If the user chooses direct work, proceed directly and do not call Nogra.
 4. If the user accepts the brief flow, then use nogra:brief.

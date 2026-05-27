@@ -1,0 +1,20 @@
+{
+  "schema": "nogra.init.manifest.v1",
+  "files": [
+    {
+      "source": "init-bundle/files/.nogra/config.json",
+      "path": ".nogra/config.json",
+      "mimeType": "application/json",
+      "writePolicy": "create_or_update",
+      "purpose": "Workspace-level Nogra configuration."
+    },
+    {
+      "source": "init-bundle/files/CLAUDE.md",
+      "path": "CLAUDE.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Public-safe Nogra workspace orientation. Plugin mode creates this only when missing and never overwrites an existing project CLAUDE.md."
+    }
+  ],
+  "optionalFeatures": []
+}

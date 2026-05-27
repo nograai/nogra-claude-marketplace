@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const DEFAULT_DICTIONARY = {
@@ -113,26 +113,13 @@ function detectToggle(input, dictionary = DEFAULT_DICTIONARY) {
   return "";
 }
 
-function applyToggle(configInfo, enabled) {
-  const nextConfig = configInfo.config && typeof configInfo.config === "object" ? configInfo.config : {};
-  const routingPolicy =
-    nextConfig.routingPolicy && typeof nextConfig.routingPolicy === "object"
-      ? nextConfig.routingPolicy
-      : {};
-
-  nextConfig.routingPolicy = {
-    ...routingPolicy,
-    autoOfferEnabled: enabled
-  };
-
-  writeFileSync(configInfo.configPath, `${JSON.stringify(nextConfig, null, 2)}\n`);
-}
-
-function emitBlock(reason) {
+function emitContext(context) {
   process.stdout.write(
     JSON.stringify({
-      decision: "block",
-      reason
+      hookSpecificOutput: {
+        hookEventName: "UserPromptExpansion",
+        additionalContext: context
+      }
     })
   );
 }
@@ -148,15 +135,13 @@ if (!toggle) {
   process.exit(0);
 }
 
-if (!configInfo) {
-  emitBlock("Nogra is not initialized in this folder.");
-  process.exit(0);
-}
+emitContext(`<!-- nogra-plugin:routing-toggle intent=${toggle} initialized=${configInfo ? "true" : "false"} -->
+<NOGRA_ROUTING_TOGGLE_REQUEST>
+The user asked to turn Nogra automatic offers ${toggle} for this workspace.
 
-const enabled = toggle === "on";
-applyToggle(configInfo, enabled);
-emitBlock(
-  enabled
-    ? "Nogra automatic offers are on."
-    : "Nogra automatic offers are off. Explicit /nogra:* commands still work."
-);
+Hooks are soft guardrails only. Do not treat this hook as the actor, and do not say the hook already changed config.
+
+Use the nogra:${toggle} skill now. The skill owns reading and updating local .nogra/config.json, then reporting the result visibly to the user.
+
+If the workspace is not initialized, tell the user visibly and do not write config.
+</NOGRA_ROUTING_TOGGLE_REQUEST>`);

@@ -62,6 +62,53 @@ function cleanInline(value) {
   return String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
 }
 
+function roleDisplayName(scopedRole) {
+  const role = cleanInline(scopedRole).split(":").pop() || "";
+  return role ? `${role.charAt(0).toUpperCase()}${role.slice(1)}` : "Role";
+}
+
+function statusDisplayName(status) {
+  const cleaned = cleanInline(status);
+  return cleaned ? `${cleaned.charAt(0).toUpperCase()}${cleaned.slice(1)}` : "";
+}
+
+function runtimeDisplayName(runtime) {
+  const cleaned = cleanInline(runtime)
+    .replace(/^anthropic:/, "")
+    .replace(/^claude-/, "")
+    .replace(/-/g, " ");
+  return cleaned
+    .split(" ")
+    .filter(Boolean)
+    .map((part, index) => (/^\d+$/.test(part) && index > 0 ? part : `${part.charAt(0).toUpperCase()}${part.slice(1)}`))
+    .join(" ")
+    .replace(/\b(\d)\s+(\d)\b/g, "$1.$2");
+}
+
+function roleRuntimePair(record, status = "") {
+  const executionRole = cleanInline(record.executionRole || record.metadata?.executionRole || "");
+  const executionRuntime = cleanInline(record.executionRuntime || record.metadata?.executionRuntime || record.targetModel || "");
+  const executionRuntimeSource = cleanInline(record.executionRuntimeSource || record.metadata?.executionRuntimeSource || "");
+  const executionLabel = [roleDisplayName(executionRole), runtimeDisplayName(executionRuntime), statusDisplayName(status)]
+    .filter(Boolean)
+    .join(" · ");
+  return { executionRole, executionRuntime, executionRuntimeSource, executionLabel };
+}
+
+function verificationRoleRuntimePair(record, input = {}) {
+  const verificationRole = cleanInline(input.verificationRole || record.verificationRole || record.metadata?.verificationRole || "");
+  const verificationRuntime = cleanInline(input.verificationRuntime || record.verificationRuntime || record.metadata?.verificationRuntime || "");
+  const verificationRuntimeSource = cleanInline(input.verificationRuntimeSource || record.verificationRuntimeSource || record.metadata?.verificationRuntimeSource || "");
+  const verificationStatus = cleanInline(input.verificationStatus || record.verificationStatus || record.metadata?.verificationStatus || "");
+  const verificationLabel = [roleDisplayName(verificationRole), runtimeDisplayName(verificationRuntime), statusDisplayName(verificationStatus)]
+    .filter(Boolean)
+    .join(" · ");
+  if (!verificationRole && !verificationRuntime && !verificationStatus) {
+    return null;
+  }
+  return { verificationRole, verificationRuntime, verificationRuntimeSource, verificationStatus, verificationLabel };
+}
+
 function safeRunId(runId) {
   const cleaned = cleanInline(runId);
   if (!/^transport-[A-Za-z0-9._-]+$/.test(cleaned)) {
@@ -340,6 +387,17 @@ function finalizeRun(root, input, options = {}) {
     : "not_provided";
   const flags = artifactFlags(root, paths);
   const completedAt = record.completedAt || cleanInline(input.completedAt) || now();
+  const executionPair = roleRuntimePair(record, status);
+  const verificationPair = verificationRoleRuntimePair(record, input);
+  const verificationFields = verificationPair
+    ? {
+        verificationRole: verificationPair.verificationRole,
+        verificationRuntime: verificationPair.verificationRuntime,
+        verificationRuntimeSource: verificationPair.verificationRuntimeSource,
+        verificationStatus: verificationPair.verificationStatus,
+        verificationLabel: verificationPair.verificationLabel
+      }
+    : {};
   const updated = {
     ...record,
     runId,
@@ -348,13 +406,33 @@ function finalizeRun(root, input, options = {}) {
     phase,
     paths,
     artifacts: flags,
+    executionRole: executionPair.executionRole || record.executionRole || "",
+    executionRuntime: executionPair.executionRuntime || record.executionRuntime || "",
+    executionRuntimeSource: executionPair.executionRuntimeSource || record.executionRuntimeSource || "",
+    executionLabel: executionPair.executionLabel || record.executionLabel || "",
+    ...verificationFields,
     completedAt,
     durationSeconds: record.createdAt ? durationSeconds(record.createdAt, completedAt) : record.durationSeconds ?? null,
     summary: input.summary != null ? cleanInline(input.summary) : record.summary ?? "",
     error: input.error != null ? cleanInline(input.error) : record.error ?? "",
     metadata: record.metadata && typeof record.metadata === "object"
-      ? { ...record.metadata, nextOwner: input.nextOwner || "Manager" }
-      : { nextOwner: input.nextOwner || "Manager" }
+      ? {
+          ...record.metadata,
+          executionRole: executionPair.executionRole || record.metadata.executionRole || "",
+          executionRuntime: executionPair.executionRuntime || record.metadata.executionRuntime || "",
+          executionRuntimeSource: executionPair.executionRuntimeSource || record.metadata.executionRuntimeSource || "",
+          executionLabel: executionPair.executionLabel || record.metadata.executionLabel || "",
+          ...verificationFields,
+          nextOwner: input.nextOwner || "Manager"
+        }
+      : {
+          executionRole: executionPair.executionRole,
+          executionRuntime: executionPair.executionRuntime,
+          executionRuntimeSource: executionPair.executionRuntimeSource,
+          executionLabel: executionPair.executionLabel,
+          ...verificationFields,
+          nextOwner: input.nextOwner || "Manager"
+        }
   };
   writeIfChanged(file, `${JSON.stringify(updated, null, 2)}\n`);
   const event = {
@@ -368,6 +446,11 @@ function finalizeRun(root, input, options = {}) {
     type: status === "cancelled" ? "transport_run_cancelled" : "transport_run_returned",
     status,
     phase,
+    executionRole: executionPair.executionRole,
+    executionRuntime: executionPair.executionRuntime,
+    executionRuntimeSource: executionPair.executionRuntimeSource,
+    executionLabel: executionPair.executionLabel,
+    ...verificationFields,
     briefId: cleanInline(record.briefId || input.briefId || ""),
     summary: cleanInline(input.summary || ""),
     nextOwner: input.nextOwner || "Manager"
@@ -414,7 +497,10 @@ function latestTerminalEvent(root, runId) {
   const events = parseJsonl(eventsFile(root)).filter((event) => event.runId === runId);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (TERMINAL_EVENT_TYPES.has(event.type) || TERMINAL_STATUSES.has(String(event.status || "").toLowerCase())) {
+    if (TERMINAL_EVENT_TYPES.has(event.type)) {
+      return event;
+    }
+    if (!event.type && TERMINAL_STATUSES.has(String(event.status || "").toLowerCase())) {
       return event;
     }
   }

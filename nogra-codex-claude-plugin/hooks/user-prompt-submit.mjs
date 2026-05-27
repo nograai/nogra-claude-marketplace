@@ -12,21 +12,9 @@ const DEFAULT_DICTIONARY = {
     "hear",
     "request",
     "send",
-    "spørg",
-    "spørge",
-    "spoerg",
-    "spoerge",
-    "få",
-    "faa",
-    "bed",
-    "bede",
     "get",
     "have",
-    "make",
-    "hør",
-    "høre",
-    "hoer",
-    "hoere"
+    "make"
   ],
   consultQuestionCue: [
     "what",
@@ -35,15 +23,7 @@ const DEFAULT_DICTIONARY = {
     "could",
     "should",
     "recommend",
-    "think",
-    "hvad",
-    "hvorfor",
-    "hvordan",
-    "kan du",
-    "bør",
-    "boer",
-    "tænker",
-    "taenker"
+    "think"
   ],
   consultNegative: [
     "do not ask",
@@ -53,13 +33,7 @@ const DEFAULT_DICTIONARY = {
     "don't consult",
     "dont consult",
     "no codex",
-    "not codex",
-    "uden codex",
-    "ingen codex",
-    "ikke spørge",
-    "ikke spoerge",
-    "spørg ikke",
-    "spoerg ikke"
+    "not codex"
   ]
 };
 
@@ -79,13 +53,57 @@ function getPrompt(input) {
   return String(input.prompt ?? input.user_prompt ?? input.message ?? "").trim();
 }
 
-function readWorkspaceDictionary() {
-  return DEFAULT_DICTIONARY;
+function workspaceRoot(input) {
+  const workspaceRoot = Array.isArray(input.workspace_roots)
+    ? input.workspace_roots.find((entry) => typeof entry === "string" && entry.trim() !== "")
+    : "";
+  return input.cwd || input.project_dir || process.env.CLAUDE_PROJECT_DIR || workspaceRoot || process.cwd();
+}
+
+function readWorkspaceConfig(input) {
+  const cwd = workspaceRoot(input);
+  const configPath = path.join(cwd, ".nogra", "config.json");
+  if (!fs.existsSync(configPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(configPath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function cleanTerms(values) {
+  return Array.isArray(values)
+    ? values
+        .map((value) => (typeof value === "string" ? value.trim().toLowerCase() : ""))
+        .filter(Boolean)
+    : [];
+}
+
+function providerDictionaryConfig(config) {
+  const candidates = [
+    config?.providerDictionaries?.codex,
+    config?.providerPlugins?.codex?.dictionary,
+    config?.routingPolicy?.providerDictionaries?.codex,
+    config?.routingPolicy?.dictionary?.codexProvider
+  ];
+  return candidates.find((candidate) => candidate && typeof candidate === "object") || {};
+}
+
+function mergeDictionary(configured = {}) {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_DICTIONARY).map(([key, defaults]) => [
+      key,
+      [...cleanTerms(defaults), ...cleanTerms(configured[key])]
+    ])
+  );
+}
+
+function readWorkspaceDictionary(input) {
+  return mergeDictionary(providerDictionaryConfig(readWorkspaceConfig(input)));
 }
 
 function hasNograWorkspace(input) {
-  const cwd = input.cwd || input.project_dir || process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  return fs.existsSync(path.join(cwd, ".nogra", "config.json"));
+  return readWorkspaceConfig(input) !== null;
 }
 
 function includesAny(text, terms) {
