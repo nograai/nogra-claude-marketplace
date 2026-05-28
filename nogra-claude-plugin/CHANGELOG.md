@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.4.1 - 2026-05-28
+
+- Tightened brief and dispatch skill output rules so full brief payloads and
+  dispatch telemetry stay in local `.nogra/` artifacts while chat receives the
+  compact approval or dispatch confirmation surface.
+- Rephrased brief-contract guidance so the contract remains the authority for
+  payload shape instead of hardcoding the public schema name in prose.
+- Added a runtime-profile glossary entry to keep model/effort preferences
+  distinct from the bundled local runtime scripts.
+
 ## 0.4.0 - 2026-05-27
 
 - Promoted the Brief #4 structural release: removed the default statusline

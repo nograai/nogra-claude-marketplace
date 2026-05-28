@@ -18,6 +18,14 @@ The local runtime owns:
 - Recording transport runs and verification support under `.nogra/transport/`
 - Resolving role models and effort from runtimePolicy or release fallback
 
+## Term: runtime profile
+
+*Runtime profile* is the `runtimePolicy` in `.nogra/config.json`: the user's
+preference for which model and effort the executor and verifier roles resolve
+to. It is a separate concept from *local runtime* above — local runtime is the
+bundled scripts; runtime profile is the model/effort preference, not an
+execution layer.
+
 ## Runtime Profile
 
 Use local `.nogra/config.json` `runtimePolicy` for Nogra's default/custom

@@ -68,6 +68,13 @@ Keep the user-facing approval/return surface concise. Raw tool output, runtime
 payloads, handoff prompts, transport internals and long implementation chatter
 belong in debug detail only when the user explicitly asks for it.
 
+After GO, the main chat gets a one-to-two line dispatch confirmation: what was
+dispatched, that the executor role runs in the background, and that a report
+returns. The dispatch telemetry — run id, brief id, role, phase, spec, expected
+output, next step — lives in the local dispatch receipt under `.nogra/` and the
+client's native background-tasks view. Do not render it as a verbose inline
+block in the main chat.
+
 The final user-facing title is `Nogra Verification`. Verification words are the product surface:
 `Verification: ship`, `Verification: deviation`, `Verification: blocked`,
 `Verification: decision_required` or `Verification: UNVERIFIED`.

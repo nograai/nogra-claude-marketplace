@@ -156,7 +156,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-contract --root "$PWD
 ```
 
    Do not discover the schema by repeated validation failures.
-10. Draft a complete `nogra.brief.v1` payload from the contract. Use
+10. Draft a complete brief payload from the contract. Use
    `references/brief-contract.md` for shape guidance:
    - `title`
    - `intent`
@@ -275,6 +275,9 @@ and transport internals.
 
 Do not print raw runtime payloads, full schema contracts, demo briefs, handoff
 prompts or transport receipts unless the user explicitly asks for debug output.
+The full normalized brief and its rendered overview live in `.nogra/briefs/`;
+the chat shows the compact approval artifact, never the full brief body or
+payload echoed a second time.
 
 End with:
 
