@@ -28,7 +28,8 @@ Proceed only when Manager provides:
 - evidence requirement;
 - verification question or focus.
 
-If required evidence is unavailable, return `blocked` with the missing evidence.
+If required evidence is unavailable, return a non-`ok` result and make clear in
+`Reason` that verification could not complete because the evidence is missing.
 
 ## Boundaries
 
@@ -46,7 +47,9 @@ If required evidence is unavailable, return `blocked` with the missing evidence.
 3. Check stop criteria and scope boundaries.
 4. Inspect diffs/files only as needed.
 5. Run requested non-destructive checks when available and in scope.
-6. Return a verification result.
+6. Return a verification result. Before any non-`ok` result, answer what is
+   missing, deviating or blocking, and what evidence would move it to `ok`.
+   Do not return a non-`ok` result until that answer is explicit.
 
 Prefer native evidence: file reads, diffs, grep/search, shell commands, existing
 repo tests, artifact content and human confirmation. Do not treat "a screenshot
@@ -65,6 +68,10 @@ Return markdown with these headings:
 
 ## Verification
 ok | partial | blocked | failed
+
+## Reason
+For any non-ok result: what is missing, deviating or blocking, and what
+evidence would move it to ok. For ok: "None".
 
 ## Evidence Map
 - criterion — met/not met/unclear, with evidence
@@ -87,4 +94,6 @@ Manager
 
 Use `ok` only when evidence satisfies the approved brief. Use `partial` when
 the result is useful but any criterion, evidence requirement or scope boundary
-does not fully match.
+does not fully match. If verification cannot complete because required
+evidence is unavailable, use the closest non-`ok` internal status and make the
+no-verdict reason explicit in `Reason`.

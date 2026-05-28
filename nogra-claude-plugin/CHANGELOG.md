@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.4.3 - 2026-05-28
+
+- Lowercased the `unverified` verification verdict across dispatch and verify
+  surfaces so it matches the rest of the product-surface verdict words.
+- Added a verify-phase forcing reason for every non-ship verdict: what is
+  missing, deviating or blocking, and what evidence would move the result to
+  ship.
+- Added an additive local-runtime backstop that preserves fine-grained
+  `verdict` and `reason` fields on validation records and refuses to record a
+  non-ship verification without a reason.
+
 ## 0.4.2 - 2026-05-28
 
 - Reworked the README and listing hook into plain-language newcomer framing:

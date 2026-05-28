@@ -86,7 +86,7 @@ ledger; I'll return a concise report + verification when it lands.
 
 The final user-facing title is `Nogra Verification`. Verification words are the product surface:
 `Verification: ship`, `Verification: deviation`, `Verification: blocked`,
-`Verification: decision_required` or `Verification: UNVERIFIED`.
+`Verification: decision_required` or `Verification: unverified`.
 
 ## Flow
 
@@ -214,7 +214,7 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
     preserve that second role/runtime pair beside the executor pair. Use
     `verificationRole: "nogra:verifier"`, the verifier runtime hint or resolved
     runtime when available, and `verificationStatus` such as `ship`,
-    `deviation`, `blocked`, `decision_required` or `UNVERIFIED` in the
+    `deviation`, `blocked`, `decision_required` or `unverified` in the
     `finalize-run` payload. Do not overwrite `executionRole`; that remains the
     executor-role run.
 12. If the result differs from the approved brief in a material way, return

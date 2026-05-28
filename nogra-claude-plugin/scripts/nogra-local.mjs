@@ -1535,7 +1535,7 @@ function acceptanceStatus(value) {
 }
 
 function inferVerificationStatus(evidence) {
-  const explicit = normalizeVerificationStatus(evidence.status || evidence.verification);
+  const explicit = normalizeVerificationStatus(evidence.status || evidence.verification || evidence.verdict);
   if (explicit) return explicit;
   const acceptance = Array.isArray(evidence.acceptance) ? evidence.acceptance : [];
   const deviations = Array.isArray(evidence.briefDeviations) ? evidence.briefDeviations : [];
@@ -1549,12 +1549,53 @@ function inferVerificationStatus(evidence) {
   return "blocked";
 }
 
+function normalizeVerificationVerdict(value) {
+  const cleaned = cleanInline(value).toLowerCase();
+  if (!cleaned) return "";
+  if (["ship", "shipped", "pass", "passed", "ok"].includes(cleaned)) return "ship";
+  if (["deviation", "partial"].includes(cleaned)) return "deviation";
+  if (["blocked", "failed", "fail"].includes(cleaned)) return "blocked";
+  if (cleaned === "decision_required") return "decision_required";
+  if (cleaned === "unverified") return "unverified";
+  return "";
+}
+
+function inferVerificationVerdict(evidence) {
+  const explicit = normalizeVerificationVerdict(evidence.verdict || evidence.status || evidence.verification);
+  if (explicit) return explicit;
+  const acceptance = Array.isArray(evidence.acceptance) ? evidence.acceptance : [];
+  const deviations = Array.isArray(evidence.briefDeviations) ? evidence.briefDeviations : [];
+  if (evidence.decisionRequired) return "decision_required";
+  if (deviations.length) return "deviation";
+  if (!acceptance.length) return "unverified";
+  const failed = new Set(["failed", "fail", "missing", "not_met", "unmet", "blocked"]);
+  const met = new Set(["met", "pass", "passed", "ok", "yes", "verified"]);
+  if (acceptance.some((item) => failed.has(acceptanceStatus(item?.status)))) return "blocked";
+  if (acceptance.every((item) => met.has(acceptanceStatus(item?.status)))) return "ship";
+  return "unverified";
+}
+
 function verifySupport(root, options) {
   const runId = safeTransportRunId(options.runId);
   const runFile = transportRunPath(root, runId);
   const run = readJson(runFile);
   const evidence = options.inputPayload || {};
   const status = inferVerificationStatus(evidence);
+  const verdict = inferVerificationVerdict(evidence);
+  const reason = cleanText(evidence.reason || "");
+  if (verdict !== "ship" && !reason) {
+    return {
+      status: "blocked",
+      mode: "local",
+      hostedMcpUsed: false,
+      run,
+      validation: null,
+      verdict,
+      reason,
+      error: "Verification reason is required before returning a non-ship verdict to Manager.",
+      nextOwner: "Manager"
+    };
+  }
   const at = now();
   const verificationState = {
     verificationRole: run.verificationRole || run.metadata?.verificationRole || "",
@@ -1568,8 +1609,10 @@ function verifySupport(root, options) {
     runId,
     briefId: run.briefId || "",
     status,
+    verdict,
     hostedMcpUsed: false,
     summary: cleanText(evidence.summary || "Local verification support recorded. Manager remains final verification authority."),
+    reason,
     executionRole: run.executionRole || run.metadata?.executionRole || "",
     executionRuntime: run.executionRuntime || run.metadata?.executionRuntime || run.targetModel || "",
     executionEffort: run.executionEffort || run.metadata?.executionEffort || "",
@@ -1619,6 +1662,8 @@ function verifySupport(root, options) {
     ...verificationState,
     briefId: updatedRun.briefId || "",
     summary: validation.summary,
+    verdict,
+    reason,
     nextOwner: "Manager"
   });
   appendJsonlIfMissing(transportEventsPath(root), event);
@@ -1628,6 +1673,8 @@ function verifySupport(root, options) {
     hostedMcpUsed: false,
     run: updatedRun,
     validation,
+    verdict,
+    reason,
     nextOwner: "Manager"
   };
 }

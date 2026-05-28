@@ -63,7 +63,11 @@ Do not use this skill for:
    - `reportText`;
    - `acceptance` status per success criterion when available;
    - `briefDeviations` for any unapproved mismatch;
-   - `decisionRequired` when the user must choose.
+   - `decisionRequired` when the user must choose;
+   - `verification` or `verdict`: `ship`, `deviation`, `blocked`,
+     `decision_required` or `unverified`;
+   - `reason` for every non-`ship` verdict: what is missing, deviating or
+     blocking, and what evidence would move it to `ship`.
    Do not leave status implicit when Manager has already made the verification
    judgment. The local runtime can infer a conservative status from acceptance
    rows, but Manager's explicit judgment is the product authority.
@@ -95,9 +99,14 @@ Do not use this skill for:
    - `ship`: evidence satisfies the brief/request;
    - `deviation`: useful result, but it materially differs from the approved
      brief/request;
-   - `blocked`: evidence is missing, invalid or out of scope;
+   - `blocked`: verification completed and the work is not acceptable on the
+     evidence;
    - `decision_required`: user decision needed;
-   - `UNVERIFIED`: not enough evidence to honestly verify.
+   - `unverified`: verification could not complete because there is not enough
+     evidence to form an honest verdict.
+   Before returning any verdict other than `ship`, answer: what specifically is
+   missing, deviating or blocking, and what evidence would move it to `ship`.
+   Do not return a non-`ship` verdict until that answer is explicit.
 
 ## Verification Rules
 
@@ -130,8 +139,10 @@ Do not use this skill for:
 When verification is complete, lead with:
 
 ```text
-Verification: <ship|deviation|blocked|decision_required|UNVERIFIED>
+Verification: <ship|deviation|blocked|decision_required|unverified>
 ```
 
-Then list the evidence checked and any remaining risk. The Nogra-owned report
-title is `Nogra Verification`.
+For any non-`ship` verdict, include a `Why:` line with the reason from the
+forcing answer: what is missing, deviating or blocking, and what evidence would
+move it to `ship`. Then list the evidence checked and any remaining risk. The
+Nogra-owned report title is `Nogra Verification`.

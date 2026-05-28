@@ -316,8 +316,45 @@ function main() {
   );
   assert(verified.status === "ok", "verify support should record ok status");
   assert(verified.hostedMcpUsed === false, "verify support should remain local");
+  assert(verified.verdict === "ship", "verify support should preserve fine-grained ship verdict");
+  assert(verified.validation?.verdict === "ship", "validation should record ship verdict");
   assert(verified.run?.executionLabel === `Executor · ${expectedExecutorRuntimeDisplay} · Ok`, "verify support should update role/runtime/status label");
   assert(fs.existsSync(path.join(temp, ".nogra", "transport", "artifacts", receipt.runId, "validation.json")), "verify should write validation artifact");
+
+  const reasonlessReceipt = run(["dispatch", "--root", temp, "--brief-id", saved.briefId]);
+  const reasonlessVerification = run(
+    ["verify", "--root", temp, "--run-id", reasonlessReceipt.runId],
+    {
+      verification: "unverified",
+      summary: "Unable to verify from the available evidence."
+    }
+  );
+  assert(reasonlessVerification.status === "blocked", "reasonless non-ship verify should return blocked support status");
+  assert(reasonlessVerification.verdict === "unverified", "reasonless non-ship verify should preserve unverified verdict");
+  assert(reasonlessVerification.validation === null, "reasonless non-ship verify should not write validation payload");
+  assert(String(reasonlessVerification.error || "").includes("reason"), "reasonless non-ship verify should name missing reason");
+  assert(
+    !fs.existsSync(path.join(temp, ".nogra", "transport", "artifacts", reasonlessReceipt.runId, "validation.json")),
+    "reasonless non-ship verify should not write validation artifact"
+  );
+
+  const reasonedReceipt = run(["dispatch", "--root", temp, "--brief-id", saved.briefId]);
+  const reasonedVerification = run(
+    ["verify", "--root", temp, "--run-id", reasonedReceipt.runId],
+    {
+      verification: "unverified",
+      summary: "Unable to verify from the available evidence.",
+      reason: "The requested command evidence is missing; run the requested check and provide its output to move this to ship."
+    }
+  );
+  assert(reasonedVerification.status === "blocked", "reasoned unverified verify should keep coarse blocked status");
+  assert(reasonedVerification.verdict === "unverified", "reasoned unverified verify should preserve unverified verdict");
+  assert(reasonedVerification.validation?.verdict === "unverified", "validation should record unverified verdict");
+  assert(reasonedVerification.validation?.reason.includes("requested command evidence"), "validation should record non-ship reason");
+  assert(
+    fs.existsSync(path.join(temp, ".nogra", "transport", "artifacts", reasonedReceipt.runId, "validation.json")),
+    "reasoned non-ship verify should write validation artifact"
+  );
 
   const inferredReceipt = run(["dispatch", "--root", temp, "--brief-id", saved.briefId]);
   const inferredVerified = run(
@@ -334,6 +371,7 @@ function main() {
     }
   );
   assert(inferredVerified.status === "ok", "verify support should infer ok when all acceptance rows are met");
+  assert(inferredVerified.verdict === "ship", "verify support should infer ship verdict when all acceptance rows are met");
 
   console.log(
     JSON.stringify(
@@ -353,6 +391,7 @@ function main() {
           "dispatch and handoff expose explicit role/runtime/effort facts",
           "stock legacy balanced runtimePolicy normalizes to default",
           "verify support local",
+          "verify support requires reason for non-ship verdicts",
           "hostedMcpUsed false across runtime path"
         ]
       },
