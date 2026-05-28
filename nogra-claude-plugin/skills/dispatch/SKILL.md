@@ -13,9 +13,11 @@ has been shown.
 
 ## Boundary
 
-The Manager phase owns intent, approval, control-plane calls, local Nogra
-bookkeeping and final verification. A subagent taking the executor role owns
-scoped implementation for its run.
+The *Manager phase* is the main Claude Code conversation you are talking to —
+as opposed to the *executor*, a separate scoped subagent that does the work. The
+Manager phase owns intent, approval, local Nogra bookkeeping and final
+verification. A subagent taking the executor role owns scoped implementation for
+its run.
 
 The Manager phase is not the executor-role runtime. Do not implement dispatched
 customer scope in the main chat. Do not claim the main chat is the agent because
@@ -74,6 +76,13 @@ returns. The dispatch telemetry — run id, brief id, role, phase, spec, expecte
 output, next step — lives in the local dispatch receipt under `.nogra/` and the
 client's native background-tasks view. Do not render it as a verbose inline
 block in the main chat.
+
+Example confirmation:
+
+```text
+Dispatched <brief title> → Executor (Sonnet, background). Run id is in the
+ledger; I'll return a concise report + verification when it lands.
+```
 
 The final user-facing title is `Nogra Verification`. Verification words are the product surface:
 `Verification: ship`, `Verification: deviation`, `Verification: blocked`,

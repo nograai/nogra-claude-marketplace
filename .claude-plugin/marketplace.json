@@ -3,24 +3,24 @@
   "description": "Public marketplace for the Nogra Claude Code plugin.",
   "owner": {
     "name": "Patrick Larsen",
-    "email": "patrick@y26.dk",
+    "email": "patrick@nogra.ai",
     "url": "https://nogra.ai"
   },
   "plugins": [
     {
       "name": "nogra",
       "displayName": "nogra",
-      "version": "0.4.1",
+      "version": "0.4.2",
       "source": "./nogra-claude-plugin",
-      "description": "Nogra gives Claude Code a brief-first workflow with explicit dispatch, evidence and verification discipline.",
+      "description": "An optional discipline layer for Claude Code: approve a short plan, run it, then verify the result against the plan.",
       "author": {
         "name": "Patrick Larsen",
-        "email": "patrick@y26.dk",
+        "email": "patrick@nogra.ai",
         "url": "https://nogra.ai"
       },
       "license": "Apache-2.0",
       "homepage": "https://nogra.ai",
-      "repository": "https://github.com/nograai/nogra-marketplace",
+      "repository": "https://github.com/nograai/nogra-claude-marketplace",
       "keywords": [
         "nogra",
         "claude-code",
@@ -39,12 +39,12 @@
       "description": "Optional Nogra provider plugin for clean Codex consults from Claude Code.",
       "author": {
         "name": "Patrick Larsen",
-        "email": "patrick@y26.dk",
+        "email": "patrick@nogra.ai",
         "url": "https://nogra.ai"
       },
       "license": "Apache-2.0",
       "homepage": "https://nogra.ai",
-      "repository": "https://github.com/nograai/nogra-marketplace",
+      "repository": "https://github.com/nograai/nogra-claude-marketplace",
       "keywords": [
         "nogra",
         "codex",

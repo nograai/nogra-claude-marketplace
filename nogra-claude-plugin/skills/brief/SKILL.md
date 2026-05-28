@@ -1,6 +1,6 @@
 ---
 name: brief
-description: Only use after /nogra:brief, an explicit request to write a Nogra brief, acceptance of a Nogra offer, or "do this through Nogra". Keep provider requests, research lists, customer research, casual Nogra mentions, and ordinary tasks outside this skill.
+description: Shape scoped, risky, or ambiguous work into a validated Nogra brief (an approved plan) before execution. Use after /nogra:brief, when you accept a Nogra brief offer, or when you say "do this through Nogra" — not for casual mentions or ordinary direct work.
 ---
 
 # Nogra Brief
@@ -244,18 +244,20 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "$PWD"
 
 ## Handoff Line
 
-When the brief is ready, show only:
+When the brief is ready, present a **compact approval artifact** — never raw
+markdown or JSON. Use `references/approval-display.md` as a visual guide, not a
+rigid template.
+
+The minimum floor (never omit these):
 
 - one-line intent
 - compact scope in/out
 - 3-5 brief-specific success criteria
-- only non-obvious stop criteria
+- non-obvious stop criteria
 - brief id and GO line
 
-Always present the brief as a compact approval artifact, not as raw markdown or
-JSON. Use `references/approval-display.md` as a visual guide, not a rigid
-template.
-The brief should usually expose this information:
+For richer briefs, draw from this structural inventory and omit any section that
+would be empty (but never omit scope / stop / GO):
 
 - title/path or brief id
 - goal

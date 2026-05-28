@@ -1,16 +1,25 @@
 # Nogra Claude Code Plugin
 
-Nogra adds a brief-first workflow to Claude Code. It helps a workspace move from
-fuzzy intent to an approved brief, dispatches approved work, and asks for
-evidence before calling work done.
+Nogra is an optional discipline layer for Claude Code. On work with real scope
+or risk, it gets you to approve a short plan first, runs the approved work, then
+checks the result against that plan — so you don't have to take "done" on trust
+when it matters.
 
 ## Install
 
+**Requires Node.js 18+ on your PATH** — Nogra's local runtime is a small Node
+script. If `node` is not available, setup stops and tells you instead of failing
+cryptically.
+
 After installing this plugin:
 
-1. Open Claude Code in the project folder you want to use with Nogra.
-2. Restart or reopen Claude Code so the plugin is loaded.
-3. Run `/nogra:setup`.
+1. In Claude Code, go to the project folder where you want Nogra active.
+2. Restart or reopen Claude Code so the plugin loads.
+3. Run `/nogra:setup` — this creates the folder's local Nogra state
+   (`.nogra/config.json`, plus a root `CLAUDE.md` only if you don't already have
+   one).
+4. For an existing codebase, also run `/nogra:adapt` so Nogra reads the project
+   and records its map under `.nogra/`.
 
 You can also ask Claude:
 
@@ -154,8 +163,8 @@ effort.
 `/nogra:setup` reads the plugin-bundled bootstrap bundle and writes only the
 small local Nogra workspace state:
 
-- workspace config
-- root `CLAUDE.md` when missing
+- `.nogra/config.json` (the workspace config)
+- root `CLAUDE.md`, only when one does not already exist
 
 Setup only writes the two files listed above. Project-specific notes are created
 by `/nogra:adapt`, after Nogra has read this workspace.

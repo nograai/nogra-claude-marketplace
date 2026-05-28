@@ -29,6 +29,10 @@ changes load at session startup.
 
 ## Flow
 
+Pre-flight (before any step): verify Node.js is available — Nogra's local runtime
+is a Node script. If `node` is not on PATH, stop and tell the user that Nogra
+setup needs Node.js 18+; do not write partial files.
+
 1. Confirm the current working directory in one short sentence.
 2. Inspect the folder and report whether it is empty, already Nogra-enabled or
    an existing project.

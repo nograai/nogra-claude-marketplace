@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.4.2 - 2026-05-28
+
+- Reworked the README and listing hook into plain-language newcomer framing:
+  approve a short plan, run it, then verify the result against that plan.
+- Corrected install guidance with the real setup order, explicit Node.js 18+
+  prerequisite and a setup pre-flight guard that stops cleanly before writing
+  partial files when Node is unavailable.
+- Made skill descriptions and runtime vocabulary more user-facing by defining
+  "Manager phase", moving the sensitivity formula out of the user flow and
+  keeping skill intent readable in command surfaces.
+- Reconciled the brief Handoff-Line guidance with the compact approval surface
+  and added a dispatch confirmation example for the reduced chat print.
+- Fixed manifest metadata drift from
+  `manager/nogra-public-readiness-audit-0.4.1-2026-05-28.md`: owner/author
+  email now uses the Nogra domain, repository metadata points at
+  `nograai/nogra-claude-marketplace`, and source/nested marketplace manifests
+  use the `nogra-claude` marketplace name.
+
 ## 0.4.1 - 2026-05-28
 
 - Tightened brief and dispatch skill output rules so full brief payloads and

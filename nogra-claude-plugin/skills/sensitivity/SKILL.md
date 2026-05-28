@@ -27,20 +27,13 @@ Sensitivity controls proactive Nogra offers. Explicit user intent still wins.
 Extension commands such as `/nogra-*` stay with their installed extension
 plugins instead of becoming Nogra brief offers.
 
-Use this formula for derived legacy thresholds:
+Higher sensitivity = more offers (lower thresholds); lower = more direct (higher
+thresholds). A few points:
 
 ```text
-autoOfferThreshold = round(95 - sensitivityPercent * 0.7)
-strongOfferThreshold = min(100, autoOfferThreshold + 20)
-```
-
-Examples:
-
-```text
-0%   -> 95/100
-50%  -> 60/80
-65%  -> 50/70
-100% -> 25/45
+0%    very conservative (almost explicit-only)
+50%   balanced — effective thresholds 60/80
+100%  eager — offers for many topic-related tasks
 ```
 
 ## Steps

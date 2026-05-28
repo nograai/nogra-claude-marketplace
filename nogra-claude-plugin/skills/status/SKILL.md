@@ -75,8 +75,8 @@ Keep it short:
 Nogra status
 
 Versions:
-- Nogra plugin: nogra@nogra-marketplace 0.3.4
-- Workspace release: v1.0.0
+- Nogra plugin: <plugin-id>@<marketplace> <version>
+- Workspace release: <releaseVersion>
 
 Workspace:
 - Auto: ON, sensitivity 50%

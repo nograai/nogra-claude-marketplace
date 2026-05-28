@@ -5,12 +5,12 @@
   "description": "Optional Nogra provider plugin for clean Codex consults from Claude Code.",
   "author": {
     "name": "Patrick Larsen",
-    "email": "patrick@y26.dk",
+    "email": "patrick@nogra.ai",
     "url": "https://nogra.ai"
   },
   "license": "Apache-2.0",
   "homepage": "https://nogra.ai",
-  "repository": "https://github.com/nograai/nogra-marketplace",
+  "repository": "https://github.com/nograai/nogra-claude-marketplace",
   "keywords": [
     "nogra",
     "codex",
