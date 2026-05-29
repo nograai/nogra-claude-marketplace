@@ -12,7 +12,9 @@ language and automatic offers.
 
 ## Boundary
 
-Read and write only `.nogra/config.json`. App files, `.claude/`, `CLAUDE.md`,
+Read and write only `.nogra/config.json`. For `/nogra:settings auto off`, also
+clear stale routing telemetry by writing route-none state to
+`.nogra/runtime/last-routing-score.json`. App files, `.claude/`, `CLAUDE.md`,
 package files, hooks, plugin files, Claude Code configuration and agent
 spawning stay outside this skill.
 
@@ -52,7 +54,8 @@ Interpret these forms:
 - `/nogra:settings verifier <model> <effort>` -> update verifier role.
 - `/nogra:settings language <code>` -> set
   `routingPolicy.defaultLanguage`.
-- `/nogra:settings auto on|off` -> set `routingPolicy.autoOfferEnabled`.
+- `/nogra:settings auto on|off` -> set `routingPolicy.autoOfferEnabled`; when
+  turning it off, clear stale routing telemetry to route none.
 
 For sensitivity changes, prefer `/nogra:sensitivity <percent>`. The settings
 menu may show the current value with context.

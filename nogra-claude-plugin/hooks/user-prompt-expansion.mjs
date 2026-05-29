@@ -61,6 +61,19 @@ function normalizeCommandText(value) {
     .trim();
 }
 
+function userAuthoredText(value) {
+  return String(value || "")
+    .replace(/```[\s\S]*?```/gu, "\n")
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const trimmed = line.trimStart();
+      if (!trimmed) return true;
+      return !/^(?:>|["'“”]|⏺|❯|│|┃|\[Image #|\[Pasted Content\b|Ran\b|Read\b|Searched\b|Listed\b)/u.test(trimmed);
+    })
+    .join("\n")
+    .trim();
+}
+
 function dictionaryPolicy(policy) {
   const candidate = policy.dictionary && typeof policy.dictionary === "object" ? policy.dictionary : {};
   const out = {};
@@ -80,15 +93,15 @@ function dictionaryHasExact(dictionary, key, text) {
 }
 
 function detectToggle(input, dictionary = DEFAULT_DICTIONARY) {
-  const prompt = normalizeCommandText(input.prompt);
+  const prompt = normalizeCommandText(userAuthoredText(input.prompt));
   const commandName = normalizeCommandText(input.command_name).replace(/^\//u, "");
   const commandArgs = normalizeCommandText(input.command_args);
   const commandText = [commandName, commandArgs].filter(Boolean).join(" ");
 
-  if (/^\/nogra[:\s-]?off$/u.test(prompt) || /^(?:nogra[:\s-]?off|off)$/u.test(commandName) && !commandArgs) {
+  if (/^\/nogra[:\s-]?off$/u.test(prompt) || (/^(?:nogra[:\s-]?off|off)$/u.test(commandName) && !commandArgs)) {
     return "off";
   }
-  if (/^\/nogra[:\s-]?on$/u.test(prompt) || /^(?:nogra[:\s-]?on|on)$/u.test(commandName) && !commandArgs) {
+  if (/^\/nogra[:\s-]?on$/u.test(prompt) || (/^(?:nogra[:\s-]?on|on)$/u.test(commandName) && !commandArgs)) {
     return "on";
   }
   if (commandName === "nogra" && commandArgs === "off") {
@@ -97,16 +110,28 @@ function detectToggle(input, dictionary = DEFAULT_DICTIONARY) {
   if (commandName === "nogra" && commandArgs === "on") {
     return "on";
   }
-  if (/^(nogra off|disable nogra|turn off nogra)$/u.test(prompt) || dictionaryHasExact(dictionary, "toggleOff", prompt)) {
+  if (
+    /^(?:nogra off|disable nogra|turn off nogra|turn nogra off|switch nogra off|set nogra off)$/u.test(prompt) ||
+    dictionaryHasExact(dictionary, "toggleOff", prompt)
+  ) {
     return "off";
   }
-  if (/^(nogra on|enable nogra|turn on nogra|use nogra(?: here| for this)?)$/u.test(prompt) || dictionaryHasExact(dictionary, "toggleOn", prompt)) {
+  if (
+    /^(?:nogra on|enable nogra|turn on nogra|turn nogra on|switch nogra on|set nogra on)$/u.test(prompt) ||
+    dictionaryHasExact(dictionary, "toggleOn", prompt)
+  ) {
     return "on";
   }
-  if (/^(nogra off|disable nogra|turn off nogra)$/u.test(commandText) || dictionaryHasExact(dictionary, "toggleOff", commandText)) {
+  if (
+    /^(?:nogra off|disable nogra|turn off nogra|turn nogra off|switch nogra off|set nogra off)$/u.test(commandText) ||
+    dictionaryHasExact(dictionary, "toggleOff", commandText)
+  ) {
     return "off";
   }
-  if (/^(nogra on|enable nogra|turn on nogra|use nogra(?: here| for this)?)$/u.test(commandText) || dictionaryHasExact(dictionary, "toggleOn", commandText)) {
+  if (
+    /^(?:nogra on|enable nogra|turn on nogra|turn nogra on|switch nogra on|set nogra on)$/u.test(commandText) ||
+    dictionaryHasExact(dictionary, "toggleOn", commandText)
+  ) {
     return "on";
   }
 

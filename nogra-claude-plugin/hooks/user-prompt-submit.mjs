@@ -342,19 +342,43 @@ Offer first and wait if your judgment says it is product work. Brief drafting st
 </NOGRA_JUDGMENT_FALLBACK>`);
 }
 
+function userAuthoredText(prompt) {
+  return String(prompt || "")
+    .replace(/```[\s\S]*?```/gu, "\n")
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const trimmed = line.trimStart();
+      if (!trimmed) return true;
+      return !/^(?:>|["'“”]|⏺|❯|│|┃|\[Image #|\[Pasted Content\b|Ran\b|Read\b|Searched\b|Listed\b)/u.test(trimmed);
+    })
+    .join("\n")
+    .trim();
+}
+
+function exactIntentLines(prompt) {
+  return userAuthoredText(prompt)
+    .toLowerCase()
+    .split(/\r?\n/u)
+    .map((line) => line.trim().replace(/[.!?]+$/u, "").trim())
+    .filter(Boolean);
+}
+
 function toggleIntent(prompt) {
-  const text = prompt.toLowerCase();
-  if (
-    /(?:^|\n)\s*handle this nogra request:\s*off\b/u.test(text) ||
-    /(?:^|\n)\s*\/nogra[:\s-]?off\b/u.test(text)
-  ) {
-    return "off";
-  }
-  if (
-    /(?:^|\n)\s*handle this nogra request:\s*on\b/u.test(text) ||
-    /(?:^|\n)\s*\/nogra[:\s-]?on\b/u.test(text)
-  ) {
-    return "on";
+  for (const line of exactIntentLines(prompt)) {
+    if (
+      /^handle this nogra request:\s*off$/u.test(line) ||
+      /^\/nogra[:\s-]?off$/u.test(line) ||
+      /^(?:please\s+)?(?:(?:turn|switch|set)\s+nogra\s+off|turn\s+off\s+nogra|disable\s+nogra)$/u.test(line)
+    ) {
+      return "off";
+    }
+    if (
+      /^handle this nogra request:\s*on$/u.test(line) ||
+      /^\/nogra[:\s-]?on$/u.test(line) ||
+      /^(?:please\s+)?(?:(?:turn|switch|set)\s+nogra\s+on|turn\s+on\s+nogra|enable\s+nogra)$/u.test(line)
+    ) {
+      return "on";
+    }
   }
   return "";
 }
@@ -385,6 +409,10 @@ function hitPercent(score) {
   return Math.max(0, Math.min(100, Math.round(numericSetting(score, 0))));
 }
 
+function autoOfferEnabled(policy = {}) {
+  return policy.autoOfferEnabled !== false && policy.enabled !== false;
+}
+
 function writeRoutingScore(configInfo, scoreState) {
   try {
     const root = workspaceRootFromConfig(configInfo.configPath);
@@ -408,6 +436,29 @@ function writeRoutingScore(configInfo, scoreState) {
   }
 }
 
+function writeRoutingOffState(configInfo, policy = {}) {
+  const { sensitivityPercent, autoOfferThreshold, strongOfferThreshold } = routingThresholds(policy);
+  writeRoutingScore(configInfo, {
+    score: 0,
+    reasons: [],
+    topicRelated: false,
+    directOverride: false,
+    autoOfferEnabled: false,
+    topicGate: policy.topicGate !== false,
+    threshold: autoOfferThreshold,
+    strongThreshold: strongOfferThreshold,
+    sensitivityPercent,
+    offerTriggered: false,
+    route: "none",
+    routingDecision: "none",
+    suppressionReason: "auto-off",
+    judgmentFallback: {
+      active: false,
+      reasons: []
+    }
+  });
+}
+
 const input = parseInput(readStdin());
 const root = projectRoot(input);
 const configInfo = readConfig(root);
@@ -425,15 +476,10 @@ if (isGeneratedWrapperPrompt(prompt)) {
   process.exit(0);
 }
 
-const focus = resolveProjectFocus({ cwd: root, prompt });
-if (focus.additionalContext) {
-  emitContext(focus.additionalContext);
-  process.exit(0);
-}
-
 const config = configInfo.config;
 const policy = config.routingPolicy || {};
 const dictionary = dictionaryPolicy(policy);
+const routingPrompt = userAuthoredText(prompt);
 
 const toggle = toggleIntent(prompt);
 if (toggle) {
@@ -450,26 +496,34 @@ If the same prompt also asks for implementation work, first apply the toggle thr
   process.exit(0);
 }
 
-const { score, reasons, topicRelated, directOverride } = scorePrompt(prompt, scoringPolicy(policy), dictionary);
-
-if (/^\s*\/nogra[:\s]/u.test(prompt)) {
+if (/^\s*\/nogra[:\s]/u.test(routingPrompt)) {
   process.exit(0);
 }
 
-if (isNograExtensionCommand(prompt)) {
+if (isNograExtensionCommand(routingPrompt)) {
   process.exit(0);
 }
 
-const autoOfferEnabled = policy.autoOfferEnabled !== false && policy.enabled !== false;
-if (!autoOfferEnabled) {
+if (!autoOfferEnabled(policy)) {
+  writeRoutingOffState(configInfo, policy);
   process.exit(0);
 }
 
+if (!routingPrompt) {
+  process.exit(0);
+}
+
+const focus = resolveProjectFocus({ cwd: root, prompt: routingPrompt });
+if (focus.additionalContext) {
+  emitContext(focus.additionalContext);
+  process.exit(0);
+}
+
+const { score, reasons, topicRelated, directOverride } = scorePrompt(routingPrompt, scoringPolicy(policy), dictionary);
 const { sensitivityPercent, autoOfferThreshold, strongOfferThreshold } = routingThresholds(policy);
 const topicGate = policy.topicGate !== false;
-const fallback = judgmentFallback(prompt, { score, topicRelated, directOverride }, autoOfferThreshold);
+const fallback = judgmentFallback(routingPrompt, { score, topicRelated, directOverride }, autoOfferThreshold);
 const offerTriggered =
-  autoOfferEnabled &&
   !directOverride &&
   !(topicGate && !topicRelated) &&
   score >= autoOfferThreshold;
@@ -479,7 +533,7 @@ writeRoutingScore(configInfo, {
   reasons,
   topicRelated,
   directOverride,
-  autoOfferEnabled,
+  autoOfferEnabled: true,
   topicGate,
   threshold: autoOfferThreshold,
   strongThreshold: strongOfferThreshold,

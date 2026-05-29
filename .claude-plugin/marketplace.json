@@ -10,7 +10,7 @@
     {
       "name": "nogra",
       "displayName": "nogra",
-      "version": "0.4.9",
+      "version": "0.5.0",
       "source": "./nogra-claude-plugin",
       "description": "An optional discipline layer for Claude Code: approve a short plan, run it, then verify the result against the plan.",
       "author": {

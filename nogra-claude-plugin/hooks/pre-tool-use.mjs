@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 function readStdin() {
   try {
@@ -294,19 +294,43 @@ function isNograExtensionCommand(prompt) {
   return /^\s*\/nogra-[a-z0-9-]+(?::|\s|$)/iu.test(prompt);
 }
 
+function userAuthoredText(prompt) {
+  return String(prompt || "")
+    .replace(/```[\s\S]*?```/gu, "\n")
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const trimmed = line.trimStart();
+      if (!trimmed) return true;
+      return !/^(?:>|["'“”]|⏺|❯|│|┃|\[Image #|\[Pasted Content\b|Ran\b|Read\b|Searched\b|Listed\b)/u.test(trimmed);
+    })
+    .join("\n")
+    .trim();
+}
+
+function exactIntentLines(prompt) {
+  return userAuthoredText(prompt)
+    .toLowerCase()
+    .split(/\r?\n/u)
+    .map((line) => line.trim().replace(/[.!?]+$/u, "").trim())
+    .filter(Boolean);
+}
+
 function toggleIntent(prompt) {
-  const text = prompt.toLowerCase();
-  if (
-    /(?:^|\n)\s*handle this nogra request:\s*off\b/u.test(text) ||
-    /(?:^|\n)\s*\/nogra[:\s-]?off\b/u.test(text)
-  ) {
-    return "off";
-  }
-  if (
-    /(?:^|\n)\s*handle this nogra request:\s*on\b/u.test(text) ||
-    /(?:^|\n)\s*\/nogra[:\s-]?on\b/u.test(text)
-  ) {
-    return "on";
+  for (const line of exactIntentLines(prompt)) {
+    if (
+      /^handle this nogra request:\s*off$/u.test(line) ||
+      /^\/nogra[:\s-]?off$/u.test(line) ||
+      /^(?:please\s+)?(?:(?:turn|switch|set)\s+nogra\s+off|turn\s+off\s+nogra|disable\s+nogra)$/u.test(line)
+    ) {
+      return "off";
+    }
+    if (
+      /^handle this nogra request:\s*on$/u.test(line) ||
+      /^\/nogra[:\s-]?on$/u.test(line) ||
+      /^(?:please\s+)?(?:(?:turn|switch|set)\s+nogra\s+on|turn\s+on\s+nogra|enable\s+nogra)$/u.test(line)
+    ) {
+      return "on";
+    }
   }
   return "";
 }
@@ -377,6 +401,50 @@ function pendingOfferState(root, policy) {
   };
 }
 
+function autoOfferEnabled(policy = {}) {
+  return policy.autoOfferEnabled !== false && policy.enabled !== false;
+}
+
+function writeRoutingOffState(root, policy = {}) {
+  const { sensitivityPercent, autoOfferThreshold, strongOfferThreshold } = routingThresholds(policy);
+  const path = join(root, ".nogra", "runtime", "last-routing-score.json");
+
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(
+      path,
+      `${JSON.stringify(
+        {
+          schema: "nogra.routingScore.v1",
+          updatedAt: new Date().toISOString(),
+          score: 0,
+          hitPercent: 0,
+          reasons: [],
+          topicRelated: false,
+          directOverride: false,
+          autoOfferEnabled: false,
+          topicGate: policy.topicGate !== false,
+          threshold: autoOfferThreshold,
+          strongThreshold: strongOfferThreshold,
+          sensitivityPercent,
+          offerTriggered: false,
+          route: "none",
+          routingDecision: "none",
+          suppressionReason: "auto-off",
+          judgmentFallback: {
+            active: false,
+            reasons: []
+          }
+        },
+        null,
+        2
+      )}\n`
+    );
+  } catch {
+    // Routing telemetry is advisory. Never block the tool because of it.
+  }
+}
+
 function markPreToolAskEmitted(root, pending = {}) {
   const path = join(root, ".nogra", "runtime", "last-routing-score.json");
   const record = readJsonFile(path);
@@ -437,12 +505,17 @@ const config = readConfig(root);
 if (!config) process.exit(0);
 
 const prompt = nonEmptyString(input.prompt);
+const policy = config.routingPolicy || {};
 if (!prompt) {
   if (isNograTool(input)) {
     process.exit(0);
   }
 
-  const policy = config.routingPolicy || {};
+  if (!autoOfferEnabled(policy)) {
+    writeRoutingOffState(root, policy);
+    process.exit(0);
+  }
+
   const pending = pendingOfferState(root, policy);
   if (pending.active) {
     emitAsk(userFacingAskReason("pending", pending, input.tool_name), root, pending);
@@ -454,16 +527,25 @@ if (isGeneratedWrapperPrompt(prompt)) {
   process.exit(0);
 }
 
-const policy = config.routingPolicy || {};
 const scoring = scoringPolicy(policy);
 const dictionary = dictionaryPolicy(policy);
+const routingPrompt = userAuthoredText(prompt);
 
 const toggle = toggleIntent(prompt);
 if (toggle) {
   process.exit(0);
 }
 
-if (isExplicitNograPrompt(prompt) || isNograExtensionCommand(prompt)) {
+if (isExplicitNograPrompt(routingPrompt) || isNograExtensionCommand(routingPrompt)) {
+  process.exit(0);
+}
+
+if (!autoOfferEnabled(policy)) {
+  writeRoutingOffState(root, policy);
+  process.exit(0);
+}
+
+if (!routingPrompt) {
   process.exit(0);
 }
 
@@ -473,16 +555,11 @@ if (pending.active) {
   process.exit(0);
 }
 
-const { score, topicRelated, directOverride } = scorePrompt(prompt, scoring, dictionary);
-
-const autoOfferEnabled = policy.autoOfferEnabled !== false && policy.enabled !== false;
-if (!autoOfferEnabled) {
-  process.exit(0);
-}
+const { score, topicRelated, directOverride } = scorePrompt(routingPrompt, scoring, dictionary);
 
 const { sensitivityPercent, autoOfferThreshold } = routingThresholds(policy);
 const topicGate = policy.topicGate !== false;
-const fallback = judgmentFallback(prompt, { score, topicRelated, directOverride }, autoOfferThreshold);
+const fallback = judgmentFallback(routingPrompt, { score, topicRelated, directOverride }, autoOfferThreshold);
 
 if (directOverride) {
   process.exit(0);

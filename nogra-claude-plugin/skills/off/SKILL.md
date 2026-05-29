@@ -14,8 +14,9 @@ If `.nogra/config.json` is missing, tell the user Nogra is not initialized in
 this folder and do not write files.
 
 Preserve existing `routingPolicy` fields. This toggle only updates local
-config; brief drafting, dispatch, verification and agent spawning stay in their
-own skills.
+config and clears stale routing telemetry by writing route-none state to
+`.nogra/runtime/last-routing-score.json`; brief drafting, dispatch,
+verification and agent spawning stay in their own skills.
 
 Return only:
 

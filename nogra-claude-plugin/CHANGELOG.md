@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-05-30
+
+- Moved automatic-off handling ahead of routing score evaluation so disabled
+  automatic offers resolve to route none without scoring, HIT flags or offers.
+- Kept explicit `/nogra:*` invocations available while automatic offers are off.
+- Tightened toggle detection to slash commands or clear imperatives and ignored
+  quoted, pasted or transcript-style lines when routing prompt text is scored.
+
 ## 0.4.9 - 2026-05-29
 
 - Removed the 0.4.8 `/nogra:create` command wrapper so the Nogra surface stays
