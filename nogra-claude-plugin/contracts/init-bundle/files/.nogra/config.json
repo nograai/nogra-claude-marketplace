@@ -63,6 +63,89 @@
     "guidance": "Adjust sensitivityPercent from 0 to 100. Values snap to sensitivityStepPercent; default step is 5. Higher sensitivity lowers effective offer thresholds and makes Claude offer Nogra more often; lower sensitivity raises thresholds and keeps Claude more direct. defaultLanguage sets the workspace language baseline. translationFallback=claude-current-prompt means Claude may use its current-prompt understanding directly. autoOfferThreshold and strongOfferThreshold are retained as legacy/advanced values. This controls local guidance only; Nogra runtime calls, dispatch, verification, subagents and extension execution still require their own explicit flow."
   },
   "paths": {
-    "hiddenRoot": ".nogra"
+    "hiddenRoot": ".nogra",
+    "stateRoot": ".nogra/state",
+    "currentCheckpoint": ".nogra/state/SESSION-CHECKPOINT.md",
+    "currentTasks": ".nogra/state/CURRENT-TASKS.md",
+    "decisions": ".nogra/state/DECISIONS.md",
+    "projectStructure": ".nogra/state/PROJECT-STRUCTURE.md",
+    "briefs": ".nogra/briefs",
+    "runs": ".nogra/runs",
+    "evidence": ".nogra/evidence",
+    "receipts": ".nogra/receipts",
+    "reports": ".nogra/reports",
+    "checkpoints": ".nogra/checkpoints",
+    "memoryLocal": ".nogra/memory/local",
+    "memorySync": ".nogra/memory/sync",
+    "transport": ".nogra/transport",
+    "workspaceIndex": ".nogra/index/workspaces.jsonl",
+    "memoryIndex": ".nogra/memory/local/MEMORY.md",
+    "memorySummaries": ".nogra/memory/local/summaries",
+    "runtimeMetadata": ".nogra/memory/runtime"
+  },
+  "productBoundary": {
+    "local": {
+      "price": "free",
+      "includes": [
+        "setup",
+        "commands",
+        "skills",
+        "local-ledger",
+        "briefs",
+        "runs",
+        "evidence",
+        "checkpoints",
+        "restore",
+        "verification"
+      ]
+    },
+    "sync": {
+      "status": "later",
+      "price": "not-priced",
+      "includes": [
+        "backup",
+        "cross-device-continuity",
+        "team-continuity",
+        "hosted-search",
+        "audit-export",
+        "retention-controls"
+      ]
+    },
+    "rule": "Nogra is free. Sync is later."
+  },
+  "bootPolicy": {
+    "schema": "nogra.boot_policy.v1",
+    "mode": "detect",
+    "cwdResolution": "nearest-nogra-then-workspace-index",
+    "autoLoad": false,
+    "writeOnSessionStart": false,
+    "askOnAmbiguousProject": true,
+    "maxHintBytes": 1200,
+    "maxRecentProjects": 5,
+    "hintSources": [
+      ".nogra/index/workspaces.jsonl",
+      ".nogra/state/SESSION-CHECKPOINT.md",
+      ".nogra/memory/local/MEMORY.md"
+    ],
+    "never": [
+      "load-full-memory-on-session-start",
+      "write-ledger-without-user-intent",
+      "dispatch-without-explicit-go",
+      "treat-memory-as-project-truth"
+    ]
+  },
+  "memoryPolicy": {
+    "schema": "nogra.memory_policy.v1",
+    "authority": "advisory-continuity",
+    "indexFirst": true,
+    "loadFullSummariesOnBoot": false,
+    "metadataIsDerived": true,
+    "requiresProvenance": true,
+    "verifyAgainst": [
+      "project-files",
+      "git-state",
+      ".nogra/state",
+      "evidence"
+    ]
   }
 }

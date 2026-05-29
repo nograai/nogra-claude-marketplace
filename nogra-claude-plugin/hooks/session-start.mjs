@@ -2,6 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { resolveBootContext } from "../runtime/local/boot-context.mjs";
 
 function readStdin() {
   try {
@@ -194,6 +195,22 @@ function emitContext(context) {
   );
 }
 
+function bootContextBlock(root) {
+  const boot = resolveBootContext({ cwd: root });
+  const lines = [
+    "<NOGRA_BOOT_CONTEXT>",
+    boot.message,
+    "",
+    `status=${boot.status}`,
+    `workspaceId=${boot.workspaceId || ""}`,
+    `workspaceRoot=${boot.workspaceRoot || ""}`,
+    "writes=[]",
+    "autoLoaded=false",
+    "</NOGRA_BOOT_CONTEXT>"
+  ];
+  return `<!-- nogra-plugin:boot-context status=${boot.status} -->\n${lines.join("\n")}`;
+}
+
 const input = parseInput(readStdin());
 const root = projectRoot(input);
 const config = readConfig(root);
@@ -241,5 +258,7 @@ Current installed Nogra plugin: ${plugin.id} ref=${plugin.ref}. When the user as
 
 runtimePolicy is a user-facing Nogra preference. Default/custom is the Nogra-level state. Concrete executor/verifier model and effort belong in config only when profile=custom, and should be included in dispatch handoffs and run-agent instructions when the client/runtime can honor them. Claude Code's native /model, /effort and subagent UI remain the source of truth for the actual running model/effort shown by Claude Code.
 
-Hooks are soft timing guardrails only. They read local .nogra/config.json and do not write files, dispatch, verify, spawn agents, run extension plugins, or draft briefs. Nogra actions use the local runtime and local .nogra/ records. If Nogra is offered, stop and wait for the user to choose brief flow or direct work.
-</NOGRA_ROUTING_POLICY>`);
+Hooks are soft timing guardrails only. They read local .nogra/config.json and may write only bounded local routing telemetry under .nogra/runtime/last-routing-score.json. They do not write config, dispatch, verify, spawn agents, run extension plugins, or draft briefs. Nogra actions use the local runtime and local .nogra/ records. If Nogra is offered, stop and wait for the user to choose brief flow or direct work.
+</NOGRA_ROUTING_POLICY>
+
+${bootContextBlock(root)}`);

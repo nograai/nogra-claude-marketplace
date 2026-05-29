@@ -26,6 +26,7 @@ function usage() {
     "  node scripts/nogra-local.mjs registry [--root <dir>] [--json]",
     "  node scripts/nogra-local.mjs init-bundle [--root <dir>] [--workspace-name <name>] [--json]",
     "  node scripts/nogra-local.mjs init --apply [--root <dir>] [--workspace-name <name>] [--json]",
+    "  node scripts/nogra-local.mjs create-project <name> [--root <hub-dir>] [--workspace-id <id>] [--project-path <relative-dir>] [--apply] [--json]",
     "  node scripts/nogra-local.mjs brief-contract [--root <dir>] [--json]",
     "  node scripts/nogra-local.mjs brief-validate [--root <dir>] [--input <file>] [--json]",
     "  node scripts/nogra-local.mjs brief-save [--root <dir>] [--input <file>] [--source <label>] [--json]",
@@ -180,6 +181,18 @@ function resolveWorkspacePath(root, relative) {
     throw new Error(`path escapes workspace: ${relative}`);
   }
   return { normalized, target };
+}
+
+function safeProjectRelativePath(value) {
+  const normalized = safeRelativePath(value);
+  const parts = normalized.split("/");
+  if (parts[0] !== "projects" || parts.length < 2) {
+    throw new Error("project path must be under projects/<workspaceId>");
+  }
+  if (parts.some((part) => part.startsWith("."))) {
+    throw new Error("project path cannot contain hidden path segments");
+  }
+  return normalized;
 }
 
 function nograDir(root) {
@@ -734,6 +747,7 @@ function initBundlePayload(root, workspaceName = "") {
   const context = {
     workspaceName: cleanName,
     workspaceId: slugify(cleanName, "local").toLowerCase(),
+    workspacePath: root,
     generatedAt,
     version: INIT_BUNDLE_VERSION,
     releaseVersion: RELEASE_VERSION,
@@ -856,6 +870,228 @@ function applyInit(root, workspaceName, options = {}) {
       workspaceName: bundle.workspaceName,
       connectionMode: bundle.connectionMode
     }
+  };
+}
+
+const NOGRA_DOMAIN_DIRS = [
+  "state",
+  "briefs",
+  "runs",
+  "evidence",
+  "receipts",
+  "reports",
+  "checkpoints",
+  "index",
+  "memory/local",
+  "memory/sync",
+  "memory/runtime",
+  "transport"
+];
+
+function workspaceIndexEntry(values) {
+  return {
+    schema: "nogra.workspace.index.entry.v1",
+    workspaceId: values.workspaceId,
+    workspaceName: values.workspaceName,
+    path: values.workspacePath,
+    stateRoot: ".nogra/state",
+    memoryIndex: ".nogra/memory/local/MEMORY.md",
+    lastSeenAt: values.generatedAt,
+    lastCheckpointSummary: values.lastCheckpointSummary || "Nogra project created locally; no project work recorded yet.",
+    source: values.source || "nogra-create"
+  };
+}
+
+function upsertWorkspaceIndex(indexPath, entry) {
+  ensureDir(path.dirname(indexPath));
+  const lines = fs.existsSync(indexPath)
+    ? readText(indexPath).split(/\r?\n/u).filter(Boolean)
+    : [];
+  const kept = lines.filter((line) => {
+    try {
+      return JSON.parse(line)?.workspaceId !== entry.workspaceId;
+    } catch {
+      return true;
+    }
+  });
+  kept.push(JSON.stringify(entry));
+  const next = `${kept.join("\n")}\n`;
+  const action = fs.existsSync(indexPath) && readText(indexPath) === next ? "preserved" : "updated";
+  writeTextAtomic(indexPath, next);
+  return action;
+}
+
+function ensureNograDomainDirs(root) {
+  for (const rel of NOGRA_DOMAIN_DIRS) {
+    ensureDir(path.join(nograDir(root), rel));
+  }
+}
+
+function defaultManagerHubBootPolicy(existing = {}) {
+  const managerHub = existing.managerHub && typeof existing.managerHub === "object"
+    ? { ...existing.managerHub }
+    : {};
+  if (managerHub.includeSelf == null) managerHub.includeSelf = false;
+  if (!Array.isArray(managerHub.excludeWorkspaceIds)) managerHub.excludeWorkspaceIds = ["customer-template"];
+  if (managerHub.maxProjects == null) managerHub.maxProjects = 8;
+  managerHub.enabled = true;
+
+  return {
+    ...existing,
+    schema: existing.schema || "nogra.boot_policy.v1",
+    mode: "manager-hub",
+    cwdResolution: existing.cwdResolution || "nearest-nogra-then-workspace-index",
+    autoLoad: false,
+    writeOnSessionStart: false,
+    askOnAmbiguousProject: existing.askOnAmbiguousProject === false ? false : true,
+    maxHintBytes: existing.maxHintBytes || 1200,
+    maxRecentProjects: existing.maxRecentProjects || 5,
+    managerHub,
+    hintSources: Array.isArray(existing.hintSources)
+      ? existing.hintSources
+      : [
+          ".nogra/index/workspaces.jsonl",
+          ".nogra/state/SESSION-CHECKPOINT.md",
+          ".nogra/memory/local/MEMORY.md"
+        ],
+    never: Array.isArray(existing.never)
+      ? existing.never
+      : [
+          "load-full-memory-on-session-start",
+          "write-ledger-without-user-intent",
+          "dispatch-without-explicit-go",
+          "treat-memory-as-project-truth"
+        ]
+  };
+}
+
+function ensureManagerHubConfig(root) {
+  const file = configPath(root);
+  const config = readWorkspaceConfig(root);
+  if (!config) {
+    throw new Error("missing .nogra/config.json; run /nogra:setup before /nogra:create");
+  }
+  if (config.__invalid) {
+    throw new Error(`invalid .nogra/config.json: ${config.error}`);
+  }
+
+  const next = mergeConfig(config, {
+    paths: {
+      hiddenRoot: ".nogra",
+      stateRoot: ".nogra/state",
+      currentCheckpoint: ".nogra/state/SESSION-CHECKPOINT.md",
+      currentTasks: ".nogra/state/CURRENT-TASKS.md",
+      decisions: ".nogra/state/DECISIONS.md",
+      projectStructure: ".nogra/state/PROJECT-STRUCTURE.md",
+      workspaceIndex: ".nogra/index/workspaces.jsonl",
+      memoryIndex: ".nogra/memory/local/MEMORY.md"
+    }
+  });
+  next.bootPolicy = defaultManagerHubBootPolicy(
+    next.bootPolicy && typeof next.bootPolicy === "object" ? next.bootPolicy : {}
+  );
+
+  const before = JSON.stringify(config, null, 2);
+  const after = JSON.stringify(next, null, 2);
+  if (before === after) return "preserved";
+  writeJsonAtomic(file, next);
+  return "updated";
+}
+
+function projectCreatePlan(root, options = {}) {
+  const workspaceName = cleanInline(options.name);
+  if (!workspaceName) {
+    throw new Error("project name is required");
+  }
+  const workspaceId = slugify(options.workspaceId || workspaceName, "project").toLowerCase();
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,70}[a-z0-9])?$/.test(workspaceId)) {
+    throw new Error(`project name produced an invalid workspaceId: ${workspaceId}`);
+  }
+
+  const projectRel = options.projectPath
+    ? safeProjectRelativePath(options.projectPath)
+    : safeProjectRelativePath(`projects/${workspaceId}`);
+  const { normalized, target } = resolveWorkspacePath(root, projectRel);
+  const generatedAt = options.generatedAt || now();
+  const bundle = initBundlePayload(target, workspaceName);
+  const projectExists = fs.existsSync(target);
+  const projectNonEmpty = projectExists && fs.readdirSync(target).length > 0;
+  const hubConfig = readWorkspaceConfig(root);
+  const blockers = [];
+  if (!hubConfig) blockers.push("missing .nogra/config.json; run /nogra:setup before /nogra:create");
+  if (hubConfig?.__invalid) blockers.push(`invalid .nogra/config.json: ${hubConfig.error}`);
+  if (projectNonEmpty) blockers.push(`project destination is not empty: ${target}`);
+
+  return {
+    schema: "nogra.local.create_project_plan.v1",
+    generatedAt,
+    status: blockers.length ? "blocked" : "ready",
+    hostedMcpUsed: false,
+    root,
+    project: {
+      workspaceName,
+      workspaceId,
+      relativePath: normalized,
+      path: target
+    },
+    hub: {
+      configPath: localPath(root, configPath(root)),
+      indexPath: ".nogra/index/workspaces.jsonl",
+      willSetManagerHubMode: true
+    },
+    files: bundle.files.map((file) => ({
+      path: path.posix.join(normalized.replaceAll(path.sep, "/"), file.path),
+      writePolicy: file.writePolicy,
+      purpose: file.purpose
+    })),
+    blockers,
+    next: blockers.length
+      ? ["Resolve blockers, then rerun /nogra:create."]
+      : ["Review this plan, then rerun with --apply after explicit GO."]
+  };
+}
+
+function createProject(root, options = {}) {
+  const plan = projectCreatePlan(root, options);
+  if (!options.apply) return plan;
+  if (plan.blockers.length) {
+    throw new Error(plan.blockers.join("; "));
+  }
+
+  const projectRoot = plan.project.path;
+  ensureDir(projectRoot);
+  ensureNograDomainDirs(root);
+
+  const initResult = applyInit(projectRoot, plan.project.workspaceName);
+  const entry = workspaceIndexEntry({
+    workspaceName: plan.project.workspaceName,
+    workspaceId: plan.project.workspaceId,
+    workspacePath: projectRoot,
+    generatedAt: plan.generatedAt,
+    lastCheckpointSummary: `${plan.project.workspaceName} was created under ${plan.project.relativePath} with project-local .nogra state.`,
+    source: "nogra-create"
+  });
+  const hubConfigAction = ensureManagerHubConfig(root);
+  const hubIndexAction = upsertWorkspaceIndex(path.join(nograDir(root), "index", "workspaces.jsonl"), entry);
+  const projectIndexAction = upsertWorkspaceIndex(path.join(nograDir(projectRoot), "index", "workspaces.jsonl"), entry);
+
+  return {
+    schema: "nogra.local.create_project_result.v1",
+    generatedAt: plan.generatedAt,
+    status: "ok",
+    hostedMcpUsed: false,
+    root,
+    project: plan.project,
+    actions: {
+      projectInit: initResult.counts,
+      hubConfig: hubConfigAction,
+      hubIndex: hubIndexAction,
+      projectIndex: projectIndexAction
+    },
+    next: [
+      `Start Claude in the hub and say ${plan.project.workspaceName} to focus this project.`,
+      "Use /nogra:adapt inside the project when there is existing code to map."
+    ]
   };
 }
 
@@ -1723,6 +1959,13 @@ function main() {
     } else {
       payload = applyInit(root, options["workspace-name"] || "", { migrateLocal: Boolean(options["migrate-local"]) });
     }
+  } else if (command === "create-project" || command === "create") {
+    payload = createProject(root, {
+      name: options.name || options._[1] || "",
+      workspaceId: options["workspace-id"] || options.workspaceId || "",
+      projectPath: options["project-path"] || options.projectPath || "",
+      apply: Boolean(options.apply)
+    });
   } else if (command === "brief-contract") {
     payload = briefContract(root);
   } else if (command === "brief-validate") {

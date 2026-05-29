@@ -92,6 +92,8 @@ function resolveManagerRoot() {
 function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-local-runtime-smoke-"));
   const managerRoot = resolveManagerRoot();
+  const currentPlugin = JSON.parse(fs.readFileSync(path.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8"));
+  const currentPluginName = currentPlugin.name || "nogra";
   const executorFrontmatter = agentFrontmatter("executor.md");
   const verifierFrontmatter = agentFrontmatter("verifier.md");
   const expectedExecutorRuntime = "anthropic:sonnet";
@@ -111,19 +113,36 @@ function main() {
   assert(init.hostedMcpUsed === false, "init should remain local");
   assert(fs.existsSync(path.join(temp, ".nogra", "config.json")), "init should create .nogra/config.json");
   assert(fs.existsSync(path.join(temp, "CLAUDE.md")), "init should create root CLAUDE.md when missing");
+  for (const expectedPath of [
+    ".nogra/.gitignore",
+    ".nogra/README.md",
+    ".nogra/state/SESSION-CHECKPOINT.md",
+    ".nogra/state/CURRENT-TASKS.md",
+    ".nogra/state/DECISIONS.md",
+    ".nogra/state/PROJECT-STRUCTURE.md",
+    ".nogra/briefs/.gitkeep",
+    ".nogra/runs/.gitkeep",
+    ".nogra/evidence/.gitkeep",
+    ".nogra/receipts/.gitkeep",
+    ".nogra/reports/.gitkeep",
+    ".nogra/checkpoints/.gitkeep",
+    ".nogra/memory/local/MEMORY.md",
+    ".nogra/memory/sync/.gitkeep",
+    ".nogra/index/workspaces.jsonl",
+    ".nogra/transport/.gitkeep"
+  ]) {
+    assert(fs.existsSync(path.join(temp, expectedPath)), `init should create ${expectedPath}`);
+  }
   for (const legacyPath of [
     ".nogra/.gitignore",
     ".nogra/SESSION-CHECKPOINT.md",
     ".nogra/CURRENT-TASKS.md",
     ".nogra/DECISIONS.md",
     ".nogra/PROJECT-STRUCTURE.md",
-    ".nogra/briefs/.gitkeep",
     ".nogra/events/.gitkeep",
-    ".nogra/runs/.gitkeep",
-    ".nogra/receipts/.gitkeep",
-    ".nogra/transport/.gitkeep"
   ]) {
-    assert(!fs.existsSync(path.join(temp, legacyPath)), `init should not create ${legacyPath}`);
+    if (legacyPath === ".nogra/.gitignore") continue;
+    assert(!fs.existsSync(path.join(temp, legacyPath)), `init should not create legacy loose path ${legacyPath}`);
   }
   const freshConfig = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "config.json"), "utf8"));
   assert(freshConfig.connectionMode === "local", "fresh config should declare local mode");
@@ -157,21 +176,21 @@ function main() {
   }
 
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-plugin-diagnostics-smoke-"));
-  const fakeActiveRoot = path.join(fakeHome, ".claude", "plugins", "cache", "nogra-stable", "nogra", "0.2.3");
-  const fakeOtherRoot = path.join(fakeHome, ".claude", "plugins", "cache", "nogra-legacy-local", "nogra", "0.2.2");
+  const fakeActiveRoot = path.join(fakeHome, ".claude", "plugins", "cache", "nogra-stable", currentPluginName, "0.2.3");
+  const fakeOtherRoot = path.join(fakeHome, ".claude", "plugins", "cache", "nogra-legacy-local", currentPluginName, "0.2.2");
   writeJson(path.join(fakeActiveRoot, ".claude-plugin", "plugin.json"), {
-    name: "nogra",
+    name: currentPluginName,
     version: "0.2.3"
   });
   writeJson(path.join(fakeOtherRoot, ".claude-plugin", "plugin.json"), {
-    name: "nogra",
+    name: currentPluginName,
     version: "0.2.2"
   });
   writeJson(path.join(fakeHome, ".claude", "plugins", "marketplaces", "nogra-stable", ".claude-plugin", "marketplace.json"), {
     name: "nogra-stable",
     plugins: [
       {
-        name: "nogra",
+        name: currentPluginName,
         version: "0.2.2",
         description: "stale marketplace test fixture"
       }
@@ -182,7 +201,11 @@ function main() {
     CLAUDE_PLUGIN_ROOT: fakeActiveRoot
   }).plugin.diagnostics;
   const warningCodes = diagnostics.warnings.map((warning) => warning.code);
-  assert(warningCodes.includes("multiple-nogra-plugins-installed"), "status should warn on multiple installed Nogra plugin refs");
+  if (currentPluginName === "nogra") {
+    assert(warningCodes.includes("multiple-nogra-plugins-installed"), "status should warn on multiple installed Nogra plugin refs");
+  } else {
+    assert(!warningCodes.includes("multiple-nogra-plugins-installed"), "non-core local plugin names should not trigger core multi-install warning");
+  }
   assert(warningCodes.includes("marketplace-version-mismatch"), "status should warn on marketplace/plugin version mismatch");
   assert(diagnostics.warnings.every((warning) => warning.blocking === false), "plugin diagnostics warnings should be non-blocking");
 

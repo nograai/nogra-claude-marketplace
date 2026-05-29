@@ -46,17 +46,22 @@ not here.
 
 `.nogra/` is the local trust source.
 
-After setup, `.nogra/config.json` is the only required file. Project-specific
-state is created later when there is real project evidence to record.
+After setup, `.nogra/config.json` stays in the `.nogra` root. Workflow records
+live in domain folders:
 
-When present:
-
-- `.nogra/SESSION-CHECKPOINT.md`: where to resume.
-- `.nogra/CURRENT-TASKS.md`: active and parked work.
-- `.nogra/DECISIONS.md`: choices that should survive sessions.
-- `.nogra/PROJECT-STRUCTURE.md`: project-specific paths and boundaries.
+- `.nogra/state/SESSION-CHECKPOINT.md`: current resume point.
+- `.nogra/state/CURRENT-TASKS.md`: active and parked work.
+- `.nogra/state/DECISIONS.md`: choices that should survive sessions.
+- `.nogra/state/PROJECT-STRUCTURE.md`: project-specific paths and boundaries.
 - `.nogra/briefs/`: saved briefs.
-- `.nogra/transport/`: run receipts, reports, outputs, and events.
+- `.nogra/runs/`: run status records.
+- `.nogra/evidence/`: evidence files and references.
+- `.nogra/receipts/`: operation receipts.
+- `.nogra/reports/`: final reports and summaries.
+- `.nogra/checkpoints/`: dated checkpoint snapshots.
+- `.nogra/memory/local/`: free local continuity.
+- `.nogra/memory/sync/`: sync metadata only when enabled.
+- `.nogra/transport/`: run receipts, logs, outputs, reports, and events.
 
 Use `/nogra:adapt` after setup when the user wants Nogra to read an existing
 project and create project-specific state from that evidence. Brief, dispatch
@@ -70,11 +75,12 @@ Nogra state is local context for this folder. It guides judgment; it is not a
 filesystem jail.
 
 - Treat `.nogra/` records as authority for the current workspace by default.
-- If a request clearly belongs to another workspace, ask one plain location
-  question or suggest starting Claude there and running `/nogra:setup`.
-- If the user explicitly asks this workspace to plan or hand off work elsewhere,
-  keep that distinction visible in the brief instead of silently pretending the
-  other folder is governed by this `.nogra/` state.
+- If this folder is a Manager hub, real projects live under
+  `projects/<workspaceId>/` and each project owns its own `.nogra/` folder.
+- If the user names an indexed project from the hub, focus that project and read
+  its project-local state before making current-state claims.
+- If the user names a project that is not indexed, ask one plain location
+  question or suggest adding it under `projects/<workspaceId>/`.
 
 ## Lazy Boot
 
@@ -83,7 +89,7 @@ Do not call Nogra or load every state file at session start.
 Wait for intent:
 
 - If the user wants to continue Nogra work, read
-  `.nogra/SESSION-CHECKPOINT.md` and `.nogra/CURRENT-TASKS.md` when present.
+  `.nogra/state/SESSION-CHECKPOINT.md` and `.nogra/state/CURRENT-TASKS.md` when present.
   If they are absent, ask what to resume or inspect recent `.nogra/briefs/`
   and `.nogra/transport/` records when available.
 - If the user wants scoped work shaped before execution, use `/nogra:brief` or

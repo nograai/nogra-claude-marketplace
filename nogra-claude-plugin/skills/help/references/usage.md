@@ -33,6 +33,10 @@ For an existing project, use `/nogra:adapt` after setup. Adapt reads the
 workspace and writes Nogra project notes under `.nogra/`, leaving app files
 unchanged.
 
+For a workspace that should manage several projects, run `/nogra:setup` in the
+hub folder, then use `/nogra:create <name>` to create
+`projects/<workspaceId>/` with its own project-local `.nogra/`.
+
 ## Operating Model
 
 - The Nogra plugin provides skills, bundled contracts and a local runtime.
@@ -75,6 +79,8 @@ verification and subagents start from accepted user intent.
 ## Commands
 
 - `/nogra:setup`: enable the current folder for Nogra.
+- `/nogra:create <name>`: create a new project under
+  `projects/<workspaceId>/` from a Manager hub.
 - `/nogra:adapt`: teach Nogra an existing project by writing a local project
   map under `.nogra/` while app files stay unchanged.
 - `/nogra:brief`: write and lock scoped work into a Nogra brief.

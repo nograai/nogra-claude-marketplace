@@ -14,6 +14,118 @@
       "mimeType": "text/markdown",
       "writePolicy": "create_if_missing",
       "purpose": "Public-safe Nogra workspace orientation. Plugin mode creates this only when missing and never overwrites an existing project CLAUDE.md."
+    },
+    {
+      "source": "init-bundle/files/.nogra/.gitignore",
+      "path": ".nogra/.gitignore",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Keeps local runtime noise out of source control while preserving shareable Nogra records."
+    },
+    {
+      "source": "init-bundle/files/.nogra/README.md",
+      "path": ".nogra/README.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Explains the local Nogra state layout."
+    },
+    {
+      "source": "init-bundle/files/.nogra/state/SESSION-CHECKPOINT.md",
+      "path": ".nogra/state/SESSION-CHECKPOINT.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Current resume point for this workspace."
+    },
+    {
+      "source": "init-bundle/files/.nogra/state/CURRENT-TASKS.md",
+      "path": ".nogra/state/CURRENT-TASKS.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Current active and parked work."
+    },
+    {
+      "source": "init-bundle/files/.nogra/state/DECISIONS.md",
+      "path": ".nogra/state/DECISIONS.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Decisions that should survive sessions."
+    },
+    {
+      "source": "init-bundle/files/.nogra/state/PROJECT-STRUCTURE.md",
+      "path": ".nogra/state/PROJECT-STRUCTURE.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Workspace paths and state boundaries."
+    },
+    {
+      "source": "init-bundle/files/.nogra/memory/local/MEMORY.md",
+      "path": ".nogra/memory/local/MEMORY.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Local advisory memory index."
+    },
+    {
+      "source": "init-bundle/files/.nogra/index/workspaces.jsonl",
+      "path": ".nogra/index/workspaces.jsonl",
+      "mimeType": "application/x-jsonlines",
+      "writePolicy": "create_if_missing",
+      "purpose": "Workspace index used by boot and project focus."
+    },
+    {
+      "source": "init-bundle/files/.nogra/briefs/.gitkeep",
+      "path": ".nogra/briefs/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the briefs lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/runs/.gitkeep",
+      "path": ".nogra/runs/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the runs lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/evidence/.gitkeep",
+      "path": ".nogra/evidence/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the evidence lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/receipts/.gitkeep",
+      "path": ".nogra/receipts/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the receipts lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/reports/.gitkeep",
+      "path": ".nogra/reports/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the reports lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/checkpoints/.gitkeep",
+      "path": ".nogra/checkpoints/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the checkpoints lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/memory/sync/.gitkeep",
+      "path": ".nogra/memory/sync/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the sync metadata lane without enabling sync."
+    },
+    {
+      "source": "init-bundle/files/.nogra/transport/.gitkeep",
+      "path": ".nogra/transport/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the transport lane."
     }
   ],
   "optionalFeatures": []

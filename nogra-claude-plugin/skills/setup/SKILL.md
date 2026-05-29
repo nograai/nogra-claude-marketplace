@@ -6,8 +6,9 @@ description: Set this folder up for Nogra. Use when the user runs /nogra:setup, 
 # Nogra Setup
 
 Nogra enables the current folder as a workspace. The plugin provides the Nogra
-skills and local runtime; this setup flow creates only the minimal local config
-needed to recognize the current folder.
+skills and local runtime; this setup flow creates the local `.nogra/` domain
+structure needed for boot, project discovery, briefs, runs, evidence,
+checkpoints and local memory.
 
 Use this flow when the user runs `/nogra:setup` or asks to set up Nogra in this
 folder. If the user asks whether Nogra can be installed without overwriting
@@ -15,12 +16,12 @@ their files, use wording like:
 
 ```text
 Yes. We can go through exactly what Nogra will write before I change anything.
-Setup writes `.nogra/config.json` and preserves app files, `.claude/`,
-package files, git config, hooks, presets and templates. It may create a
-minimal root `CLAUDE.md` only when the workspace does not already have one, so
-Claude has a visible local Nogra orientation on future sessions.
-Project-specific state files are created later by `/nogra:adapt`, after Nogra
-has actually read this workspace.
+Setup writes `.nogra/config.json` plus the standard `.nogra/` domain folders
+and preserves app files, `.claude/`, package files, git config, hooks, presets
+and templates. It may create a minimal root `CLAUDE.md` only when the workspace
+does not already have one, so Claude has a visible local Nogra orientation on
+future sessions. Project-specific facts are refined later by `/nogra:adapt`,
+after Nogra has actually read this workspace.
 ```
 
 If the user just installed or updated the plugin inside an already-running
@@ -40,11 +41,11 @@ setup needs Node.js 18+; do not write partial files.
    boundary explicit. Use wording like:
 
    "I'll set up Nogra in this folder so you can write briefs, dispatch approved
-   work, and verify evidence before calling it done. This only adds the minimal
-   local config Nogra needs; your existing code stays untouched. Project-specific
-   notes are created later by `/nogra:adapt`, after Nogra has read this
-   workspace. Before I write anything, I'll show the file groups Nogra plans to
-   create or merge. Ready to proceed?"
+   work, and verify evidence before calling it done. This creates the local
+   `.nogra/` state structure; your existing code stays untouched.
+   Project-specific facts can be refined later by `/nogra:adapt`, and new hub
+   projects can be created with `/nogra:create`. Before I write anything, I'll
+   show the file groups Nogra plans to create or merge. Ready to proceed?"
 
    Adapt the tone to the conversation. Lead with what the user gains, not with
    what the system writes.
@@ -68,8 +69,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init-bundle --root "$PWD" -
 8. Before writing files, present a compact preview:
    - the folder being initialized;
    - the number of files to create, merge, preserve or skip;
-   - the fact that plugin-mode setup creates only `.nogra/config.json`, except
-     root `CLAUDE.md` when missing;
+   - the fact that plugin-mode setup creates `.nogra/config.json`, standard
+     `.nogra/` domain folders and state files, plus root `CLAUDE.md` when
+     missing;
    - any existing files that will be preserved or merged.
 9. For `.nogra/config.json`, use merge-preserve behavior:
    - If the file does not exist, create it from the returned content.
@@ -104,12 +106,15 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init --apply --root "$PWD" 
 14. Show final written, updated, preserved and failed counts plus the returned
     post-install message. Include that the default workflow used local `.nogra/`
     records.
-15. Offer `/nogra:adapt` as the next step for existing projects:
+15. Offer `/nogra:adapt` or `/nogra:create` as the next step:
 
 ```text
 Nogra is installed. If this is an existing project, I can run `/nogra:adapt`
 next to read the workspace and write Nogra's project map and resume notes into
 `.nogra/` without changing app files.
+
+If this folder should manage several projects, use `/nogra:create <name>` to
+create `projects/<workspaceId>/` with its own project-local `.nogra/`.
 ```
 
 ## Boundaries

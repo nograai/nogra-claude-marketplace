@@ -2,6 +2,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { resolveProjectFocus } from "../runtime/local/project-focus.mjs";
 
 function readStdin() {
   try {
@@ -81,9 +82,7 @@ const DEFAULT_DICTIONARY = {
   ambiguity: ["unclear", "risky", "hard to revert"],
   lowRiskEdit: ["readme", "one sentence", "single sentence", "hello nogra"],
   singleFileLowScope: ["single file", "one file"],
-  directOverride: ["direct", "skip brief", "skip nogra", "no nogra", "without nogra", "no ceremony", "just build"],
-  toggleOn: ["nogra on", "enable nogra", "turn on nogra", "use nogra here", "use nogra for this"],
-  toggleOff: ["nogra off", "disable nogra", "turn off nogra"]
+  directOverride: ["direct", "skip brief", "skip nogra", "no nogra", "without nogra", "no ceremony", "just build"]
 };
 
 function numericSetting(value, fallback) {
@@ -304,7 +303,7 @@ function judgmentFallback(prompt, { score, topicRelated, directOverride }, thres
     /\b(?:blog|bloggen|blogsiden|blogside|blogpost|blog post|post|article|artikel|side|siden|page|site|website|app|produkt|product|cms|frontend|ui|ux|route|component|komponent|dashboard|flow|schema|database|auth|metadata|meta felter|meta fields)\b/u.test(text);
 
   const workContext =
-    /\b(?:my|our|vores|min|mit|this|denne|det her|projekt|project|workspace|repo|boligscout|nogra)\b/u.test(text) ||
+    /\b(?:my|our|vores|min|mit|this|denne|det her|projekt|project|workspace|repo|nogra)\b/u.test(text) ||
     /^(?:please\s+)?(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|make|create|research|design)\b/u.test(text) ||
     /\b(?:kan du|gider du|could you|can you|jeg kunne godt tænke mig|jeg kunne godt taenke mig|jeg vil gerne|i want|i would like|i'd like)\b/u.test(text);
 
@@ -343,21 +342,17 @@ Offer first and wait if your judgment says it is product work. Brief drafting st
 </NOGRA_JUDGMENT_FALLBACK>`);
 }
 
-function toggleIntent(prompt, dictionary = DEFAULT_DICTIONARY) {
+function toggleIntent(prompt) {
   const text = prompt.toLowerCase();
   if (
     /(?:^|\n)\s*handle this nogra request:\s*off\b/u.test(text) ||
-    /(?:^|\n)\s*\/nogra[:\s-]?off\b/u.test(text) ||
-    has(/\b(nogra off|disable nogra|turn off nogra)\b/u, text) ||
-    dictionaryHas(dictionary, "toggleOff", text)
+    /(?:^|\n)\s*\/nogra[:\s-]?off\b/u.test(text)
   ) {
     return "off";
   }
   if (
     /(?:^|\n)\s*handle this nogra request:\s*on\b/u.test(text) ||
-    /(?:^|\n)\s*\/nogra[:\s-]?on\b/u.test(text) ||
-    has(/\b(nogra on|enable nogra|turn on nogra|use nogra(?: here| for this)?)\b/u, text) ||
-    dictionaryHas(dictionary, "toggleOn", text)
+    /(?:^|\n)\s*\/nogra[:\s-]?on\b/u.test(text)
   ) {
     return "on";
   }
@@ -430,11 +425,17 @@ if (isGeneratedWrapperPrompt(prompt)) {
   process.exit(0);
 }
 
+const focus = resolveProjectFocus({ cwd: root, prompt });
+if (focus.additionalContext) {
+  emitContext(focus.additionalContext);
+  process.exit(0);
+}
+
 const config = configInfo.config;
 const policy = config.routingPolicy || {};
 const dictionary = dictionaryPolicy(policy);
 
-const toggle = toggleIntent(prompt, dictionary);
+const toggle = toggleIntent(prompt);
 if (toggle) {
   emitContext(`<!-- nogra-plugin:routing-toggle intent=${toggle} -->
 <NOGRA_ROUTING_TOGGLE_REQUEST>

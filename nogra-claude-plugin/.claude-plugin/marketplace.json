@@ -1,6 +1,6 @@
 {
   "name": "nogra-claude",
-  "description": "Marketplace for Nogra Claude Code plugins.",
+  "description": "Public marketplace for the Nogra Claude Code plugin.",
   "owner": {
     "name": "Patrick Larsen",
     "email": "patrick@nogra.ai",
@@ -10,8 +10,7 @@
     {
       "name": "nogra",
       "displayName": "nogra",
-      "version": "0.4.3",
-      "source": "./",
+      "version": "0.4.6",
       "description": "An optional discipline layer for Claude Code: approve a short plan, run it, then verify the result against the plan.",
       "author": {
         "name": "Patrick Larsen",
@@ -26,10 +25,11 @@
         "claude-code",
         "agents",
         "discipline",
-        "verification",
         "brief-driven",
+        "verification",
         "agent-orchestration"
-      ]
+      ],
+      "source": "./"
     }
   ]
 }

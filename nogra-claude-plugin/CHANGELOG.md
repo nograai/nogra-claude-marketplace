@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## 0.4.6 - 2026-05-29
+
+- Added `/nogra:create` as a skill-backed local runtime flow for creating
+  `projects/<workspaceId>/` under a Manager hub with project-local `.nogra/`
+  state and hub-index registration.
+- Expanded `/nogra:setup` so the init bundle creates the standard `.nogra/`
+  domain structure instead of only writing config.
+
+## 0.4.5 - 2026-05-29
+
+- Added Manager hub boot context so a hub workspace can list indexed Nogra
+  projects instead of forcing the user to `cd` into each project.
+- Added read-only project focus from the hub: a prompt like "Client App" can
+  focus the indexed project and point Claude at that project's local
+  `.nogra/state/*` files without writing state, dispatching or loading full
+  history.
+- Shipped the shared local `boot-context` and `project-focus` runtime modules in
+  the public package so the behavior is available outside the internal lab.
+
+## 0.4.4 - 2026-05-29
+
+- Hardened `/nogra:on` and `/nogra:off` routing so hooks only treat slash
+  commands or the internal command wrapper as toggle intent.
+- Fixed the false-positive where ordinary text such as "Nogra on Reddit"
+  matched `nogra on` and surfaced a toggle request.
+- Kept hooks as soft guardrails: `UserPromptSubmit` may surface toggle context,
+  while the `on` and `off` skills remain the actors that write local config.
+
 ## 0.4.3 - 2026-05-28
 
 - Lowercased the `unverified` verification verdict across dispatch and verify
