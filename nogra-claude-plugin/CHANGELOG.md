@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.8 - 2026-05-29
+
+- Added a registered `/nogra:create <project-name>` slash command wrapper for
+  the Manager hub project-create flow.
+- Added package assertions so the create slash command cannot disappear while
+  the create skill remains documented.
+
 ## 0.4.7 - 2026-05-29
 
 - Removed release-positioning and tier-adjacent product language from public
