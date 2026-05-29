@@ -1,29 +1,13 @@
 
-# Nogra Plugin Surface
+# Nogra Claude Plugin
 
-Clean-room landing zone for the Nogra Claude Code plugin surface.
+Nogra gives Claude Code a brief-first workflow with explicit dispatch, evidence
+and verification discipline.
 
-Rule: Nogra is free. Sync is later.
-
-## Mapped From Current Plugin
-
-Source: previous private Nogra Claude plugin surface.
-
-Imported active surfaces:
-
-- `.claude-plugin/plugin.json`
-- `skills/*/SKILL.md`
-- `agents/*.md`
-- `contracts/schemas/*`
-- `contracts/templates/*`
-- `contracts/init-bundle/*`
-- `scripts/nogra-local.mjs`
-- `scripts/nogra-ledger.mjs`
-- `scripts/smoke-local-runtime.mjs`
-
-The current core plugin is skill-driven; it does not ship a core `commands/`
-folder. `/nogra:setup`, `/nogra:create`, `/nogra:adapt` and the other core
-flows are represented as skills backed by the local runtime.
+This package ships the Nogra skills, local runtime contracts, hooks and agents
+used by the Claude Code plugin. The plugin is skill-driven: `/nogra:setup`,
+`/nogra:create`, `/nogra:adapt` and the other Nogra flows are represented as
+skills backed by the local runtime.
 
 ## LLM Workspace Shape
 
@@ -56,6 +40,7 @@ Active hooks:
 - `hooks/session-start.mjs` - boot-context and Manager hub detector.
 - `hooks/user-prompt-submit.mjs` - project focus from Manager hub plus local
   routing-score telemetry.
+- `hooks/user-prompt-expansion.mjs` - initialized-workspace prompt expansion.
 - `hooks/pre-tool-use.mjs` - pending-routing guard. It may update the same
   local routing-score telemetry record.
 
@@ -63,12 +48,5 @@ Production hooks may write only bounded local routing telemetry under
 `.nogra/runtime/last-routing-score.json`. They do not write config, dispatch,
 verify, spawn agents or draft briefs.
 
-Parked source hooks:
-
-- `hooks/source-0.4.3/*`
-
-Do not activate the parked routing hooks until their behavior is reconciled with
-the boot-context, project-focus, and memory-index model.
-
-This folder should not become a gated skill catalog. Skills, commands, local
-contracts and local runtime support are part of the free local product.
+Skills, commands, local contracts and local runtime support are part of this
+package.

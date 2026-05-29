@@ -17,7 +17,7 @@ Generated: {{generatedAt}}
 - `.nogra/receipts/` - operation receipts.
 - `.nogra/reports/` - final reports.
 - `.nogra/checkpoints/` - dated checkpoint snapshots.
-- `.nogra/memory/local/` - free local continuity.
+- `.nogra/memory/local/` - local continuity notes.
 - `.nogra/memory/sync/` - sync metadata only when sync is enabled.
 - `.nogra/transport/` - dispatch artifacts.
 
@@ -32,4 +32,3 @@ projects/
 ```
 
 Hub `.nogra/` owns project discovery. Project `.nogra/` owns project state.
-

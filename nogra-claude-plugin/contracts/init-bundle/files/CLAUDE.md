@@ -59,7 +59,7 @@ live in domain folders:
 - `.nogra/receipts/`: operation receipts.
 - `.nogra/reports/`: final reports and summaries.
 - `.nogra/checkpoints/`: dated checkpoint snapshots.
-- `.nogra/memory/local/`: free local continuity.
+- `.nogra/memory/local/`: local continuity notes.
 - `.nogra/memory/sync/`: sync metadata only when enabled.
 - `.nogra/transport/`: run receipts, logs, outputs, reports, and events.
 

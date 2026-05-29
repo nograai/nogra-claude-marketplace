@@ -12,9 +12,6 @@ live in domain folders:
 - `receipts/` - operation receipts.
 - `reports/` - final reports.
 - `checkpoints/` - dated checkpoint snapshots.
-- `memory/local/` - free local continuity.
+- `memory/local/` - local continuity notes.
 - `memory/sync/` - sync metadata only when sync is enabled.
 - `transport/` - dispatch artifacts.
-
-Nogra is free. Sync is later.
-

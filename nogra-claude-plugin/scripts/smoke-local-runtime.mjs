@@ -204,7 +204,7 @@ function main() {
   if (currentPluginName === "nogra") {
     assert(warningCodes.includes("multiple-nogra-plugins-installed"), "status should warn on multiple installed Nogra plugin refs");
   } else {
-    assert(!warningCodes.includes("multiple-nogra-plugins-installed"), "non-core local plugin names should not trigger core multi-install warning");
+    assert(!warningCodes.includes("multiple-nogra-plugins-installed"), "non-main local plugin names should not trigger main multi-install warning");
   }
   assert(warningCodes.includes("marketplace-version-mismatch"), "status should warn on marketplace/plugin version mismatch");
   assert(diagnostics.warnings.every((warning) => warning.blocking === false), "plugin diagnostics warnings should be non-blocking");

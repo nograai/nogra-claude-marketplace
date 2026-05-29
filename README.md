@@ -2,7 +2,8 @@
 
 Claude Code marketplace for Nogra.
 
-Nogra is free. Sync is later.
+Nogra gives Claude Code a brief-first workflow with explicit dispatch, evidence
+and verification discipline.
 
 ## Install
 

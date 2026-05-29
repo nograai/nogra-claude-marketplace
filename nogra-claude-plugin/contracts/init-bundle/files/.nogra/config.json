@@ -83,36 +83,6 @@
     "memorySummaries": ".nogra/memory/local/summaries",
     "runtimeMetadata": ".nogra/memory/runtime"
   },
-  "productBoundary": {
-    "local": {
-      "price": "free",
-      "includes": [
-        "setup",
-        "commands",
-        "skills",
-        "local-ledger",
-        "briefs",
-        "runs",
-        "evidence",
-        "checkpoints",
-        "restore",
-        "verification"
-      ]
-    },
-    "sync": {
-      "status": "later",
-      "price": "not-priced",
-      "includes": [
-        "backup",
-        "cross-device-continuity",
-        "team-continuity",
-        "hosted-search",
-        "audit-export",
-        "retention-controls"
-      ]
-    },
-    "rule": "Nogra is free. Sync is later."
-  },
   "bootPolicy": {
     "schema": "nogra.boot_policy.v1",
     "mode": "detect",

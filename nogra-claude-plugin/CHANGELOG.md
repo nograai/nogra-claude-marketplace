@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.7 - 2026-05-29
+
+- Removed release-positioning and tier-adjacent product language from public
+  README copy and setup-seeded workspace files.
+- Removed internal migration diary copy from the shipped plugin README.
+- Added a product-language package gate with known-bad and known-good fixtures
+  covering README copy and init-bundle files stamped into user workspaces.
+
 ## 0.4.6 - 2026-05-29
 
 - Added `/nogra:create` as a skill-backed local runtime flow for creating
@@ -238,7 +246,7 @@
   concrete live model/effort display remains Claude Code's own surface truth.
 - Cleaned local plugin role, skill and init surfaces so runtime details live in
   runtime policy and dispatch metadata instead of generated brief prose.
-- Reduced bundled brief-writing guidance to six core rules and tightened stop
+- Reduced bundled brief-writing guidance to six main rules and tightened stop
   criteria around pre-flight checks and non-zero exit handling.
 
 ## 0.2.4 - 2026-05-22
