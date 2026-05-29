@@ -10,7 +10,7 @@
     {
       "name": "nogra",
       "displayName": "nogra",
-      "version": "0.4.8",
+      "version": "0.4.9",
       "description": "An optional discipline layer for Claude Code: approve a short plan, run it, then verify the result against the plan.",
       "author": {
         "name": "Patrick Larsen",

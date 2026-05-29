@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.9 - 2026-05-29
+
+- Removed the 0.4.8 `/nogra:create` command wrapper so the Nogra surface stays
+  skill-based and `create` does not appear twice in Claude Code inventory.
+- Updated package assertions to guard against duplicating Nogra skills as
+  separate command wrappers.
+
 ## 0.4.8 - 2026-05-29
 
 - Added a registered `/nogra:create <project-name>` slash command wrapper for
