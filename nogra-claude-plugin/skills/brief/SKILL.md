@@ -8,14 +8,14 @@ description: Shape scoped, risky, or ambiguous work into a validated Nogra brief
 Use this skill to turn an accepted Nogra intent into a brief. The brief is the
 agreement that execution and verification will later be checked against.
 
-Nogra invites; it does not enforce. Offer this flow when work has scope, stakes,
-ambiguity or verification risk. If the user chooses direct work, respect that
-choice.
+Nogra invites; it does not enforce. Offer this flow when the user asks for
+Nogra or when the pre-tool executable-boundary tripwire fires. If the user
+chooses direct work, respect that choice.
 
 Nogra calls are authority gates, not ambient polling. This skill may call Nogra
 only after the user accepts the brief flow or explicitly asks for `/nogra:brief`.
-If the user has not accepted the brief flow, stop and use the local Nogra offer
-gate instead.
+If the user has not accepted the brief flow, stop and make the direct/Nogra
+choice visible only when a tripwire boundary is present.
 
 ## Entry Condition
 
@@ -42,19 +42,21 @@ Nogra runtime call. Use the current hook context plus
 `skills/help/references/routing.md` as the routing authority; do not duplicate
 score tables or create a second threshold system in this skill.
 
-For topic-related workspace work with enough scope, risk, ambiguity or
-verification need, make the brief/direct offer and stop. For pure chat, Q&A,
-explicit direct/simple work or low-risk edits, stay direct.
+For ordinary topic-related workspace work, stay direct unless the user asks for
+Nogra or accepts a tripwire offer. For executable irreversible boundaries, make
+the brief/direct offer and stop. For pure chat, Q&A, explicit direct/simple work
+or low-risk edits, stay direct.
 
-The score never authorizes a Nogra runtime call, dispatch, verification, or
-subagent. It
-only decides whether to make the local offer.
+Legacy heat never authorizes a Nogra runtime call, dispatch, verification, or
+subagent. It is advisory telemetry only.
 
-Use the existing score and its signals as the canonical sensitivity source. Do
-not create a second score, tier table, threshold table or automatic
-high/medium/low routing rule. Surface the sensitivity, signals, task character
-and any runtime-policy mismatch as advisory facts; the Manager phase chooses
-evidence depth, routing and verification confidence.
+Use executable tripwire boundaries as the only proactive routing source:
+production deploy commands, data migration/loss commands, auth/security/secret
+writes, payments/billing commands, destructive bulk commands, or external
+customer-impacting send commands. Do not create a second score, tier table,
+threshold table or automatic high/medium/low routing rule. Surface legacy heat,
+task character and any runtime-policy mismatch as facts only; accepted user
+intent starts the brief flow.
 
 ## Trigger
 
@@ -115,8 +117,9 @@ call dispatch from this skill. A brief is not GO.
 
 1. If the user did not explicitly request Nogra, apply the Routing Gate before
    any Nogra runtime call.
-   - If the score is below threshold, work directly.
-   - If the score reaches threshold, show the offer and stop.
+   - If the task is ordinary work, pure chat, Q&A or low-risk direct work, work
+     directly.
+   - If an executable-boundary tripwire fired, show the offer and stop.
    - Continue only after the user accepts the brief flow.
 2. Confirm the user's intended outcome in plain language.
 3. Apply workspace root discipline before calling the runtime. If the target

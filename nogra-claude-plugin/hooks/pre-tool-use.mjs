@@ -136,6 +136,15 @@ const DEFAULT_DICTIONARY = {
   toggleOff: []
 };
 
+const IRREVERSIBLE_BOUNDARY_ANCHORS = [
+  "production deploy",
+  "data migration or data loss",
+  "auth/security/secrets",
+  "payments/billing",
+  "destructive bulk change",
+  "external customer-impacting send"
+];
+
 function numericSetting(value, fallback) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -294,43 +303,126 @@ function semanticText(prompt) {
     .trim();
 }
 
-function judgmentFallback(prompt, { score, topicRelated, directOverride }, threshold) {
-  const text = semanticText(prompt);
-  if (score >= threshold) {
-    return { active: false, reasons: [] };
+function sensitivityPosture(sensitivityPercent = DEFAULT_SENSITIVITY_PERCENT) {
+  if (sensitivityPercent <= 35) return "conservative";
+  if (sensitivityPercent >= 70) return "eager";
+  return "balanced";
+}
+
+function shellTokenText(token) {
+  return String(token || "")
+    .trim()
+    .replace(/^['"`]|['"`]$/gu, "")
+    .replace(/\\ /gu, " ");
+}
+
+function isDangerousRecursiveRemoveTarget(rawTarget) {
+  let target = shellTokenText(rawTarget);
+
+  if (!target) return false;
+  if (/^\//u.test(target)) return true;
+
+  target = target.replace(/\/+$/u, "");
+  if (!target) return false;
+
+  if (/[*?[\]]/u.test(target)) return true;
+  if (/^(?:~(?:\/|$)|\$|\$\{)/u.test(target)) return true;
+  if (/^\.\.?$/u.test(target) || /(?:^|\/)\.\.(?:\/|$)/u.test(target)) return true;
+
+  target = target.replace(/^(?:\.\/)+/u, "");
+  const segments = target.split("/").filter(Boolean);
+  return segments.some((segment) => {
+    if (/^\.env(?:\.|$)/u.test(segment)) return true;
+    return [".git", ".ssh"].includes(segment);
+  });
+}
+
+function hasUnsafeRecursiveRemove(text) {
+  for (const segment of text.split(/\n|&&|\|\||;/u)) {
+    const match = /\brm\b([\s\S]*)/u.exec(segment);
+    if (!match) continue;
+
+    const tokens = match[1].trim().split(/\s+/u).filter(Boolean);
+    let recursive = false;
+    let force = false;
+    const targets = [];
+    let passthrough = false;
+
+    for (const token of tokens) {
+      const value = shellTokenText(token);
+      if (!value) continue;
+      if (!passthrough && value === "--") {
+        passthrough = true;
+        continue;
+      }
+      if (!passthrough && /^-[a-z]+$/u.test(value)) {
+        recursive ||= value.includes("r");
+        force ||= value.includes("f");
+        continue;
+      }
+      if (!passthrough && /^--[a-z0-9-]+$/u.test(value)) continue;
+      targets.push(value);
+    }
+
+    if (recursive && force && targets.some((target) => isDangerousRecursiveRemoveTarget(target))) {
+      return true;
+    }
   }
+  return false;
+}
 
-  const genericScoreQuestion =
-    /\b(score|scorer|scoring|procent|percent|threshold|tærskel|taerskel)\b/u.test(text) &&
-    !/\b(build|byg|bygger|rebuild|re-build|redesign|re-design|re-designe|redesigne|design|research|researcher|change|ændr|aendr)\b/u.test(text);
-
-  if (genericScoreQuestion) {
-    return { active: false, reasons: [] };
-  }
-
-  const actionLanguage =
-    /^(?:please\s+)?(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|make|create|research|design)\b/u.test(text) ||
-    /\b(?:we|vi)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|re-designe|redesigne|rework|redo|change|fix|byg|bygger|bygge|laver|lav|ændr|ændrer|aendr|aendrer|redesign|redesigner|ombyg|ombygger)\b/u.test(text) ||
-    /\b(?:jeg kunne godt tænke mig|jeg kunne godt taenke mig|jeg vil gerne|i want|i would like|i'd like)\b.{0,120}\b(?:research|researcher|undersøg|undersog|undersøge|undersoege|redesign|re-design|re-designe|redesigne|design|byg|bygge|change|fix|lav|lave)\b/u.test(text) ||
-    /\b(?:kan du|gider du|could you|can you)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|re-designe|redesigne|research|researcher|undersøg|undersog|design|change|fix|byg|bygge|lav|lave|ret|rette)\b/u.test(text);
-
-  const productSurface =
-    /\b(?:blog|bloggen|blogsiden|blogside|blogpost|blog post|post|article|artikel|side|siden|page|site|website|app|produkt|product|cms|frontend|ui|ux|route|component|komponent|dashboard|flow|schema|database|auth|metadata|meta felter|meta fields)\b/u.test(text);
-
-  const workContext =
-    /\b(?:my|our|vores|min|mit|this|denne|det her|projekt|project|workspace|repo|nogra)\b/u.test(text) ||
-    /^(?:please\s+)?(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|make|create|research|design)\b/u.test(text) ||
-    /\b(?:kan du|gider du|could you|can you|jeg kunne godt tænke mig|jeg kunne godt taenke mig|jeg vil gerne|i want|i would like|i'd like)\b/u.test(text);
-
+function executableBoundaryTripwire(inputText) {
+  const text = semanticText(inputText);
   const reasons = [];
-  if (actionLanguage) reasons.push("semantic build/change/design language");
-  if (productSurface) reasons.push("product-surface object");
-  if (workContext) reasons.push("workspace/product work context");
 
-  return {
-    active: (score < threshold || !topicRelated) && actionLanguage && productSurface && workContext,
-    reasons
-  };
+  if (!text) {
+    return { active: false, reasons: [] };
+  }
+
+  if (
+    /\bvercel\b[^\n]*\s--prod(?:uction)?\b/u.test(text) ||
+    /\bwrangler\s+(?:pages\s+)?deploy\b/u.test(text) ||
+    /\bnetlify\s+deploy\b[^\n]*\s--prod(?:uction)?\b/u.test(text) ||
+    /\bfirebase\s+deploy\b/u.test(text) ||
+    /\bfly\s+deploy\b/u.test(text) ||
+    /\brailway\s+up\b/u.test(text) ||
+    /\bgh\s+release\s+create\b/u.test(text) ||
+    /\bgit\s+push\b[^\n]*(?:--force|-f)\b/u.test(text)
+  ) {
+    reasons.push("production deploy or externally visible release");
+  }
+
+  if (
+    /\b(?:npx\s+)?prisma\s+migrate\s+(?:deploy|reset|resolve)\b/u.test(text) ||
+    /\b(?:npx\s+)?prisma\s+db\s+push\b/u.test(text) ||
+    /\b(?:npx\s+)?drizzle-kit\s+(?:push|migrate)\b/u.test(text) ||
+    /\bsupabase\s+db\s+(?:push|reset|migration\s+up|remote\s+commit)\b/u.test(text) ||
+    /\bknex\s+migrate:(?:latest|up|rollback)\b/u.test(text) ||
+    /\bsequelize\s+db:migrate\b/u.test(text) ||
+    /\b(?:psql|mysql|sqlite3)\b[\s\S]{0,600}\b(?:drop\s+(?:table|database|schema)|truncate(?:\s+table)?|delete\s+from)\b/u.test(text) ||
+    /\b(?:drop\s+(?:table|database|schema)|truncate(?:\s+table)?|delete\s+from)\b/u.test(text) ||
+    hasUnsafeRecursiveRemove(text) ||
+    /\bsupabase\s+db\s+reset\b/u.test(text)
+  ) {
+    reasons.push("data migration or data-loss command");
+  }
+
+  if (
+    /(?:^|\s|\/)\.env(?:\.[a-z0-9_-]+)?(?:\s|$)/u.test(text) ||
+    /\b(?:vercel\s+env\s+(?:add|rm|pull)|wrangler\s+secret\s+put|fly\s+secrets\s+set|railway\s+variables\s+set|supabase\s+secrets\s+set|doppler\s+secrets\s+set|aws\s+secretsmanager\s+put-secret-value)\b/u.test(text)
+  ) {
+    reasons.push("secrets or environment boundary");
+  }
+
+  if (/\bstripe\s+(?:products?|prices?|payment_links?|checkout|billing_portal|subscriptions?|webhook_endpoints?)\s+(?:create|update|delete)\b/u.test(text)) {
+    reasons.push("payment or billing command");
+  }
+
+  if (/\b(?:sendgrid|mailchimp|resend)\b[^\n]*\b(?:send|broadcast|campaign|emails?)\b/u.test(text)) {
+    reasons.push("external customer-impacting send");
+  }
+
+  return { active: reasons.length > 0, reasons };
 }
 
 function isExplicitNograPrompt(prompt) {
@@ -425,24 +517,35 @@ function isNograTool(input) {
   return JSON.stringify(input.tool_input || {}).toLowerCase().includes("nogra:");
 }
 
-function skillName(input) {
-  if (input.tool_name !== "Skill") return "";
+function toolBoundaryText(input) {
   const toolInput = input.tool_input && typeof input.tool_input === "object" ? input.tool_input : {};
-  const candidate =
-    nonEmptyString(toolInput.skill) ||
-    nonEmptyString(toolInput.commandName) ||
-    nonEmptyString(toolInput.name);
-  return candidate.trim();
-}
+  const parts = [nonEmptyString(input.tool_name)];
+  const pathValue = nonEmptyString(toolInput.file_path) || nonEmptyString(toolInput.path);
 
-function blockedPlanningSkillName(input) {
-  const name = skillName(input).toLowerCase();
-  if (!name || name.includes("nogra:")) return "";
-  if (name.startsWith("superpowers:")) return name;
-  if (/^(?:brainstorming|writing-plans|executing-plans|using-git-worktrees|subagent-driven-development|test-driven-development|requesting-code-review|verification-before-completion|finishing-a-development-branch)\b/u.test(name)) {
-    return name;
+  for (const key of ["command", "file_path", "path"]) {
+    const value = nonEmptyString(toolInput[key]);
+    if (value) parts.push(value);
   }
-  return "";
+
+  const includeWritePayload = /(?:^|\/)(?:migrations?|prisma|drizzle|sql)\b|\.sql$|(?:^|\s|\/)\.env(?:\.[a-z0-9_-]+)?$/iu.test(pathValue);
+  if (includeWritePayload) {
+    parts.push(nonEmptyString(toolInput.content));
+    parts.push(nonEmptyString(toolInput.new_string));
+  }
+
+  if (includeWritePayload && Array.isArray(toolInput.edits)) {
+    for (const edit of toolInput.edits.slice(0, 10)) {
+      if (edit && typeof edit === "object") {
+        parts.push(nonEmptyString(edit.old_string));
+        parts.push(nonEmptyString(edit.new_string));
+      }
+    }
+  }
+
+  return parts
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 6000);
 }
 
 function pendingOfferState(root, policy) {
@@ -470,7 +573,10 @@ function pendingOfferState(root, policy) {
     const fallback = record.judgmentFallback && typeof record.judgmentFallback === "object"
       ? record.judgmentFallback
       : {};
-    if (fallback.active !== true) {
+    const tripwire = record.tripwire && typeof record.tripwire === "object"
+      ? record.tripwire
+      : {};
+    if (fallback.active !== true && tripwire.active !== true) {
       return { active: false };
     }
   }
@@ -488,19 +594,11 @@ function pendingOfferState(root, policy) {
     reasons: Array.isArray(record.reasons) ? record.reasons.filter((reason) => typeof reason === "string") : [],
     fallbackReasons: Array.isArray(record.judgmentFallback?.reasons)
       ? record.judgmentFallback.reasons.filter((reason) => typeof reason === "string")
-    : []
+    : [],
+    tripwireReasons: Array.isArray(record.tripwire?.reasons)
+      ? record.tripwire.reasons.filter((reason) => typeof reason === "string")
+      : []
   };
-}
-
-function directResolutionActive(root, policy) {
-  const record = readJsonFile(join(root, ".nogra", "runtime", "last-routing-score.json"));
-  if (!record || typeof record !== "object") return false;
-
-  const maxAgeMs = numericSetting(policy.pendingOfferMaxAgeMs, 30 * 60 * 1000);
-  const updatedAtMs = Date.parse(record.updatedAt);
-  if (!Number.isFinite(updatedAtMs) || Date.now() - updatedAtMs > maxAgeMs) return false;
-  if (policy.autoOfferEnabled === false || policy.enabled === false || record.autoOfferEnabled === false) return false;
-  return record.offerResolution === "direct";
 }
 
 function autoOfferEnabled(policy = {}) {
@@ -509,6 +607,7 @@ function autoOfferEnabled(policy = {}) {
 
 function writeRoutingOffState(root, policy = {}) {
   const { sensitivityPercent, autoOfferThreshold, strongOfferThreshold } = routingThresholds(policy);
+  const posture = sensitivityPosture(sensitivityPercent);
   const path = join(root, ".nogra", "runtime", "last-routing-score.json");
 
   try {
@@ -535,6 +634,17 @@ function writeRoutingOffState(root, policy = {}) {
           suppressionReason: "auto-off",
           judgmentFallback: {
             active: false,
+            reasons: []
+          },
+          tripwire: {
+            active: false,
+            anchors: IRREVERSIBLE_BOUNDARY_ANCHORS,
+            reasons: []
+          },
+          managerJudgment: {
+            active: false,
+            posture,
+            anchors: [],
             reasons: []
           }
         },
@@ -574,21 +684,18 @@ function markPreToolAskEmitted(root, pending = {}) {
 function userFacingJudgmentReason(kind, pending, toolName = "tool") {
   const reasons = [
     ...(pending.reasons || []),
-    ...(pending.fallbackReasons || [])
+    ...(pending.fallbackReasons || []),
+    ...(pending.tripwireReasons || [])
   ];
   const reasonText = reasons.length ? ` Signals: ${reasons.join("; ")}.` : "";
   const scoreText = Number.isFinite(pending.score)
-    ? ` Score ${pending.score}, threshold ${pending.threshold}.`
+    ? ` Legacy heat ${pending.score}, legacy threshold ${pending.threshold}.`
     : "";
   const prefix = kind === "fallback"
-    ? "Nogra is ON and caught Claude starting a tool before Nogra judgment was visible."
-    : "Nogra is ON and caught Claude starting a tool before Nogra judgment was confirmed.";
+    ? "Nogra is ON and caught Claude starting a tool across an irreversible boundary before the choice was visible."
+    : "Nogra is ON and caught Claude starting a tool across an irreversible boundary before the choice was confirmed.";
 
-  return `${prefix} Tool: ${toolName}.${scoreText}${reasonText} Approve direct for this task/tool, or reject and ask Claude to start the Nogra brief flow. Use /nogra:off only for workspace-level disable.`;
-}
-
-function userFacingSkillJudgmentReason(name) {
-  return `Nogra is ON and caught non-Nogra planning skill ${name}. Approve only if this task is explicitly on the direct path; otherwise reject and use the Nogra brief flow.`;
+  return `${prefix} Tool: ${toolName}.${scoreText}${reasonText} This is a last-minute safety rail, not a broad brief gate. Approve direct for this task/tool, or reject and ask Claude to offer the Nogra brief flow. Use /nogra:off only for workspace-level disable.`;
 }
 
 function emitAsk(reason, root, pending) {
@@ -624,16 +731,27 @@ if (!prompt) {
     process.exit(0);
   }
 
-  const directResolved = directResolutionActive(root, policy);
-  const blockedSkill = blockedPlanningSkillName(input);
-  if (blockedSkill && !directResolved) {
-    emitAsk(userFacingSkillJudgmentReason(blockedSkill), root, {});
-    process.exit(0);
-  }
-
   const pending = pendingOfferState(root, policy);
   if (pending.active) {
     emitAsk(userFacingJudgmentReason("pending", pending, input.tool_name), root, pending);
+    process.exit(0);
+  }
+
+  const toolTripwire = executableBoundaryTripwire(toolBoundaryText(input));
+  if (toolTripwire.active) {
+    emitAsk(
+      userFacingJudgmentReason(
+        "fallback",
+        {
+          score: 0,
+          threshold: numericSetting(policy.autoOfferThreshold, 60),
+          reasons: [],
+          tripwireReasons: toolTripwire.reasons
+        },
+        input.tool_name
+      ),
+      root
+    );
   }
   process.exit(0);
 }
@@ -660,13 +778,6 @@ if (!autoOfferEnabled(policy)) {
   process.exit(0);
 }
 
-const directResolved = directResolutionActive(root, policy);
-const blockedSkill = blockedPlanningSkillName(input);
-if (blockedSkill && !directResolved) {
-  emitAsk(userFacingSkillJudgmentReason(blockedSkill), root, {});
-  process.exit(0);
-}
-
 if (!routingPrompt) {
   process.exit(0);
 }
@@ -680,36 +791,21 @@ if (pending.active) {
 const { score, topicRelated, directOverride } = scorePrompt(routingPrompt, scoring, dictionary);
 
 const { sensitivityPercent, autoOfferThreshold } = routingThresholds(policy);
-const topicGate = policy.topicGate !== false;
-const fallback = judgmentFallback(routingPrompt, { score, topicRelated, directOverride }, autoOfferThreshold);
+const tripwire = executableBoundaryTripwire(toolBoundaryText(input));
 
-if ((topicGate && !topicRelated) || score < autoOfferThreshold) {
-  if (fallback.active) {
-    emitAsk(
-      userFacingJudgmentReason(
-        "fallback",
-        {
-          score,
-          threshold: autoOfferThreshold,
-          reasons: [],
-          fallbackReasons: fallback.reasons
-        },
-        input.tool_name
-      ),
-      root
-    );
-  }
+if (!tripwire.active) {
   process.exit(0);
 }
 
 emitAsk(
   userFacingJudgmentReason(
-    "pending",
+    "fallback",
     {
       score,
       threshold: autoOfferThreshold,
       sensitivityPercent,
-      reasons: []
+      reasons: [],
+      tripwireReasons: tripwire.reasons
     },
     input.tool_name
   ),

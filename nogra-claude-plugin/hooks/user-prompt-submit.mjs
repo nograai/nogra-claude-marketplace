@@ -133,6 +133,15 @@ const DEFAULT_DICTIONARY = {
   toggleOff: []
 };
 
+const IRREVERSIBLE_BOUNDARY_ANCHORS = [
+  "production deploy",
+  "data migration or data loss",
+  "auth/security/secrets",
+  "payments/billing",
+  "destructive bulk change",
+  "external customer-impacting send"
+];
+
 function numericSetting(value, fallback) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -318,51 +327,10 @@ function scorePrompt(prompt, scoring = DEFAULT_SCORING, dictionary = DEFAULT_DIC
   return { score, reasons, topicRelated: signals.topicRelated, directOverride: signals.directOverride };
 }
 
-function semanticText(prompt) {
-  return prompt
-    .toLowerCase()
-    .replace(/[‐‑‒–—]/gu, "-")
-    .replace(/\s+/gu, " ")
-    .trim();
-}
-
-function judgmentFallback(prompt, { score, topicRelated, directOverride }, threshold) {
-  const text = semanticText(prompt);
-  if (score >= threshold) {
-    return { active: false, reasons: [] };
-  }
-
-  const genericScoreQuestion =
-    /\b(score|scorer|scoring|procent|percent|threshold|tærskel|taerskel)\b/u.test(text) &&
-    !/\b(build|byg|bygger|rebuild|re-build|redesign|re-design|re-designe|redesigne|design|research|researcher|change|ændr|aendr)\b/u.test(text);
-
-  if (genericScoreQuestion) {
-    return { active: false, reasons: [] };
-  }
-
-  const actionLanguage =
-    /^(?:please\s+)?(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|make|create|research|design)\b/u.test(text) ||
-    /\b(?:we|vi)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|re-designe|redesigne|rework|redo|change|fix|byg|bygger|bygge|laver|lav|ændr|ændrer|aendr|aendrer|redesign|redesigner|ombyg|ombygger)\b/u.test(text) ||
-    /\b(?:jeg kunne godt tænke mig|jeg kunne godt taenke mig|jeg vil gerne|i want|i would like|i'd like)\b.{0,120}\b(?:research|researcher|undersøg|undersog|undersøge|undersoege|redesign|re-design|re-designe|redesigne|design|byg|bygge|change|fix|lav|lave)\b/u.test(text) ||
-    /\b(?:kan du|gider du|could you|can you)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|re-designe|redesigne|research|researcher|undersøg|undersog|design|change|fix|byg|bygge|lav|lave|ret|rette)\b/u.test(text);
-
-  const productSurface =
-    /\b(?:blog|bloggen|blogsiden|blogside|blogpost|blog post|post|article|artikel|side|siden|page|site|website|app|produkt|product|cms|frontend|ui|ux|route|component|komponent|dashboard|flow|schema|database|auth|metadata|meta felter|meta fields)\b/u.test(text);
-
-  const workContext =
-    /\b(?:my|our|vores|min|mit|this|denne|det her|projekt|project|workspace|repo|nogra)\b/u.test(text) ||
-    /^(?:please\s+)?(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|make|create|research|design)\b/u.test(text) ||
-    /\b(?:kan du|gider du|could you|can you|jeg kunne godt tænke mig|jeg kunne godt taenke mig|jeg vil gerne|i want|i would like|i'd like)\b/u.test(text);
-
-  const reasons = [];
-  if (actionLanguage) reasons.push("semantic build/change/design language");
-  if (productSurface) reasons.push("product-surface object");
-  if (workContext) reasons.push("workspace/product work context");
-
-  return {
-    active: (score < threshold || !topicRelated) && actionLanguage && productSurface && workContext,
-    reasons
-  };
+function sensitivityPosture(sensitivityPercent = DEFAULT_SENSITIVITY_PERCENT) {
+  if (sensitivityPercent <= 35) return "conservative";
+  if (sensitivityPercent >= 70) return "eager";
+  return "balanced";
 }
 
 function emitContext(context) {
@@ -376,25 +344,12 @@ function emitContext(context) {
   );
 }
 
-function emitJudgmentFallback({ score, threshold, sensitivityPercent, reasons }) {
-  emitContext(`<!-- nogra-plugin:judgment-fallback primaryScore=${score} threshold=${threshold} reasons=${reasons.join("; ")} -->
-<NOGRA_JUDGMENT_FALLBACK>
-Primary Nogra routing template scored ${score}, below the workspace threshold ${threshold}. Current sensitivity is ${sensitivityPercent}%.
-
-The template missed, but the prompt has product-work signals: ${reasons.join("; ")}.
-
-Apply the 70/30 rule now: use current-prompt judgment as the fallback. If the user is asking to build, change, redesign, research or verify a product/workspace surface, make the Nogra brief/direct choice visible before tool use. If it is meta chat, pure Q&A, or clearly simple low-risk work, continue directly.
-
-Offer first and wait if your judgment says it is product work. Brief drafting starts only after the user accepts the workflow.
-</NOGRA_JUDGMENT_FALLBACK>`);
-}
-
 function emitDirectChoice() {
   emitContext(`<!-- nogra-plugin:direct-choice -->
 <NOGRA_DIRECT_CHOICE>
 The user chose direct work for the pending Nogra offer. Nogra automatic routing stays ON for the workspace.
 
-Proceed directly for this task. If new heat/risk/scope appears while working, surface that judgment and ask whether to switch to the Nogra brief flow.
+Proceed directly for this task. If an irreversible boundary appears later, surface the boundary and ask whether to continue direct or switch to the Nogra brief flow.
 </NOGRA_DIRECT_CHOICE>`);
 }
 
@@ -514,6 +469,7 @@ function writeRoutingScore(configInfo, scoreState) {
 
 function writeRoutingOffState(configInfo, policy = {}) {
   const { sensitivityPercent, autoOfferThreshold, strongOfferThreshold } = routingThresholds(policy);
+  const posture = sensitivityPosture(sensitivityPercent);
   writeRoutingScore(configInfo, {
     score: 0,
     reasons: [],
@@ -530,6 +486,17 @@ function writeRoutingOffState(configInfo, policy = {}) {
     suppressionReason: "auto-off",
     judgmentFallback: {
       active: false,
+      reasons: []
+    },
+    tripwire: {
+      active: false,
+      anchors: IRREVERSIBLE_BOUNDARY_ANCHORS,
+      reasons: []
+    },
+    managerJudgment: {
+      active: false,
+      posture,
+      anchors: [],
       reasons: []
     }
   });
@@ -557,7 +524,10 @@ function recentRoutingRecord(configInfo, policy = {}) {
   const fallback = record.judgmentFallback && typeof record.judgmentFallback === "object"
     ? record.judgmentFallback
     : {};
-  if (record.offerTriggered !== true && fallback.active !== true) return null;
+  const tripwire = record.tripwire && typeof record.tripwire === "object"
+    ? record.tripwire
+    : {};
+  if (record.offerTriggered !== true && fallback.active !== true && tripwire.active !== true) return null;
   return record;
 }
 
@@ -653,10 +623,6 @@ if (focus.additionalContext) {
 const { score, reasons, topicRelated, directOverride } = scorePrompt(routingPrompt, scoringPolicy(policy), dictionary);
 const { sensitivityPercent, autoOfferThreshold, strongOfferThreshold } = routingThresholds(policy);
 const topicGate = policy.topicGate !== false;
-const fallback = judgmentFallback(routingPrompt, { score, topicRelated, directOverride }, autoOfferThreshold);
-const offerTriggered =
-  !(topicGate && !topicRelated) &&
-  score >= autoOfferThreshold;
 
 writeRoutingScore(configInfo, {
   score,
@@ -668,55 +634,22 @@ writeRoutingScore(configInfo, {
   threshold: autoOfferThreshold,
   strongThreshold: strongOfferThreshold,
   sensitivityPercent,
-  offerTriggered,
-  route: offerTriggered ? "offer" : "none",
-  routingDecision: offerTriggered ? "offer" : "none",
+  offerTriggered: false,
+  route: "none",
+  routingDecision: "none",
   judgmentFallback: {
-    active: fallback.active,
-    reasons: fallback.reasons
+    active: false,
+    reasons: []
+  },
+  tripwire: {
+    active: false,
+    anchors: IRREVERSIBLE_BOUNDARY_ANCHORS,
+    reasons: []
+  },
+  managerJudgment: {
+    active: false,
+    posture: sensitivityPosture(sensitivityPercent),
+    anchors: [],
+    reasons: []
   }
 });
-
-if (topicGate && !topicRelated) {
-  if (fallback.active) {
-    emitJudgmentFallback({
-      score,
-      threshold: autoOfferThreshold,
-      sensitivityPercent,
-      reasons: fallback.reasons
-    });
-  }
-  process.exit(0);
-}
-
-if (score < autoOfferThreshold) {
-  if (fallback.active) {
-    emitJudgmentFallback({
-      score,
-      threshold: autoOfferThreshold,
-      sensitivityPercent,
-      reasons: fallback.reasons
-    });
-  }
-  process.exit(0);
-}
-
-const offer =
-  score >= strongOfferThreshold
-    ? "This is scoped enough that Nogra should write the brief before work starts. I can start the Nogra brief, or take it directly if you want that for this task."
-    : "This has enough scope that a Nogra brief would help. I can start the Nogra brief, or take it directly if you want that for this task.";
-
-emitContext(`<!-- nogra-plugin:offer-gate score=${score} threshold=${autoOfferThreshold} reasons=${reasons.join("; ")} -->
-<NOGRA_OFFER_GATE>
-This user prompt locally scores ${score} for Nogra routing, which meets the workspace threshold ${autoOfferThreshold}. Current Nogra sensitivity is ${sensitivityPercent}%.
-
-Before Bash, Write, Edit, Task, browser automation, package install, app scaffolding, dispatch, verification, or brief drafting:
-1. Make the Nogra choice visible before entering the workflow: brief flow or direct for this task.
-2. Stop after the offer and wait for the user's choice.
-3. If the user chooses direct/native/no-brief/no-Nogra work, treat it as a per-task direct decision while Nogra stays on. Proceed directly only if current heat/risk/scope judgment supports it.
-4. If the user accepts the brief flow, then use nogra:brief.
-5. Mention /nogra:off only when the user asks to disable automatic routing for the workspace.
-
-Recommended offer text:
-${offer}
-</NOGRA_OFFER_GATE>`);

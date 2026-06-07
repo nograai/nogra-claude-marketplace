@@ -95,6 +95,7 @@ function runHook(hook, input) {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginRoot }
   });
+  if (!output.trim()) return {};
   return JSON.parse(output);
 }
 
@@ -246,18 +247,29 @@ function main() {
     prompt: "Build and verify a multi-file dashboard with tests and screenshots."
   });
   const submitPreferenceContext = submitPreference.hookSpecificOutput?.additionalContext || "";
-  assert(submitPreferenceContext.includes("NOGRA_OFFER_GATE"), "UserPromptSubmit should emit the offer gate for scoped work");
+  assert(!submitPreferenceContext.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "UserPromptSubmit should not tripwire normal scoped work");
   assert(fs.existsSync(rootRoutingScorePath), "UserPromptSubmit should write routing score under workspace root .nogra");
+  const rootRoutingScoreAfterSubmit = JSON.parse(fs.readFileSync(rootRoutingScorePath, "utf8"));
+  assert(rootRoutingScoreAfterSubmit.tripwire?.active === false, "UserPromptSubmit should persist no tripwire for normal scoped work");
   assert(!fs.existsSync(nestedRoutingScorePath), "UserPromptSubmit should not write routing score under nested manager .nogra");
+  const preToolSafe = runHook(preToolUseHook, {
+    cwd: nestedManagerRoot,
+    workspace_roots: [temp],
+    session_id: "session-root-pretool-safe-001",
+    transcript_path: "/tmp/transcript-root-pretool-safe-001.jsonl",
+    tool_name: "Bash",
+    tool_input: { command: "npm test" }
+  });
+  assert(preToolSafe.hookSpecificOutput?.permissionDecision !== "ask", "PreToolUse should not ask for safe promptless commands");
   const preToolPreference = runHook(preToolUseHook, {
     cwd: nestedManagerRoot,
     workspace_roots: [temp],
     session_id: "session-root-pretool-001",
     transcript_path: "/tmp/transcript-root-pretool-001.jsonl",
     tool_name: "Bash",
-    tool_input: { command: "npm test" }
+    tool_input: { command: "vercel --prod" }
   });
-  assert(preToolPreference.hookSpecificOutput?.permissionDecision === "ask", "PreToolUse should read the root pending routing score and ask");
+  assert(preToolPreference.hookSpecificOutput?.permissionDecision === "ask", "PreToolUse should ask on executable production boundary");
   const rootRoutingScoreAfterPreTool = JSON.parse(fs.readFileSync(rootRoutingScorePath, "utf8"));
   assert(rootRoutingScoreAfterPreTool.preToolPermissionDecision === "ask", "PreToolUse should update routing score under workspace root .nogra");
   assert(!fs.existsSync(nestedRoutingScorePath), "PreToolUse should not create routing score under nested manager .nogra");

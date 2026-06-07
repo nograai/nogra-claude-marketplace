@@ -47,15 +47,17 @@ hub folder, then use `/nogra:create <name>` to create
   unless the user asks for the Nogra workflow.
 - Nogra calls are authority gates, not ambient polling. Do not call Nogra just
   because a session started or ordinary chat is happening.
-- Claude may locally recognize that scoped, risky or ambiguous work deserves a
-  Nogra offer from the current prompt and local config. That offer is not a
-  runtime action. Enter the Nogra runtime only if the user accepts the brief
+- Claude judges irreversible or externally expensive intent from natural
+  language. Hooks do not regex-route that intent. The local tripwire only
+  matches executable danger in tool input and local config. That tripwire is not
+  a runtime action. Enter the Nogra runtime only if the user accepts the brief
   flow or explicitly runs a Nogra command.
-- Automatic routing scores only the current prompt and workspace config.
+- Automatic routing is pull-first plus a narrow tripwire. It is not a broad
+  prompt judge.
 - Offer sensitivity is local workspace policy. Read `.nogra/config.json`
   `routingPolicy` when available; default to `sensitivityPercent: 50`,
-  `sensitivityStepPercent: 5`, effective thresholds `60/80`, and
-  `offerOncePerIntent: true`.
+  `sensitivityStepPercent: 5` and `offerOncePerIntent: true`. Legacy thresholds
+  may exist for telemetry, but they are not broad routing authority.
 - Language handling is English-first. `defaultLanguage` defaults to `en`.
   `translationFallback: claude-current-prompt` means Claude may use its own
   current-prompt understanding directly.
@@ -67,14 +69,16 @@ runtime and status/version configuration lives in `references/runtime.md`.
 
 ## Routing Policy
 
-Use routing only for topic-related workspace work. Explicit user intent wins:
-if the user asks for Nogra, use the relevant Nogra flow; if the user asks for
-direct/simple/no-ceremony work, stay direct.
+Use routing only for explicit Nogra intent or narrow irreversible boundaries.
+Explicit user intent wins: if the user asks for Nogra, use the relevant Nogra
+flow; if the user asks for direct/simple/no-ceremony work, stay direct unless a
+production/data/auth/security/payment/destructive/external-send boundary is
+about to be crossed.
 
-Detailed thresholds, score signals, sensitivity mechanics and judgment-fallback
-behavior live in `references/routing.md`. Do not duplicate that score table in
-other skill bodies. The score creates an offer only; runtime calls, dispatch,
-verification and subagents start from accepted user intent.
+Detailed tripwire boundaries and legacy heat signals live in
+`references/routing.md`. Do not duplicate that table in other skill bodies. Heat
+telemetry creates no authority; runtime calls, dispatch, verification and
+subagents start from accepted user intent.
 
 ## Commands
 
@@ -87,7 +91,7 @@ verification and subagents start from accepted user intent.
 - `/nogra:dispatch`: run an approved brief after explicit GO.
 - `/nogra:verify`: check whether a claim/result matches the brief and evidence.
 - `/nogra:update`: check installed plugin-local contract/guidance on demand.
-- `/nogra:sensitivity`: set automatic Nogra offer sensitivity as a percentage.
+- `/nogra:sensitivity`: adjust legacy routing sensitivity/status fields.
 - `/nogra:settings`: show or update Nogra profile, role models, effort,
   language and auto behavior.
 - `/nogra:status`: show installed plugin ref, workspace release version,
@@ -96,10 +100,8 @@ verification and subagents start from accepted user intent.
 
 ## Normal Workflow
 
-1. Turn ambiguous work into a brief when scope, risk or ambiguity warrants it.
-   Use `/nogra:brief`, or ask Claude to write a Nogra brief for the work.
-   If the user did not ask for Nogra, offer the brief/direct choice first and
-   stop until the user accepts.
+1. Turn work into a brief when the user pulls Nogra with `/nogra:brief`, asks
+   for a Nogra workflow, accepts a tripwire offer, or explicitly wants a brief.
 2. Before drafting the brief, make a coarse decomposition call from scope,
    coupling and likely runtime. Draft only the selected phase/run, then preview
    size before saving/promoting. Split, reduce or ask before approval when that
@@ -125,9 +127,9 @@ using outdated guidance.
 
 If the user asks for a demo, do not reuse a canned demo. Suggest 2-3 bounded
 demo ideas that fit the current folder and what the user seems to care about.
-Recommend one. If the user chooses an idea and it crosses the routing
-threshold, offer the brief/direct choice and stop. If the user accepts, use
-`/nogra:brief` to write the brief. Do not dispatch until the user says GO.
+Recommend one. If the user chooses an idea, stay direct unless they ask for
+Nogra or the chosen demo crosses an irreversible tripwire. If the user accepts
+Nogra, use `/nogra:brief` to write the brief. Do not dispatch until the user says GO.
 
 ## Brief Handoff
 

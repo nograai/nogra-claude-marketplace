@@ -14,10 +14,10 @@ quietly merge Manager and Executor.
 ## The Simple Rule
 
 - Read and clarify freely.
-- Offer Nogra when scope, stakes, ambiguity, or verification risk make a brief
-  useful.
-- Offering Nogra is local judgment. Enter the Nogra runtime only after the user
-  accepts the brief flow or explicitly runs a Nogra command.
+- Nogra is pull-first. Offer it when the user asks for the workflow or when an
+  irreversible-boundary tripwire fires.
+- Enter the Nogra runtime only after the user accepts the brief flow or
+  explicitly runs a Nogra command.
 - By default, brief, dispatch and verification records use plugin-bundled
   contracts plus `.nogra/` state.
 - Execution requires explicit GO after the user reviews the brief.
@@ -29,7 +29,7 @@ quietly merge Manager and Executor.
 
 ## Configuration Detail
 
-Routing thresholds, runtime preferences and status reporting mechanics live in
+Routing policy, runtime preferences and status reporting mechanics live in
 plugin reference docs. Use `/nogra:help` to access them when needed. CLAUDE.md
 intentionally stays lightweight: config schema lives in `.nogra/config.json`,
 not here.
@@ -121,9 +121,10 @@ Claude work after the fact.
 If the user asks for a demo, do not reuse a canned demo.
 
 Suggest 2-3 bounded demo ideas that fit this folder and what the user seems to
-care about. Recommend one. If the user chooses an idea and it crosses the
-routing threshold, offer the brief/direct choice and stop. If the user accepts,
-write a Nogra brief for it. Do not dispatch until the user says GO.
+care about. Recommend one. If the user chooses an idea, stay direct unless they
+ask for Nogra or the idea crosses an irreversible boundary tripwire. If the user
+accepts Nogra, write a Nogra brief for it. Do not dispatch until the user says
+GO.
 
 ## Boundaries
 

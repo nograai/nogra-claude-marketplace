@@ -144,7 +144,7 @@ preserves or merges existing Nogra files according to the bundled write policy.
 - `/nogra:verify`: check whether a claim/result matches the brief and evidence.
 - `/nogra:off`: disable automatic Nogra offers in this workspace.
 - `/nogra:on`: enable automatic Nogra offers in this workspace.
-- `/nogra:sensitivity`: set Nogra automatic routing sensitivity as a percentage.
+- `/nogra:sensitivity`: inspect or adjust legacy routing sensitivity fields.
 - `/nogra:settings`: show or update local Nogra profile, runtime role models,
   effort, language and auto-routing settings.
 - `/nogra:status`: show installed plugin ref, workspace contract version,
@@ -152,10 +152,13 @@ preserves or merges existing Nogra files according to the bundled write policy.
 - `/nogra:update`: pull current Nogra contract/guidance on demand.
 - `/nogra:help`: explain Nogra and choose the right Nogra flow.
 
-The plugin also includes soft lifecycle hooks that make the brief/direct choice
-visible at the right moment. Hooks only score local current-prompt/workspace
-signals, add short routing context, and ask before first tool use when a
-high-scope request skipped the brief/direct offer. Skills own all `.nogra/`
+The plugin also includes soft lifecycle hooks for a narrow irreversible
+tripwire. Prompt hooks may score local current-prompt/workspace signals for
+telemetry, but they do not regex-route natural-language intent. Pre-tool hooks
+interrupt only before executable danger such as production deploy commands, data
+migrations/loss commands, secret/env writes, payment/billing commands,
+destructive bulk commands or external customer-impacting send commands. Skills
+own all `.nogra/`
 writes, brief drafting, dispatch, verification, and agent spawning. Claude
 transcript and history stay outside Nogra's routing input. Claude must still
 use Nogra skills for the workflow and wait for the user's choice before
@@ -164,7 +167,9 @@ their skills, which update local `.nogra/config.json` and report the result in
 Claude's visible conversation surface. Explicit `/nogra:*` commands still work
 while automatic offers are off.
 If the user explicitly asks for direct work, skip brief, or no ceremony,
-automatic routing stays direct regardless of sensitivity.
+automatic routing treats that as a task preference, not workspace disable.
+Normal work stays direct; the tripwire still catches only irreversible
+boundaries.
 
 Session continuity is local and explicit. Session-start and routing hooks may
 write a bounded session anchor under `.nogra/runtime/session-anchor.json`, and
@@ -174,11 +179,11 @@ user-visible projection of that ledger state, not an automatic shutdown upload.
 When the ledger is ahead of the checkpoint, `/nogra:status` reports the
 checkpoint as stale so Claude can ask whether to refresh it.
 
-Routing is structured-primary with judgment fallback. The local score path is
-the preferred baseline. When it misses but the prompt still has product-work
-shape, hooks surface a judgment-fallback marker; Claude then uses current-prompt
-judgment to decide whether to make the brief/direct offer. The fallback runs as
-deterministic current-prompt judgment; Nogra dispatch starts only after the user
+Routing is pull-first plus irreversible tripwire. Local score/heat remains
+bounded telemetry, but it is not routing authority. Normal scoped work stays
+direct unless the user pulls Nogra. Natural-language intent belongs to Claude's
+judgment. If an actual tool call crosses an executable irreversible boundary,
+hooks surface a direct/Nogra choice. Nogra dispatch starts only after the user
 accepts the workflow.
 
 Extension plugins own their own `/nogra-*` commands and hooks. If an installed
@@ -228,12 +233,11 @@ Nogra suggestions are controlled locally by `.nogra/config.json`:
 }
 ```
 
-`sensitivityPercent` is the user-facing sensitivity control. Higher sensitivity makes
-Claude offer Nogra more often by lowering effective thresholds. Lower
-sensitivity keeps Claude more direct by raising effective thresholds. The
-value snaps to `sensitivityStepPercent` so users can tune it in calm increments
-defined by the workspace config. The scoring values tune Nogra's local routing
-while the plugin remains stable. Explicit `/nogra:*` commands always work.
+`sensitivityPercent` is now a legacy status/telemetry control. The visible
+automatic routing model remains pull-first plus irreversible tripwire regardless
+of the percent. The legacy threshold fields stay in config for compatibility
+and heat telemetry; they are not routing authority. Explicit `/nogra:*`
+commands always work.
 Language handling is English-first; `defaultLanguage` tells Claude the
 workspace's preferred language, and `translationFallback` means Claude uses its
 current-prompt understanding directly.

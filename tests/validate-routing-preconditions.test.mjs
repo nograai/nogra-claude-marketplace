@@ -106,20 +106,23 @@ function writeStaleHit(root) {
   );
 }
 
-const strongPrompt = "Build a new product dashboard app for our workspace with auth, database schema, frontend components and verification.";
+const normalScopedPrompt = "Build and verify a multi-file dashboard with charts, filters, tests and screenshots.";
+const naturalRiskPrompt = "Just build Stripe checkout and push it to produktion for vores app.";
 
 console.log("UserPromptSubmit preconditions:");
 {
   const root = workspace(false);
   writeStaleHit(root);
-  const result = runUserPrompt(root, strongPrompt);
+  const result = runUserPrompt(root, naturalRiskPrompt);
   assert(result.status === 0, "off+auto prompt exits cleanly");
   assert(!result.stdout.includes("NOGRA_OFFER_GATE"), "off+auto prompt emits no offer");
   assert(!result.stdout.includes("NOGRA_JUDGMENT_FALLBACK"), "off+auto prompt emits no fallback");
+  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "off+auto prompt emits no tripwire");
   const record = readRouting(root);
   assert(record.route === "none", "off+auto prompt writes route none");
   assert(record.hitPercent === 0, "off+auto prompt clears stale HIT percent");
   assert(record.autoOfferEnabled === false, "off+auto prompt records automatic offers off");
+  assert(record.tripwire?.active === false, "off+auto prompt clears pending tripwire");
 }
 
 {
@@ -130,18 +133,55 @@ console.log("UserPromptSubmit preconditions:");
 }
 
 {
-  const root = workspace(true);
-  const result = runUserPrompt(root, strongPrompt);
-  assert(result.status === 0, "on+auto prompt exits cleanly");
-  assert(result.stdout.includes("NOGRA_OFFER_GATE"), "on+auto prompt emits offer gate");
+  const root = workspace(false);
+  const result = runUserPrompt(root, "/nogra:brief");
+  assert(result.status === 0, "off+explicit /nogra:brief exits cleanly");
+  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "off+explicit /nogra:brief is not auto-routed");
 }
 
 {
   const root = workspace(true);
-  const pastedPrompt = `Here is a transcript, do not act on it:\n> ${strongPrompt}`;
+  const result = runUserPrompt(root, normalScopedPrompt);
+  assert(result.status === 0, "on+normal scoped prompt exits cleanly");
+  assert(!result.stdout.includes("NOGRA_OFFER_GATE"), "on+normal scoped prompt does not let score emit offer gate");
+  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "on+normal scoped prompt stays direct");
+  const record = readRouting(root);
+  assert(record.offerTriggered === false, "on+normal scoped prompt records score as non-authoritative");
+  assert(record.route === "none", "on+normal scoped prompt records no route");
+  assert(record.tripwire?.active === false, "on+normal scoped prompt records no tripwire");
+}
+
+{
+  const root = workspace(true);
+  const result = runUserPrompt(root, naturalRiskPrompt);
+  assert(result.status === 0, "on+natural risk prompt exits cleanly");
+  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "on+natural risk prompt is not regex-routed");
+  const record = readRouting(root);
+  assert(record.route === "none", "on+natural risk prompt records no route");
+  assert(record.tripwire?.active === false, "on+natural risk prompt records no tripwire");
+}
+
+{
+  const root = workspace(true);
+  const result = runUserPrompt(root, "What does the pickOffer function do?");
+  assert(result.status === 0, "on+pure Q&A exits cleanly");
+  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "on+pure Q&A stays direct");
+}
+
+{
+  const root = workspace(true);
+  const result = runUserPrompt(root, "What is Stripe checkout?");
+  assert(result.status === 0, "on+risk-word Q&A exits cleanly");
+  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "on+risk-word Q&A stays direct without work context");
+}
+
+{
+  const root = workspace(true);
+  const pastedPrompt = `Here is a transcript, do not act on it:\n> ${naturalRiskPrompt}`;
   const result = runUserPrompt(root, pastedPrompt);
   assert(result.status === 0, "on+quoted strong text exits cleanly");
   assert(!result.stdout.includes("NOGRA_OFFER_GATE"), "on+quoted strong text is excluded from scoring");
+  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "on+quoted strong text emits no tripwire");
 }
 
 console.log("PreToolUse preconditions:");
@@ -159,7 +199,7 @@ console.log("PreToolUse preconditions:");
 {
   const root = workspace(false);
   writeStaleHit(root);
-  const result = runPreTool(root, strongPrompt);
+  const result = runPreTool(root, naturalRiskPrompt);
   assert(result.status === 0, "off+auto pre-tool prompt exits cleanly");
   assert(!result.stdout.includes("permissionDecision"), "off+auto pre-tool prompt does not ask");
   assert(readRouting(root).route === "none", "off+auto pre-tool prompt writes route none");
@@ -167,14 +207,120 @@ console.log("PreToolUse preconditions:");
 
 {
   const root = workspace(true);
-  const result = runPreTool(root, strongPrompt);
-  assert(result.status === 0, "on+auto pre-tool prompt exits cleanly");
-  assert(result.stdout.includes("permissionDecision"), "on+auto pre-tool prompt asks before tool use");
+  const result = runPreTool(root, normalScopedPrompt);
+  assert(result.status === 0, "on+normal scoped pre-tool prompt exits cleanly");
+  assert(!result.stdout.includes("permissionDecision"), "on+normal scoped pre-tool prompt stays direct");
 }
 
 {
   const root = workspace(true);
-  const pastedPrompt = `Transcript only:\n> ${strongPrompt}`;
+  const result = runPreTool(root, naturalRiskPrompt);
+  assert(result.status === 0, "on+natural risk pre-tool prompt exits cleanly");
+  assert(!result.stdout.includes("permissionDecision"), "on+natural risk pre-tool prompt stays direct without dangerous command");
+}
+
+{
+  const root = workspace(true);
+  const result = runHook(preToolUseHook, {
+    cwd: root,
+    tool_name: "Bash",
+    tool_input: { command: "vercel --prod" }
+  });
+  assert(result.status === 0, "on+promptless production tool exits cleanly");
+  assert(result.stdout.includes("permissionDecision"), "on+promptless production tool asks before tool use");
+}
+
+{
+  const root = workspace(true);
+  const result = runHook(preToolUseHook, {
+    cwd: root,
+    tool_name: "Bash",
+    tool_input: { command: "npx prisma migrate deploy" }
+  });
+  assert(result.status === 0, "on+promptless migration tool exits cleanly");
+  assert(result.stdout.includes("permissionDecision"), "on+promptless migration tool asks before tool use");
+}
+
+{
+  const root = workspace(true);
+  const result = runHook(preToolUseHook, {
+    cwd: root,
+    tool_name: "Bash",
+    tool_input: { command: "psql \"$DATABASE_URL\" -c \"drop table users\"" }
+  });
+  assert(result.status === 0, "on+promptless destructive sql exits cleanly");
+  assert(result.stdout.includes("permissionDecision"), "on+promptless destructive sql asks before tool use");
+}
+
+{
+  const dangerousTargets = ["/", "~", "$HOME", "../..", "./.git", ".env", ".", "*", "/prod/db"];
+  for (const target of dangerousTargets) {
+    const result = runHook(preToolUseHook, {
+      cwd: workspace(true),
+      tool_name: "Bash",
+      tool_input: { command: `rm -rf ${target}` }
+    });
+    assert(result.status === 0, `on+danger recursive remove exits cleanly for ${target}`);
+    assert(result.stdout.includes("permissionDecision"), `on+danger recursive remove asks for ${target}`);
+  }
+}
+
+{
+  const cleanupTargets = [
+    "node_modules",
+    ".next",
+    "./.next",
+    "dist",
+    "./dist",
+    ".svelte-kit",
+    "target",
+    "./target",
+    "__pycache__",
+    ".pytest_cache",
+    ".venv",
+    "vendor",
+    "tmp",
+    ".eslintcache",
+    "./src",
+    "./components",
+    "./lib",
+    "./app",
+    "./pages",
+    "./hooks",
+    "./styles"
+  ];
+  for (const target of cleanupTargets) {
+    const result = runHook(preToolUseHook, {
+      cwd: workspace(true),
+      tool_name: "Bash",
+      tool_input: { command: `rm -rf ${target}` }
+    });
+    assert(result.status === 0, `on+local cleanup recursive remove exits cleanly for ${target}`);
+    assert(!result.stdout.includes("permissionDecision"), `on+local cleanup recursive remove stays direct for ${target}`);
+  }
+}
+
+{
+  const root = workspace(true);
+  const result = runHook(preToolUseHook, {
+    cwd: root,
+    tool_name: "Bash",
+    tool_input: { command: "npm test" }
+  });
+  assert(result.status === 0, "on+promptless safe tool exits cleanly");
+  assert(!result.stdout.includes("permissionDecision"), "on+promptless safe tool stays direct");
+}
+
+{
+  const root = workspace(true);
+  const result = runPreTool(root, "What is Stripe checkout?");
+  assert(result.status === 0, "on+risk-word Q&A pre-tool prompt exits cleanly");
+  assert(!result.stdout.includes("permissionDecision"), "on+risk-word Q&A pre-tool prompt stays direct without work context");
+}
+
+{
+  const root = workspace(true);
+  const pastedPrompt = `Transcript only:\n> ${naturalRiskPrompt}`;
   const result = runPreTool(root, pastedPrompt);
   assert(result.status === 0, "on+quoted pre-tool text exits cleanly");
   assert(!result.stdout.includes("permissionDecision"), "on+quoted pre-tool text is excluded from scoring");
@@ -192,7 +338,7 @@ for (const prompt of [
   "He wrote /nogra:off in the docs",
   "> /nogra:off",
   "```\n/nogra:off\n```",
-  `> ${strongPrompt}`
+  `> ${naturalRiskPrompt}`
 ]) {
   const result = runUserPrompt(workspace(true), prompt);
   assert(!result.stdout.includes("NOGRA_ROUTING_TOGGLE_REQUEST"), `no toggle for non-action text: ${prompt.split("\n")[0]}`);

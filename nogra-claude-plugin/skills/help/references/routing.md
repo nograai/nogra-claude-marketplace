@@ -1,8 +1,7 @@
 # Nogra Routing Configuration
 
-This reference describes how Nogra decides when to offer a brief for ordinary
-workspace work. Routing is local judgment plus `.nogra/config.json`
-`routingPolicy`.
+This reference describes when Nogra should interrupt ordinary workspace work.
+The model is pull-first plus a narrow irreversible-boundary tripwire.
 
 ## Defaults
 
@@ -14,50 +13,63 @@ workspace work. Routing is local judgment plus `.nogra/config.json`
 - `autoOfferEnabled`: true
 - `defaultLanguage`: en
 - `translationFallback`: claude-current-prompt
-- `scoring`: local signal weights for the catch-rule
+- `scoring`: legacy local heat signals for telemetry and regression tests
 
-## Sensitivity Mechanics
+The threshold and sensitivity fields stay in config for compatibility and
+telemetry. They are not broad routing authority.
 
-Treat `sensitivityPercent` as the user-facing sensitivity control. Higher sensitivity
-means Claude offers Nogra more often by lowering effective score thresholds.
-Lower sensitivity means Claude stays more direct by raising effective score
-thresholds. The default `50%` maps to effective thresholds `60/80`. Values snap
-to `sensitivityStepPercent`; default step is `5%`.
+## Routing Authority
 
-`defaultLanguage` sets the workspace language baseline. `translationFallback`
-means Claude may use its own understanding of the current prompt directly when
-structured routing needs judgment fallback. Transcript and history files stay
-outside routing input.
+Nogra does not decide whether ordinary work deserves a brief. Nogra is a system
+Claude can align to, not a prompt judge. Regex matches executable danger, not
+meaning.
 
-## Triggers
+Automatic routing has only three proactive jobs:
 
-Routing uses Nogra's structured-primary + judgment-fallback shape. The local
-score path is preferred first. If hook context contains
-the judgment-fallback marker, the template score missed but the prompt still has
-product-work shape; use current-prompt judgment before tools. Offer Nogra for
-build/change/redesign/research/verify work on a product or workspace surface;
-stay direct for meta chat, pure Q&A and explicit direct/simple work.
+1. Respect `/nogra:on` and `/nogra:off`.
+2. Keep explicit `/nogra:*` commands available on pull.
+3. Interrupt only when an actual tool input crosses an irreversible or
+   externally expensive command/file boundary.
 
-If the score reaches the effective auto threshold, offer Nogra once and stop. If
-it reaches the effective strong threshold, recommend Nogra more firmly and stop.
-Wait for the user to accept the brief flow before entering the Nogra runtime or
-drafting the brief. The score creates an offer; runtime calls, dispatch,
-verification and subagents start from accepted user intent.
+Normal scoped work stays direct unless the user pulls Nogra. Examples that
+should stay direct by default: blog/content updates, contact forms, UI work,
+refactors, feature implementation, explanation, Q&A and routine verification.
 
-If `autoOfferEnabled` is false, do not proactively offer Nogra for ordinary
-workspace prompts. Explicit `/nogra:*` commands still work.
+Nogra invites; it does not enforce. A tripwire creates a visible direct/Nogra
+choice, not a forced brief.
 
-## Topic Gate
+## Tripwire Boundaries
 
-Only score topic-related workspace work: building, changing, fixing,
-refactoring, designing, verifying, or deciding something in this
-workspace. For non-topic chat or pure explanation, do not offer Nogra.
+The tripwire class is intentionally small:
 
-Extension plugins own their own `/nogra-*` commands and hooks. If a prompt is
-for an installed Nogra extension, let that extension append its behavior; do not
-turn the extension request into Nogra ceremony.
+- production deploy or externally visible release
+- data migration commands, destructive SQL, or data-loss commands
+- auth, security, permissions, or secrets
+- payment, Stripe, checkout, billing, or subscription changes
+- destructive bulk edits/deletes
+- external customer-impacting sends, webhooks, or integrations
 
-## Score Signals
+When a tool call crosses one of these boundaries, surface the direct/Nogra
+choice before tools. If the user chooses direct, proceed directly for that task
+while Nogra stays on. Natural-language descriptions of these topics remain
+Claude judgment, not regex triggers.
+
+## Hooks
+
+`UserPromptSubmit` does not emit tripwires from natural language. It handles
+toggle/pull/focus behavior and writes bounded heat telemetry.
+
+`PreToolUse` is the last-minute safety rail. It inspects the actual tool input,
+so promptless or vague work can still be caught right before commands or file
+writes such as production deploys, migrations, destructive deletes, secret/env
+writes or billing commands.
+
+If `autoOfferEnabled` is false, do not proactively emit tripwires for ordinary
+workspace prompts or tools. Explicit `/nogra:*` commands still work.
+
+## Legacy Heat Signals
+
+The local heat fields remain for observability and regression testing:
 
 - `createIntent`: default +25
 - `productSurface`: default +20
@@ -68,5 +80,8 @@ turn the extension request into Nogra ceremony.
 - `ambiguity`: default +10
 - `lowRiskEdit`: default -30
 - `singleFileLowScope`: default -15
-- `directOverride`: default -40
+- `directOverride`: default -40 in old configs
 - `pureQuestion`: default -50
+
+Do not create a second score, tier table, threshold table or automatic
+high/medium/low routing rule. Heat is telemetry, not UX.
