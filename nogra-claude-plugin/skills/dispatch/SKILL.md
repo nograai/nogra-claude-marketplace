@@ -123,8 +123,11 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
    `maxTurns` belongs here after the approved brief exists. The brief flow
    should already have made the coarse decomposition call before writing the
    proposal and then run `brief-sizing-preview` on the selected phase before
-   approval; if not, treat dispatch sizing as a late decomposition gate instead
-   of spawning automatically.
+   approval. Treat `sizingPreview.userSurface=ask` as the only pre-approval
+   user prompt by default; `inform` is a one-line execution-shape note when the
+   deliverable lands in parts, and `silent` stays in the receipt. If preview was
+   skipped, treat dispatch sizing as a late decomposition gate instead of
+   spawning automatically.
 
    Ask yourself:
 

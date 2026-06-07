@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.6.3 - 2026-06-07
+
+- Changed brief sizing preview from a binary user prompt into a three-level
+  Manager surface: `silent`, `inform`, or `ask`.
+- Added Manager-owned split guidance with linked-versus-parallel criteria and
+  explicit escalation criteria for when sizing must be shown to the user.
+- Added `operatorDecomposed` preview deduplication so a phase that was already
+  split in the same brief flow does not re-ask on coupled follow-up work, while
+  clamped work still requires user confirmation.
+
 ## 0.6.2 - 2026-06-07
 
 - Promoted the clean Continue/project-focus path validated on live BoligScout:

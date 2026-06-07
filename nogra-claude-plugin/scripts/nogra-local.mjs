@@ -2016,7 +2016,7 @@ function briefSizingPreview(root, input) {
   const rawTurns = positiveIntegerOrNull(factors.rawTurns) || dispatchSizing.maxTurns;
   const nearDefaultCeiling = rawTurns >= Math.ceil(defaultCeiling * 0.85);
   const coupledScopeRisk = rawTurns >= Math.ceil(defaultCeiling * 0.65) && Array.isArray(factors.couplingSignals) && factors.couplingSignals.length >= 2;
-  const requiresPreApprovalDecision = Boolean(dispatchSizing.requiresManagerDecision || nearDefaultCeiling || coupledScopeRisk);
+  const operatorDecomposed = Boolean(input && input.operatorDecomposed);
   const risk = dispatchSizing.requiresManagerDecision
     ? "ceiling_clamped"
     : nearDefaultCeiling
@@ -2024,20 +2024,34 @@ function briefSizingPreview(root, input) {
       : coupledScopeRisk
         ? "coupled_scope"
         : "low";
-  const managerAction = dispatchSizing.requiresManagerDecision
-    ? "split_or_reduce_before_approval"
-    : requiresPreApprovalDecision
-      ? "split_reduce_or_confirm_single_run_before_approval"
-      : "continue_to_validation_and_approval";
-  const guidance = dispatchSizing.requiresManagerDecision
-    ? "Do not save a one-run approval artifact by default. Split the draft, reduce scope, or get an explicit operator decision before approval."
-    : requiresPreApprovalDecision
-      ? "This draft is large enough to review before approval. Prefer splitting into phases unless the operator intentionally wants one bounded run."
-      : "Draft size looks compatible with a normal single-run approval flow.";
+  const userSurface = risk === "ceiling_clamped"
+    ? "ask"
+    : operatorDecomposed
+      ? "silent"
+    : risk === "coupled_scope"
+      ? "inform"
+      : "silent";
+  const requiresPreApprovalDecision = userSurface === "ask";
+  const managerAction = userSurface === "ask"
+    ? "decide_split_then_confirm_with_user_before_approval"
+    : userSurface === "inform"
+      ? "decide_split_record_and_inform_one_line"
+      : "decide_and_continue_silently";
+  const splitShapeHint = "If you split: choose linked sequential phases when a later phase depends on earlier output or touches the same files; choose parallel only when the parts are independent with no shared state or files.";
+  const escalateToUserIf = [
+    "the split changes the approved deliverable shape, such as one deliverable becoming multiple separately shipped parts the user receives differently",
+    "even after splitting, a single bounded run would exceed the absolute ceiling or imply new cost, time or scope beyond the approved brief and GO",
+    "the right phase boundary is genuinely ambiguous and a wrong cut would waste a run",
+    "the split touches authority or risk the original GO did not cover"
+  ];
+  const guidance = "Sizing is a Manager decision, not a user decision. Consider splitting this work into multiple runs, linked or parallel, whichever fits the job, or confirm one bounded run. " +
+    `${splitShapeHint} Decide it, record the choice in the receipt, and keep the Manager surface clean. Do not present this to the user unless one or more of escalateToUserIf holds; if you do split and the deliverable lands in parts, inform the user in one line rather than asking.`;
   const summary = dispatchSizing.requiresManagerDecision
-    ? `estimated maxTurns ${dispatchSizing.maxTurns}: draft estimates ${rawTurns} turns before the ceiling; split or reduce before approval.`
-    : requiresPreApprovalDecision
-      ? `estimated maxTurns ${dispatchSizing.maxTurns}: ${risk.replaceAll("_", " ")}; split, reduce or confirm single-run before approval.`
+    ? `estimated maxTurns ${dispatchSizing.maxTurns}: draft estimates ${rawTurns} turns before the ceiling; Manager decides split/reduce and confirms with user before approval.`
+    : userSurface === "ask"
+      ? `estimated maxTurns ${dispatchSizing.maxTurns}: ${risk.replaceAll("_", " ")}; Manager decides split/single-run, confirm with user before approval.`
+      : userSurface === "inform"
+        ? `estimated maxTurns ${dispatchSizing.maxTurns}: ${risk.replaceAll("_", " ")}; Manager decides execution shape and informs user in one line if splitting.`
       : dispatchSizing.summary.replace(/^maxTurns /, "estimated maxTurns ");
 
   return {
@@ -2057,7 +2071,10 @@ function briefSizingPreview(root, input) {
       reason: "Advisory preview from the complete draft brief. It exists to shape or split the brief before approval; dispatch remains the authority for executionMaxTurns.",
       risk,
       requiresPreApprovalDecision,
+      userSurface,
       managerAction,
+      splitShapeHint,
+      escalateToUserIf,
       guidance,
       mustNotWriteMaxTurnsToBrief: true,
       dispatchStillAuthoritative: true,

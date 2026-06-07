@@ -498,12 +498,71 @@ function main() {
     stopCriteria: ["If dispatch sizing cannot be derived from the approved brief, stop."],
     evidenceRequired: "verified"
   };
+  const largerSizingPreview = run(["brief-sizing-preview", "--root", temp], largerBrief);
+  assert(largerSizingPreview.sizingPreview?.risk === "coupled_scope", "coupled preview should classify coupled scope risk");
+  assert(largerSizingPreview.sizingPreview?.userSurface === "inform", "coupled preview should inform instead of asking");
+  assert(largerSizingPreview.sizingPreview?.requiresPreApprovalDecision === false, "inform preview should not block approval");
+  assert(largerSizingPreview.sizingPreview?.managerAction === "decide_split_record_and_inform_one_line", "inform preview should name Manager-owned split action");
+  assert(Array.isArray(largerSizingPreview.sizingPreview?.escalateToUserIf), "preview should include user escalation criteria");
+  assert(String(largerSizingPreview.sizingPreview?.splitShapeHint || "").includes("linked sequential"), "preview should include linked-vs-parallel guidance");
+  const decomposedLargerSizingPreview = run(["brief-sizing-preview", "--root", temp], {
+    ...largerBrief,
+    operatorDecomposed: true
+  });
+  assert(decomposedLargerSizingPreview.sizingPreview?.userSurface === "silent", "operator-decomposed coupled preview should dedupe user-facing prompt");
+  assert(decomposedLargerSizingPreview.sizingPreview?.requiresPreApprovalDecision === false, "operator-decomposed preview should not block approval");
   const largerSaved = run(["brief-save", "--root", temp, "--source", "smoke"], largerBrief);
   run(["brief-promote", "--root", temp, "--brief-id", largerSaved.briefId]);
   const largerReceipt = run(["dispatch", "--root", temp, "--brief-id", largerSaved.briefId]);
   assert(largerReceipt.executionMaxTurns > Number(executorFrontmatter.maxTurns), "larger verified dispatch should size above generic role frontmatter fallback");
   const largerHandoff = run(["handoff-contract", "--root", temp, "--kind", "executor", "--run-id", largerReceipt.runId]);
   assert(largerHandoff.targetSubagent?.maxTurnsHint === largerReceipt.executionMaxTurns, "larger executor handoff should carry the larger dispatch-derived maxTurns");
+
+  const nearDefaultBrief = {
+    title: "Near ceiling sizing preview",
+    intent: "Create a medium app surface across a few files.",
+    contextHandoff: "Regression fixture for near-ceiling preview without coupled scope.",
+    scope: {
+      in: [
+        "Create the main view.",
+        "Create local filter controls.",
+        "Create a compact data module.",
+        "Connect the view to the controls.",
+        "Add basic empty-state behavior.",
+        "Keep the result self-contained."
+      ],
+      out: ["No publish step."],
+      files: [
+        "app/page.tsx",
+        "app/filter.tsx",
+        "app/data.ts"
+      ]
+    },
+    successCriteria: [
+      "Main view renders.",
+      "Filter controls render.",
+      "Data module is used.",
+      "Empty state renders.",
+      "Files stay self-contained."
+    ],
+    stopCriteria: [
+      "Stop if the file list changes.",
+      "Stop if external services are needed.",
+      "Stop if the app surface expands.",
+      "Stop if tests cannot run.",
+      "Stop if acceptance is unclear."
+    ],
+    evidenceRequired: "verified",
+    executionShape: {
+      phases: ["build", "review", "finish"],
+      toolNeeds: ["filesystem", "shell"]
+    }
+  };
+  const nearDefaultSizingPreview = run(["brief-sizing-preview", "--root", temp], nearDefaultBrief);
+  assert(nearDefaultSizingPreview.sizingPreview?.risk === "near_default_ceiling", "near-default preview should classify near-ceiling risk");
+  assert(nearDefaultSizingPreview.sizingPreview?.userSurface === "silent", "near-default preview should stay silent");
+  assert(nearDefaultSizingPreview.sizingPreview?.requiresPreApprovalDecision === false, "near-default preview should not block approval");
+  assert(nearDefaultSizingPreview.sizingPreview?.managerAction === "decide_and_continue_silently", "near-default preview should remain Manager-owned");
 
   const oversizedBrief = {
     title: "Oversized dispatch brief",
@@ -554,6 +613,16 @@ function main() {
       toolNeeds: ["filesystem", "shell", "schema", "workflow"]
     }
   };
+  const oversizedSizingPreview = run(["brief-sizing-preview", "--root", temp], oversizedBrief);
+  assert(oversizedSizingPreview.sizingPreview?.risk === "ceiling_clamped", "oversized preview should classify ceiling clamp risk");
+  assert(oversizedSizingPreview.sizingPreview?.userSurface === "ask", "clamped preview should ask before approval");
+  assert(oversizedSizingPreview.sizingPreview?.requiresPreApprovalDecision === true, "clamped preview should block approval");
+  assert(oversizedSizingPreview.sizingPreview?.managerAction === "decide_split_then_confirm_with_user_before_approval", "clamped preview should name confirm-before-approval action");
+  const decomposedOversizedSizingPreview = run(["brief-sizing-preview", "--root", temp], {
+    ...oversizedBrief,
+    operatorDecomposed: true
+  });
+  assert(decomposedOversizedSizingPreview.sizingPreview?.userSurface === "ask", "operator-decomposed clamped preview should still ask");
   const oversizedSaved = run(["brief-save", "--root", temp, "--source", "smoke"], oversizedBrief);
   run(["brief-promote", "--root", temp, "--brief-id", oversizedSaved.briefId]);
   const oversizedDefaultReceipt = run(["dispatch", "--root", temp, "--brief-id", oversizedSaved.briefId]);

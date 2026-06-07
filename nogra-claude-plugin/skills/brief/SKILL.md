@@ -193,10 +193,23 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-sizing-preview --root
 
    Pass the complete structured brief payload on stdin or with `--input`. This
    is a sanity check on the already selected phase, not the first decomposition
-   pass. If `sizingPreview.requiresPreApprovalDecision` is true, revise the phase
-   boundary, reduce scope or ask the operator to approve one larger bounded run
-   before saving/promoting a one-run approval artifact. Do not copy the estimated
-   max turns into the brief; concrete `executionMaxTurns` belongs to dispatch.
+   pass. If you already split the user's intent into phases in this same brief
+   flow, pass `operatorDecomposed: true` with the preview input so the advisory
+   gate does not ask again on the follow-up phase. Do not persist
+   `operatorDecomposed` into the saved brief.
+
+   Treat `sizingPreview.userSurface` as the chat-surface contract:
+   - `silent`: decide and continue without user-facing sizing prose.
+   - `inform`: decide the execution shape, record it, and use at most one line
+     if the deliverable will land in parts.
+   - `ask`: pause before approval only when the preview says the Manager must
+     confirm with the user.
+
+   The split decision is Manager-owned by default. Use
+   `sizingPreview.splitShapeHint` to choose linked versus parallel phases and
+   escalate to the user only when one of `sizingPreview.escalateToUserIf` holds.
+   Do not copy the estimated max turns into the brief; concrete
+   `executionMaxTurns` belongs to dispatch.
 13. Validate once with the local runtime when the draft is ready to become an
    artifact:
 

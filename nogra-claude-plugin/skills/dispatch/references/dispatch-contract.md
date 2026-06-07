@@ -60,9 +60,12 @@ executor role. The brief supplies the dimensions that make turn sizing possible:
 Do not put `maxTurns` in the draft brief. During brief-writing, make the coarse
 decomposition call before writing the full proposal, then run the advisory
 `brief-sizing-preview` on the selected phase before save/promote. If the preview
-still reports near-ceiling or coupled work, revise the phase boundary or ask the
-operator to approve one larger bounded run before approval. That preview is a
-sanity signal only; it does not authorize spawn metadata.
+returns `userSurface=ask`, pause before approval and confirm the split or
+single-run choice with the user. If it returns `inform`, the Manager chooses the
+shape, records it, and uses at most one line only when the deliverable lands in
+parts. If it returns `silent`, keep the sizing decision in the receipt and keep
+the chat clean. That preview is a sanity signal only; it does not authorize
+spawn metadata.
 Dispatch records the chosen sizing in the local receipt as `executionMaxTurns`
 and `executionSizing`; the handoff contract should receive the concrete `run-id`
 so spawn metadata can carry the same value forward. Role frontmatter is only a
