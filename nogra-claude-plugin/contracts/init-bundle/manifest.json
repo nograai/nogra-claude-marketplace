@@ -114,6 +114,13 @@
       "purpose": "Creates the checkpoints lane."
     },
     {
+      "source": "init-bundle/files/.nogra/ledger/.gitkeep",
+      "path": ".nogra/ledger/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the ledger lane for append-only checkpoint freshness facts."
+    },
+    {
       "source": "init-bundle/files/.nogra/memory/sync/.gitkeep",
       "path": ".nogra/memory/sync/.gitkeep",
       "mimeType": "text/plain",

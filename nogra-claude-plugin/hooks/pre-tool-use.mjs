@@ -2,6 +2,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
 function readStdin() {
   try {
@@ -23,15 +24,39 @@ function nonEmptyString(value) {
   return typeof value === "string" && value.trim() !== "" ? value : "";
 }
 
+function firstWorkspaceRoot(input) {
+  if (!Array.isArray(input.workspace_roots)) return "";
+  return input.workspace_roots.find((entry) => typeof entry === "string" && entry.trim() !== "") || "";
+}
+
+function hasNograConfig(root) {
+  return Boolean(root) && existsSync(join(resolve(root), ".nogra", "config.json"));
+}
+
+function nearestNograRoot(start) {
+  if (!start) return "";
+  let current = resolve(start);
+  while (true) {
+    if (hasNograConfig(current)) return current;
+    const next = resolve(current, "..");
+    if (next === current) return "";
+    current = next;
+  }
+}
+
 function projectRoot(input) {
-  const workspaceRoot = Array.isArray(input.workspace_roots)
-    ? input.workspace_roots.find((entry) => typeof entry === "string" && entry.trim() !== "")
-    : "";
+  const explicitRoot = process.env.CLAUDE_PROJECT_ROOT || process.env.CURSOR_PROJECT_DIR || "";
+  if (explicitRoot) return resolve(explicitRoot);
+
+  const workspaceRoot = firstWorkspaceRoot(input);
+  if (hasNograConfig(workspaceRoot)) return resolve(workspaceRoot);
+
+  const cwdRoot = nearestNograRoot(nonEmptyString(input.cwd));
+  if (cwdRoot) return cwdRoot;
+
   return resolve(
-    process.env.CLAUDE_PROJECT_ROOT ||
-      process.env.CURSOR_PROJECT_DIR ||
+    workspaceRoot ||
       nonEmptyString(input.cwd) ||
-      workspaceRoot ||
       process.cwd()
   );
 }
@@ -69,7 +94,7 @@ const DEFAULT_SCORING = {
   ambiguity: 10,
   lowRiskEdit: -30,
   singleFileLowScope: -15,
-  directOverride: -40,
+  directOverride: 0,
   pureQuestion: -50
 };
 
@@ -85,7 +110,30 @@ const DEFAULT_DICTIONARY = {
   ambiguity: ["unclear", "risky", "hard to revert"],
   lowRiskEdit: ["readme", "one sentence", "single sentence", "hello nogra"],
   singleFileLowScope: ["single file", "one file"],
-  directOverride: ["direct", "skip brief", "skip nogra", "no nogra", "without nogra", "no ceremony", "just build"]
+  directOverride: [
+    "direct",
+    "direct/native",
+    "skip brief",
+    "skip nogra",
+    "no nogra",
+    "without nogra",
+    "no ceremony",
+    "just build",
+    "claude native",
+    "direkte",
+    "uden nogra",
+    "uden brief",
+    "ingen nogra",
+    "ingen brief",
+    "spring nogra over",
+    "spring brief over",
+    "kør uden nogra",
+    "koer uden nogra",
+    "køre uden nogra",
+    "koere uden nogra"
+  ],
+  toggleOn: [],
+  toggleOff: []
 };
 
 function numericSetting(value, fallback) {
@@ -233,7 +281,6 @@ function scorePrompt(prompt, scoring = DEFAULT_SCORING, dictionary = DEFAULT_DIC
   if (signals.ambiguity) score += scoring.ambiguity;
   if (signals.lowRiskEdit) score += scoring.lowRiskEdit;
   if (signals.singleFileLowScope) score += scoring.singleFileLowScope;
-  if (signals.directOverride) score += scoring.directOverride;
   if (signals.pureQuestion) score += scoring.pureQuestion;
 
   return { score, topicRelated: signals.topicRelated, directOverride: signals.directOverride };
@@ -249,13 +296,13 @@ function semanticText(prompt) {
 
 function judgmentFallback(prompt, { score, topicRelated, directOverride }, threshold) {
   const text = semanticText(prompt);
-  if (directOverride || score >= threshold) {
+  if (score >= threshold) {
     return { active: false, reasons: [] };
   }
 
   const genericScoreQuestion =
     /\b(score|scorer|scoring|procent|percent|threshold|tærskel|taerskel)\b/u.test(text) &&
-    !/\b(build|byg|bygger|rebuild|re-build|redesign|re-design|design|research|researcher|change|ændr|aendr)\b/u.test(text);
+    !/\b(build|byg|bygger|rebuild|re-build|redesign|re-design|re-designe|redesigne|design|research|researcher|change|ændr|aendr)\b/u.test(text);
 
   if (genericScoreQuestion) {
     return { active: false, reasons: [] };
@@ -263,9 +310,9 @@ function judgmentFallback(prompt, { score, topicRelated, directOverride }, thres
 
   const actionLanguage =
     /^(?:please\s+)?(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|make|create|research|design)\b/u.test(text) ||
-    /\b(?:we|vi)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|byg|bygger|bygge|laver|lav|ændr|ændrer|aendr|aendrer|redesign|redesigner|ombyg|ombygger)\b/u.test(text) ||
-    /\b(?:jeg kunne godt tænke mig|jeg kunne godt taenke mig|jeg vil gerne|i want|i would like|i'd like)\b.{0,120}\b(?:research|researcher|undersøg|undersog|undersøge|undersoege|redesign|re-design|design|byg|bygge|change|fix|lav|lave)\b/u.test(text) ||
-    /\b(?:kan du|gider du|could you|can you)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|research|researcher|undersøg|undersog|design|change|fix|byg|bygge|lav|lave|ret|rette)\b/u.test(text);
+    /\b(?:we|vi)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|re-designe|redesigne|rework|redo|change|fix|byg|bygger|bygge|laver|lav|ændr|ændrer|aendr|aendrer|redesign|redesigner|ombyg|ombygger)\b/u.test(text) ||
+    /\b(?:jeg kunne godt tænke mig|jeg kunne godt taenke mig|jeg vil gerne|i want|i would like|i'd like)\b.{0,120}\b(?:research|researcher|undersøg|undersog|undersøge|undersoege|redesign|re-design|re-designe|redesigne|design|byg|bygge|change|fix|lav|lave)\b/u.test(text) ||
+    /\b(?:kan du|gider du|could you|can you)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|re-designe|redesigne|research|researcher|undersøg|undersog|design|change|fix|byg|bygge|lav|lave|ret|rette)\b/u.test(text);
 
   const productSurface =
     /\b(?:blog|bloggen|blogsiden|blogside|blogpost|blog post|post|article|artikel|side|siden|page|site|website|app|produkt|product|cms|frontend|ui|ux|route|component|komponent|dashboard|flow|schema|database|auth|metadata|meta felter|meta fields)\b/u.test(text);
@@ -315,8 +362,28 @@ function exactIntentLines(prompt) {
     .filter(Boolean);
 }
 
-function toggleIntent(prompt) {
+function dictionaryToggleLine(line, dictionary = DEFAULT_DICTIONARY) {
+  for (const [key, intent] of [["toggleOff", "off"], ["toggleOn", "on"]]) {
+    const terms = Array.isArray(dictionary[key]) ? dictionary[key] : [];
+    for (const term of terms) {
+      if (
+        line === term ||
+        line.startsWith(`${term} og `) ||
+        line.startsWith(`${term} and `)
+      ) {
+        return intent;
+      }
+    }
+  }
+  return "";
+}
+
+function toggleIntent(prompt, dictionary = DEFAULT_DICTIONARY) {
   for (const line of exactIntentLines(prompt)) {
+    const dictionaryIntent = dictionaryToggleLine(line, dictionary);
+    if (dictionaryIntent) {
+      return dictionaryIntent;
+    }
     if (
       /^handle this nogra request:\s*off$/u.test(line) ||
       /^\/nogra[:\s-]?off$/u.test(line) ||
@@ -358,6 +425,26 @@ function isNograTool(input) {
   return JSON.stringify(input.tool_input || {}).toLowerCase().includes("nogra:");
 }
 
+function skillName(input) {
+  if (input.tool_name !== "Skill") return "";
+  const toolInput = input.tool_input && typeof input.tool_input === "object" ? input.tool_input : {};
+  const candidate =
+    nonEmptyString(toolInput.skill) ||
+    nonEmptyString(toolInput.commandName) ||
+    nonEmptyString(toolInput.name);
+  return candidate.trim();
+}
+
+function blockedPlanningSkillName(input) {
+  const name = skillName(input).toLowerCase();
+  if (!name || name.includes("nogra:")) return "";
+  if (name.startsWith("superpowers:")) return name;
+  if (/^(?:brainstorming|writing-plans|executing-plans|using-git-worktrees|subagent-driven-development|test-driven-development|requesting-code-review|verification-before-completion|finishing-a-development-branch)\b/u.test(name)) {
+    return name;
+  }
+  return "";
+}
+
 function pendingOfferState(root, policy) {
   const record = readJsonFile(join(root, ".nogra", "runtime", "last-routing-score.json"));
   if (!record || typeof record !== "object") {
@@ -371,7 +458,11 @@ function pendingOfferState(root, policy) {
   }
 
   const autoOfferEnabled = policy.autoOfferEnabled !== false && policy.enabled !== false;
-  if (!autoOfferEnabled || record.autoOfferEnabled === false || record.directOverride === true) {
+  if (!autoOfferEnabled || record.autoOfferEnabled === false) {
+    return { active: false };
+  }
+
+  if (record.offerResolution) {
     return { active: false };
   }
 
@@ -397,8 +488,19 @@ function pendingOfferState(root, policy) {
     reasons: Array.isArray(record.reasons) ? record.reasons.filter((reason) => typeof reason === "string") : [],
     fallbackReasons: Array.isArray(record.judgmentFallback?.reasons)
       ? record.judgmentFallback.reasons.filter((reason) => typeof reason === "string")
-      : []
+    : []
   };
+}
+
+function directResolutionActive(root, policy) {
+  const record = readJsonFile(join(root, ".nogra", "runtime", "last-routing-score.json"));
+  if (!record || typeof record !== "object") return false;
+
+  const maxAgeMs = numericSetting(policy.pendingOfferMaxAgeMs, 30 * 60 * 1000);
+  const updatedAtMs = Date.parse(record.updatedAt);
+  if (!Number.isFinite(updatedAtMs) || Date.now() - updatedAtMs > maxAgeMs) return false;
+  if (policy.autoOfferEnabled === false || policy.enabled === false || record.autoOfferEnabled === false) return false;
+  return record.offerResolution === "direct";
 }
 
 function autoOfferEnabled(policy = {}) {
@@ -469,7 +571,7 @@ function markPreToolAskEmitted(root, pending = {}) {
   }
 }
 
-function userFacingAskReason(kind, pending, toolName = "tool") {
+function userFacingJudgmentReason(kind, pending, toolName = "tool") {
   const reasons = [
     ...(pending.reasons || []),
     ...(pending.fallbackReasons || [])
@@ -479,10 +581,14 @@ function userFacingAskReason(kind, pending, toolName = "tool") {
     ? ` Score ${pending.score}, threshold ${pending.threshold}.`
     : "";
   const prefix = kind === "fallback"
-    ? "Nogra caught Claude starting a tool before the Nogra/direct choice was visible."
-    : "Nogra caught Claude starting a tool before the Nogra/direct choice was confirmed.";
+    ? "Nogra is ON and caught Claude starting a tool before Nogra judgment was visible."
+    : "Nogra is ON and caught Claude starting a tool before Nogra judgment was confirmed.";
 
-  return `${prefix} Tool: ${toolName}.${scoreText}${reasonText} Approve to continue direct for this tool, or reject and ask Claude to offer Nogra/direct first. Use /nogra:off if you want automatic Nogra offers off for this workspace.`;
+  return `${prefix} Tool: ${toolName}.${scoreText}${reasonText} Approve direct for this task/tool, or reject and ask Claude to start the Nogra brief flow. Use /nogra:off only for workspace-level disable.`;
+}
+
+function userFacingSkillJudgmentReason(name) {
+  return `Nogra is ON and caught non-Nogra planning skill ${name}. Approve only if this task is explicitly on the direct path; otherwise reject and use the Nogra brief flow.`;
 }
 
 function emitAsk(reason, root, pending) {
@@ -504,21 +610,30 @@ const config = readConfig(root);
 
 if (!config) process.exit(0);
 
+captureSessionAnchor(root, input, "PreToolUse");
+
 const prompt = nonEmptyString(input.prompt);
 const policy = config.routingPolicy || {};
-if (!prompt) {
-  if (isNograTool(input)) {
-    process.exit(0);
-  }
+if (isNograTool(input)) {
+  process.exit(0);
+}
 
+if (!prompt) {
   if (!autoOfferEnabled(policy)) {
     writeRoutingOffState(root, policy);
     process.exit(0);
   }
 
+  const directResolved = directResolutionActive(root, policy);
+  const blockedSkill = blockedPlanningSkillName(input);
+  if (blockedSkill && !directResolved) {
+    emitAsk(userFacingSkillJudgmentReason(blockedSkill), root, {});
+    process.exit(0);
+  }
+
   const pending = pendingOfferState(root, policy);
   if (pending.active) {
-    emitAsk(userFacingAskReason("pending", pending, input.tool_name), root, pending);
+    emitAsk(userFacingJudgmentReason("pending", pending, input.tool_name), root, pending);
   }
   process.exit(0);
 }
@@ -531,7 +646,7 @@ const scoring = scoringPolicy(policy);
 const dictionary = dictionaryPolicy(policy);
 const routingPrompt = userAuthoredText(prompt);
 
-const toggle = toggleIntent(prompt);
+const toggle = toggleIntent(prompt, dictionary);
 if (toggle) {
   process.exit(0);
 }
@@ -545,13 +660,20 @@ if (!autoOfferEnabled(policy)) {
   process.exit(0);
 }
 
+const directResolved = directResolutionActive(root, policy);
+const blockedSkill = blockedPlanningSkillName(input);
+if (blockedSkill && !directResolved) {
+  emitAsk(userFacingSkillJudgmentReason(blockedSkill), root, {});
+  process.exit(0);
+}
+
 if (!routingPrompt) {
   process.exit(0);
 }
 
 const pending = pendingOfferState(root, policy);
 if (pending.active) {
-  emitAsk(userFacingAskReason("pending", pending, input.tool_name), root, pending);
+  emitAsk(userFacingJudgmentReason("pending", pending, input.tool_name), root, pending);
   process.exit(0);
 }
 
@@ -561,14 +683,10 @@ const { sensitivityPercent, autoOfferThreshold } = routingThresholds(policy);
 const topicGate = policy.topicGate !== false;
 const fallback = judgmentFallback(routingPrompt, { score, topicRelated, directOverride }, autoOfferThreshold);
 
-if (directOverride) {
-  process.exit(0);
-}
-
 if ((topicGate && !topicRelated) || score < autoOfferThreshold) {
   if (fallback.active) {
     emitAsk(
-      userFacingAskReason(
+      userFacingJudgmentReason(
         "fallback",
         {
           score,
@@ -585,7 +703,7 @@ if ((topicGate && !topicRelated) || score < autoOfferThreshold) {
 }
 
 emitAsk(
-  userFacingAskReason(
+  userFacingJudgmentReason(
     "pending",
     {
       score,

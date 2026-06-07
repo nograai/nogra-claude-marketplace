@@ -11,7 +11,7 @@ risk, no-go areas, user-owned actions and success criteria in seconds.
 
 A strong approval display usually has:
 
-- a title block with brief title and path/id;
+- a title block with brief title, `Open brief` link and/or brief id;
 - a short goal;
 - a simple flow diagram showing the important actors/crossings;
 - grouped phases or work packages;
@@ -21,6 +21,18 @@ A strong approval display usually has:
 - user actions before and after dispatch;
 - evidence-backed success criteria;
 - max output / return shape.
+
+For local promoted briefs, prefer a single bare Markdown file link labeled
+`Open brief`:
+
+```md
+[Open brief](file:///absolute/path/to/brief.md)
+```
+
+Do not wrap that link in backticks, do not label it `Open file`, and do not add
+`:1` or any other line suffix to the `file://` URL. If the path contains spaces
+or special characters, use the runtime-provided link or an equivalent
+URL-encoded file URL.
 
 Omit any section that would be empty or fake. Add a section when the brief has a
 brief-specific concern that matters for approval.

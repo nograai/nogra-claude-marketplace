@@ -1,8 +1,8 @@
 {
   "name": "nogra",
-  "displayName": "nogra",
-  "version": "0.5.0",
-  "description": "An optional discipline layer for Claude Code: approve a short plan, run it, then verify the result against the plan.",
+  "displayName": "Nogra workflow",
+  "version": "0.6.2",
+  "description": "Approve, run, verify in Claude Code - the work is checked against the plan before it is marked done.",
   "author": {
     "name": "Patrick Larsen",
     "email": "patrick@nogra.ai",
@@ -16,8 +16,8 @@
     "claude-code",
     "agents",
     "discipline",
-    "brief-driven",
     "verification",
+    "brief-driven",
     "agent-orchestration"
   ]
 }

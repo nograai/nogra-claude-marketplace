@@ -1,6 +1,6 @@
 ---
 name: status
-description: Show compact Nogra status, installed plugin ref, workspace release version, routing state, and recent local records. Use when the user asks for Nogra status, version, installed version, plugin version, current state, recent briefs, runs or events.
+description: Show compact Nogra status, installed plugin ref, workspace contract version, routing state, and recent local records. Use when the user asks for Nogra status, version, installed version, plugin version, current state, recent briefs, runs or events.
 ---
 
 # Nogra Status
@@ -13,12 +13,13 @@ Always include a small version block near the top:
 
 ```text
 Nogra plugin: <id> <ref>
-Workspace release: <releaseVersion or not initialized>
+Workspace contract: <contractVersion/releaseVersion or not initialized>
 ```
 
 Use the current plugin session context and local runtime status when available.
 Read workspace `releaseVersion` from `.nogra/config.json` or the runtime status
-payload. Detailed data-source mechanics live in
+payload, but label it as the workspace contract version, not the plugin version.
+Detailed data-source mechanics live in
 `skills/status/references/data-sources.md`; runtime-policy meaning lives in
 `skills/help/references/runtime.md`.
 
@@ -51,12 +52,17 @@ After versions, show:
   newest item only unless the user asks for details.
 - Transport note: runtime ledger truth lives in `.nogra/`. Do not imply hosted
   Nogra owns run state.
+- Local ledger/checkpoint freshness when present: show `ledgerWatermark`,
+  `checkpointSourceWatermark` and whether the checkpoint is `fresh` or `stale`.
+- Local continuity migration status when present: show `ready` or
+  `migration-needed`. If migration is needed, say `/nogra:setup` will merge the
+  missing local continuity layout without replacing app files or user-set config.
 
 ## Background Run Boundary
 
-Use provider-native truth. Do not fabricate heartbeats or mid-run states for
-providers that only expose start/end receipts. Do not poll continuously. This
-status command is an explicit on-demand read.
+Use provider-native truth. Show local Nogra heartbeat/ledger state only when
+`.nogra/ledger/` or `.nogra/runtime/` records exist. Do not poll continuously.
+This status command is an explicit on-demand read.
 
 Do not build a parallel task UI. Claude Code's native `/ps` and task
 notifications remain the live task surfaces. `/nogra:status` is the compact
@@ -76,7 +82,7 @@ Nogra status
 
 Versions:
 - Nogra plugin: <plugin-id>@<marketplace> <version>
-- Workspace release: <releaseVersion>
+- Workspace contract: <contractVersion/releaseVersion>
 
 Workspace:
 - Auto: ON, sensitivity 50%
@@ -85,6 +91,10 @@ Transport:
 - Active: transport-... running 3m, executor anthropic:sonnet
 - Latest: transport-... ok, returned, report yes, output no
 - Consistency: ok
+
+Ledger:
+- Watermark: 4, checkpoint source 2, checkpoint stale
+- Continuity: ready
 
 Warnings:
 - multiple Nogra installs detected: nogra@nogra-marketplace 0.3.4, nogra@local-test 0.2.5

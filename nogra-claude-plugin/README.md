@@ -1,52 +1,271 @@
+# Nogra Workflow
 
-# Nogra Claude Plugin
+Approve, run, verify in Claude Code - the work is checked against the plan
+before it is marked done.
 
-Nogra gives Claude Code a brief-first workflow with explicit dispatch, evidence
-and verification discipline.
+Nogra is an optional discipline layer for Claude Code. On work with real scope
+or risk, it gets you to approve a short plan first, runs the approved work, then
+checks the result against that plan - so you don't have to take "done" on trust
+when it matters.
 
-This package ships the Nogra skills, local runtime contracts, hooks and agents
-used by the Claude Code plugin. The plugin is skill-driven: `/nogra:setup`,
-`/nogra:create`, `/nogra:adapt` and the other Nogra flows are represented as
-skills backed by the local runtime.
+## Install
 
-## LLM Workspace Shape
+**Requires Node.js 18+ on your PATH** — Nogra's local runtime is a small Node
+script. If `node` is not available, setup stops and tells you instead of failing
+cryptically.
 
-Nogra supports two local shapes:
+After installing this plugin:
+
+1. In Claude Code, go to the project folder where you want Nogra active.
+2. Restart or reopen Claude Code so the plugin loads.
+3. Run `/nogra:setup` — this creates the folder's local Nogra state
+   (`.nogra/config.json`, standard `.nogra/` domain folders, plus a root
+   `CLAUDE.md` only if you don't already have one).
+4. For an existing codebase, also run `/nogra:adapt` so Nogra reads the project
+   and records its map under `.nogra/`.
+
+You can also ask Claude:
 
 ```text
-my-project/
-  .nogra/
+Can you help me set up Nogra in this folder?
 ```
+
+The plugin provides three primitives - brief, dispatch, verify - plus the local
+`.nogra/` ledger they write to.
+Folder-local state is created only when `/nogra:setup` runs.
+
+By default, setup, brief contracts, brief validation, local dispatch receipts and
+verification support use bundled plugin contracts plus the workspace `.nogra/`
+records. After the plugin has been installed, all workflow stays local
+to the workspace.
+
+## Privacy and Support
+
+Nogra runs locally. It collects no data, requires no account, and makes no
+network calls. There is nothing to collect, store, or share.
+
+For support, contact `support@nogra.ai`.
+
+## Working Examples
+
+Run these examples in disposable workspaces, not in the Nogra plugin source
+repo. They are meant to show the core local workflow: setup, brief-first work,
+dispatch, verification and checkpoint continuity.
+
+### Set up a workspace
+
+Ask Claude:
 
 ```text
-my-workspace/
-  .nogra/
-  projects/
-    project-a/
-      .nogra/
-    project-b/
-      .nogra/
+Can you help me set up Nogra in this folder?
 ```
 
-Hub `.nogra/` owns project discovery. Project `.nogra/` owns project state.
-SessionStart only detects and hints; it must not load full memory, write state,
-dispatch work, or treat memory as authority. From a hub, a named indexed
-project focuses `projects/<workspaceId>/` read-only before any work begins.
+Expected behavior: Nogra previews the local files it will create, waits for
+explicit GO, then creates `.nogra/` workspace state and a root `CLAUDE.md` only
+when missing. Existing app files, `.claude/`, package files, git config and
+provider settings are preserved.
 
-## Hooks
+### Build something
 
-Active hooks:
+Ask Claude:
 
-- `hooks/session-start.mjs` - boot-context and Manager hub detector.
-- `hooks/user-prompt-submit.mjs` - project focus from Manager hub plus local
-  routing-score telemetry.
-- `hooks/user-prompt-expansion.mjs` - initialized-workspace prompt expansion.
-- `hooks/pre-tool-use.mjs` - pending-routing guard. It may update the same
-  local routing-score telemetry record.
+```text
+Build me a small local task tracker in this workspace.
+```
 
-Production hooks may write only bounded local routing telemetry under
-`.nogra/runtime/last-routing-score.json`. They do not write config, dispatch,
-verify, spawn agents or draft briefs.
+Expected behavior: Nogra treats this as scoped work, shapes a brief first, waits
+for user approval, dispatches the approved work, then verifies the result
+against the brief and available evidence before calling it done.
 
-Skills, commands, local contracts and local runtime support are part of this
-package.
+### Save a checkpoint
+
+Ask Claude:
+
+```text
+Save a checkpoint of what we did, what changed, and what remains.
+```
+
+Expected behavior: Nogra records a local continuity checkpoint under `.nogra/`
+with the work completed, evidence checked and remaining next steps. No external
+account or service is required.
+
+### Check local continuity
+
+Ask Claude:
+
+```text
+Show Nogra status for this workspace.
+```
+
+Expected behavior: Nogra reports the installed plugin version, the workspace
+contract version, routing/runtime state, recent local records and checkpoint
+freshness. If the local ledger watermark is ahead of the checkpoint
+`SourceWatermark`, the checkpoint is stale and should be refreshed before it is
+trusted as the latest state.
+
+### Continue later
+
+Ask Claude:
+
+```text
+Continue from the latest Nogra checkpoint if it is fresh. If it is stale, compare
+the local ledger watermark with the checkpoint source watermark and tell me what
+needs to be refreshed first.
+```
+
+Expected behavior: Nogra treats the append-only local ledger as the truth source
+and the checkpoint as a human-readable projection. Claude should not invent
+memory from chat history or read transcript contents. It should use the local
+`.nogra/` records to explain whether the checkpoint is fresh or stale, then ask
+what you want to do next.
+
+## Updates
+
+The marketplace publishes versioned plugin packages. To pick up a released
+plugin version, run `/plugin update` and `/reload-plugins`, or enable
+marketplace auto-update in Claude Code. The plugin metadata declares the package
+version for human-readable marketplace surfaces.
+
+If you ask Claude whether Nogra can be installed without overwriting existing
+files, Claude should walk through the file plan before writing anything. Setup
+writes `.nogra/` workspace state plus a root `CLAUDE.md` only when missing, and
+preserves or merges existing Nogra files according to the bundled write policy.
+
+## Skills
+
+- `/nogra:setup`: enable the current folder for Nogra.
+- `/nogra:create <name>`: create a project-local Nogra workspace under
+  `projects/<workspaceId>/` from a workspace hub.
+- `/nogra:adapt`: read an existing project and write Nogra's local project map
+  under `.nogra/` without changing app files.
+- `/nogra:brief`: shape scoped, risky or ambiguous work into a validated Nogra
+  brief before execution.
+- `/nogra:dispatch`: dispatch an approved brief after explicit GO.
+- `/nogra:verify`: check whether a claim/result matches the brief and evidence.
+- `/nogra:off`: disable automatic Nogra offers in this workspace.
+- `/nogra:on`: enable automatic Nogra offers in this workspace.
+- `/nogra:sensitivity`: set Nogra automatic routing sensitivity as a percentage.
+- `/nogra:settings`: show or update local Nogra profile, runtime role models,
+  effort, language and auto-routing settings.
+- `/nogra:status`: show installed plugin ref, workspace contract version,
+  routing state and recent local records.
+- `/nogra:update`: pull current Nogra contract/guidance on demand.
+- `/nogra:help`: explain Nogra and choose the right Nogra flow.
+
+The plugin also includes soft lifecycle hooks that make the brief/direct choice
+visible at the right moment. Hooks only score local current-prompt/workspace
+signals, add short routing context, and ask before first tool use when a
+high-scope request skipped the brief/direct offer. Skills own all `.nogra/`
+writes, brief drafting, dispatch, verification, and agent spawning. Claude
+transcript and history stay outside Nogra's routing input. Claude must still
+use Nogra skills for the workflow and wait for the user's choice before
+entering brief flow. `/nogra:on` and `/nogra:off` are handled by
+their skills, which update local `.nogra/config.json` and report the result in
+Claude's visible conversation surface. Explicit `/nogra:*` commands still work
+while automatic offers are off.
+If the user explicitly asks for direct work, skip brief, or no ceremony,
+automatic routing stays direct regardless of sensitivity.
+
+Session continuity is local and explicit. Session-start and routing hooks may
+write a bounded session anchor under `.nogra/runtime/session-anchor.json`, and
+Nogra runtime writes append-only ledger events when briefs, dispatches,
+verification, diagnostics or terminal run records are created. A checkpoint is a
+user-visible projection of that ledger state, not an automatic shutdown upload.
+When the ledger is ahead of the checkpoint, `/nogra:status` reports the
+checkpoint as stale so Claude can ask whether to refresh it.
+
+Routing is structured-primary with judgment fallback. The local score path is
+the preferred baseline. When it misses but the prompt still has product-work
+shape, hooks surface a judgment-fallback marker; Claude then uses current-prompt
+judgment to decide whether to make the brief/direct offer. The fallback runs as
+deterministic current-prompt judgment; Nogra dispatch starts only after the user
+accepts the workflow.
+
+Extension plugins own their own `/nogra-*` commands and hooks. If an installed
+Nogra extension handles a prompt or command, that request stays with the
+extension plugin.
+
+After setup, use `/nogra:brief` to start a Nogra brief, or ask Claude to write
+one for the work. When the brief looks right, say GO to dispatch it.
+
+For an existing project, run `/nogra:adapt` after setup to let Claude read the
+workspace and record Nogra's project map in `.nogra/state/PROJECT-STRUCTURE.md`,
+`.nogra/state/SESSION-CHECKPOINT.md` and `.nogra/state/DECISIONS.md`.
+
+For a workspace hub that should manage several projects, run `/nogra:create
+<name>` after setup. It creates `projects/<workspaceId>/` with its own
+project-local `.nogra/` state and records the project in the hub index.
+
+Use `/nogra:verify` when you want Nogra to check whether work is actually done.
+Use `/nogra:update` only when you want to refresh Nogra guidance; updates are
+explicit, not periodic.
+
+Nogra suggestions are controlled locally by `.nogra/config.json`:
+
+```json
+"routingPolicy": {
+  "autoOfferEnabled": true,
+  "sensitivityPercent": 50,
+  "sensitivityStepPercent": 5,
+  "autoOfferThreshold": 60,
+  "strongOfferThreshold": 80,
+  "offerOncePerIntent": true,
+  "defaultLanguage": "en",
+  "translationFallback": "claude-current-prompt",
+  "scoring": {
+    "createIntent": 25,
+    "productSurface": 20,
+    "evidenceNeed": 20,
+    "completionClaim": 20,
+    "qualityCritical": 15,
+    "riskyDomain": 15,
+    "ambiguity": 10,
+    "lowRiskEdit": -30,
+    "singleFileLowScope": -15,
+    "directOverride": -40,
+    "pureQuestion": -50
+  }
+}
+```
+
+`sensitivityPercent` is the user-facing sensitivity control. Higher sensitivity makes
+Claude offer Nogra more often by lowering effective thresholds. Lower
+sensitivity keeps Claude more direct by raising effective thresholds. The
+value snaps to `sensitivityStepPercent` so users can tune it in calm increments
+defined by the workspace config. The scoring values tune Nogra's local routing
+while the plugin remains stable. Explicit `/nogra:*` commands always work.
+Language handling is English-first; `defaultLanguage` tells Claude the
+workspace's preferred language, and `translationFallback` means Claude uses its
+current-prompt understanding directly.
+
+Runtime preferences are also controlled locally:
+
+```json
+"runtimePolicy": {
+  "profile": "default",
+  "roles": {}
+}
+```
+
+Use `/nogra:settings` to view or change this. `profile: "default"` uses
+Nogra's release default executor/verifier runtime preferences. `profile:
+"custom"` is written only when the user chooses concrete executor/verifier
+runtime values. The bundled executor/verifier agents stay inside the plugin and
+are not copied into the workspace's `.claude/agents/`. Claude Code's native
+`/model` and `/effort` remain the source of truth for the live model and
+effort.
+
+## What Setup Writes
+
+`/nogra:setup` reads the plugin-bundled bootstrap bundle and writes local Nogra
+workspace state:
+
+- `.nogra/config.json` (the workspace config)
+- `.nogra/state/` current checkpoint, tasks, decisions and structure files
+- `.nogra/briefs/`, `.nogra/runs/`, `.nogra/evidence/`, `.nogra/receipts/`,
+  `.nogra/reports/`, `.nogra/checkpoints/`, `.nogra/memory/`, `.nogra/index/`
+  and `.nogra/transport/` lanes
+- root `CLAUDE.md`, only when one does not already exist
+
+Setup preserves app files and existing root `CLAUDE.md`. Project-specific facts
+are refined by `/nogra:adapt`, after Nogra has read this workspace.

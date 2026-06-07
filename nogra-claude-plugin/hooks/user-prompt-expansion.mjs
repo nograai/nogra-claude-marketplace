@@ -28,15 +28,39 @@ function nonEmptyString(value) {
   return typeof value === "string" && value.trim() !== "" ? value : "";
 }
 
+function firstWorkspaceRoot(input) {
+  if (!Array.isArray(input.workspace_roots)) return "";
+  return input.workspace_roots.find((entry) => typeof entry === "string" && entry.trim() !== "") || "";
+}
+
+function hasNograConfig(root) {
+  return Boolean(root) && existsSync(join(resolve(root), ".nogra", "config.json"));
+}
+
+function nearestNograRoot(start) {
+  if (!start) return "";
+  let current = resolve(start);
+  while (true) {
+    if (hasNograConfig(current)) return current;
+    const next = resolve(current, "..");
+    if (next === current) return "";
+    current = next;
+  }
+}
+
 function projectRoot(input) {
-  const workspaceRoot = Array.isArray(input.workspace_roots)
-    ? input.workspace_roots.find((entry) => typeof entry === "string" && entry.trim() !== "")
-    : "";
+  const explicitRoot = process.env.CLAUDE_PROJECT_ROOT || process.env.CURSOR_PROJECT_DIR || "";
+  if (explicitRoot) return resolve(explicitRoot);
+
+  const workspaceRoot = firstWorkspaceRoot(input);
+  if (hasNograConfig(workspaceRoot)) return resolve(workspaceRoot);
+
+  const cwdRoot = nearestNograRoot(nonEmptyString(input.cwd));
+  if (cwdRoot) return cwdRoot;
+
   return resolve(
-    process.env.CLAUDE_PROJECT_ROOT ||
-      process.env.CURSOR_PROJECT_DIR ||
+    workspaceRoot ||
       nonEmptyString(input.cwd) ||
-      workspaceRoot ||
       process.cwd()
   );
 }
@@ -164,7 +188,7 @@ emitContext(`<!-- nogra-plugin:routing-toggle intent=${toggle} initialized=${con
 <NOGRA_ROUTING_TOGGLE_REQUEST>
 The user asked to turn Nogra automatic offers ${toggle} for this workspace.
 
-Hooks are soft guardrails only. Do not treat this hook as the actor, and do not say the hook already changed config.
+Hooks are routing guardrails only. Do not treat this hook as the actor, and do not say the hook already changed config.
 
 Use the nogra:${toggle} skill now. The skill owns reading and updating local .nogra/config.json, then reporting the result visibly to the user.
 

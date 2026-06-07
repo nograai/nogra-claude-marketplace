@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveBootContext } from "../runtime/local/boot-context.mjs";
+import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
 function readStdin() {
   try {
@@ -24,15 +25,39 @@ function nonEmptyString(value) {
   return typeof value === "string" && value.trim() !== "" ? value : "";
 }
 
+function firstWorkspaceRoot(input) {
+  if (!Array.isArray(input.workspace_roots)) return "";
+  return input.workspace_roots.find((entry) => typeof entry === "string" && entry.trim() !== "") || "";
+}
+
+function hasNograConfig(root) {
+  return Boolean(root) && existsSync(join(resolve(root), ".nogra", "config.json"));
+}
+
+function nearestNograRoot(start) {
+  if (!start) return "";
+  let current = resolve(start);
+  while (true) {
+    if (hasNograConfig(current)) return current;
+    const next = resolve(current, "..");
+    if (next === current) return "";
+    current = next;
+  }
+}
+
 function projectRoot(input) {
-  const workspaceRoot = Array.isArray(input.workspace_roots)
-    ? input.workspace_roots.find((entry) => typeof entry === "string" && entry.trim() !== "")
-    : "";
+  const explicitRoot = process.env.CLAUDE_PROJECT_ROOT || process.env.CURSOR_PROJECT_DIR || "";
+  if (explicitRoot) return resolve(explicitRoot);
+
+  const workspaceRoot = firstWorkspaceRoot(input);
+  if (hasNograConfig(workspaceRoot)) return resolve(workspaceRoot);
+
+  const cwdRoot = nearestNograRoot(nonEmptyString(input.cwd));
+  if (cwdRoot) return cwdRoot;
+
   return resolve(
-    process.env.CLAUDE_PROJECT_ROOT ||
-      process.env.CURSOR_PROJECT_DIR ||
+    workspaceRoot ||
       nonEmptyString(input.cwd) ||
-      workspaceRoot ||
       process.cwd()
   );
 }
@@ -204,6 +229,9 @@ function bootContextBlock(root) {
     `status=${boot.status}`,
     `workspaceId=${boot.workspaceId || ""}`,
     `workspaceRoot=${boot.workspaceRoot || ""}`,
+    `ledgerWatermark=${boot.ledgerWatermark ?? 0}`,
+    `checkpointSourceWatermark=${boot.checkpointSourceWatermark ?? 0}`,
+    `checkpointStatus=${boot.checkpointStatus || "fresh"}`,
     "writes=[]",
     "autoLoaded=false",
     "</NOGRA_BOOT_CONTEXT>"
@@ -228,6 +256,7 @@ When the user asks for Nogra status or version, include this plugin ref and say 
 }
 
 const policy = config.routingPolicy || {};
+captureSessionAnchor(root, input, "SessionStart");
 const autoOfferEnabled = policy.autoOfferEnabled !== false && policy.enabled !== false;
 const { sensitivityPercent, sensitivityStepPercent, autoOfferThreshold, strongOfferThreshold } = routingThresholds(policy);
 const topicGate = policy.topicGate !== false;
@@ -242,11 +271,13 @@ This workspace has .nogra/config.json. Nogra automatic routing is ${autoOfferEna
 
 Use Nogra skills as the first move for Nogra decisions:
 - For explicit /nogra:* commands or direct Nogra requests, use the matching Nogra skill.
-- When automatic routing is on, make the brief/direct offer before implementation skills when the request has scope, risk, ambiguity, verification needs, multiple files, browser/screenshot/build/test evidence, deploy, auth, data, or production impact.
+- When automatic routing is on, judge the user's task first. If the request has scope, risk, ambiguity, verification needs, multiple files, browser/screenshot/build/test evidence, deploy, auth, data, or production impact, offer the Nogra brief flow before implementation skills.
 - When automatic routing is off, do not proactively offer Nogra. Explicit /nogra:* commands still work.
-- When the user explicitly asks for direct work, skip/no brief, or "uden Nogra", respect that and stay direct.
+- If the user chooses direct work after the Nogra offer, proceed directly for that task while Nogra stays on. If "direct", skip/no brief, no Nogra, without Nogra, Claude native, or local-language no-Nogra equivalents appear inside the initial task, do not let that bypass heat scoring; judge the task normally and offer brief/direct when scope warrants it.
+- Use /nogra:off only when the user wants workspace-level automatic routing disabled.
 - Simple low-risk edits and pure Q&A stay direct.
 - Nogra extension plugins own their own /nogra-* commands and hooks. If a prompt is for an installed /nogra-* extension, let that extension append its behavior; do not turn it into Nogra ceremony.
+- If the user asks which Nogra projects/workspaces exist, use the boot context workspace index/candidates to show a compact project list and ask what they want to do next. Do not load every project checkpoint unless they choose one.
 
 Current local routingPolicy: autoOfferEnabled=${autoOfferEnabled}, sensitivityPercent=${sensitivityPercent}, sensitivityStepPercent=${sensitivityStepPercent}, effectiveAutoOfferThreshold=${autoOfferThreshold}, effectiveStrongOfferThreshold=${strongOfferThreshold}, topicGate=${topicGate}.
 
@@ -258,7 +289,9 @@ Current installed Nogra plugin: ${plugin.id} ref=${plugin.ref}. When the user as
 
 runtimePolicy is a user-facing Nogra preference. Default/custom is the Nogra-level state. Concrete executor/verifier model and effort belong in config only when profile=custom, and should be included in dispatch handoffs and run-agent instructions when the client/runtime can honor them. Claude Code's native /model, /effort and subagent UI remain the source of truth for the actual running model/effort shown by Claude Code.
 
-Hooks are soft timing guardrails only. They read local .nogra/config.json and may write only bounded local routing telemetry under .nogra/runtime/last-routing-score.json. They do not write config, dispatch, verify, spawn agents, run extension plugins, or draft briefs. Nogra actions use the local runtime and local .nogra/ records. If Nogra is offered, stop and wait for the user to choose brief flow or direct work.
+Hooks are routing guardrails when Nogra automatic routing is on. They read local .nogra/config.json and may write only bounded local routing telemetry under .nogra/runtime/last-routing-score.json plus the current local session anchor under .nogra/runtime/session-anchor.json. They do not write config, dispatch, verify, spawn agents, run extension plugins, draft briefs, read full transcripts, or promote checkpoints. Nogra actions use the local runtime and local .nogra/ records. If Nogra is offered, stop and wait for the user to choose Nogra brief flow or direct work for this task. /nogra:off is only for workspace-level disable.
+
+Session continuity rule: ledger state is the truth source and checkpoint state is a human-readable projection. If checkpointStatus=stale, the ledger has newer facts than .nogra/state/SESSION-CHECKPOINT.md. Treat the checkpoint as stale; when the user asks to continue, wrap up, or save progress, refresh/propose the checkpoint from ledger facts rather than inventing memory from chat.
 </NOGRA_ROUTING_POLICY>
 
 ${bootContextBlock(root)}`);

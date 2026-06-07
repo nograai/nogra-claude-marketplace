@@ -12,6 +12,7 @@ live in domain folders:
 - `receipts/` - operation receipts.
 - `reports/` - final reports.
 - `checkpoints/` - dated checkpoint snapshots.
+- `ledger/` - append-only state facts used for checkpoint freshness.
 - `memory/local/` - local continuity notes.
 - `memory/sync/` - sync metadata only when sync is enabled.
 - `transport/` - dispatch artifacts.

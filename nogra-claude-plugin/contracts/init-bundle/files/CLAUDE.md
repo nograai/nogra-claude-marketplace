@@ -75,7 +75,7 @@ Nogra state is local context for this folder. It guides judgment; it is not a
 filesystem jail.
 
 - Treat `.nogra/` records as authority for the current workspace by default.
-- If this folder is a Manager hub, real projects live under
+- If this folder is a workspace hub, real projects live under
   `projects/<workspaceId>/` and each project owns its own `.nogra/` folder.
 - If the user names an indexed project from the hub, focus that project and read
   its project-local state before making current-state claims.

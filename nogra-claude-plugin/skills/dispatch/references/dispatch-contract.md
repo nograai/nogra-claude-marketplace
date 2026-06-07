@@ -44,6 +44,42 @@ For each proposed phase, include:
 - evidence or return point
 - why this phase is separate
 
+## Execution Sizing
+
+Choose `maxTurns` only after the approved brief exists and before spawning the
+executor role. The brief supplies the dimensions that make turn sizing possible:
+
+- in-scope files
+- scope breadth
+- success and stop criteria
+- required evidence level
+- execution shape, phases and tool needs
+- coupling or risk signals such as migrations, hooks, workflow changes or
+  cross-area edits
+
+Do not put `maxTurns` in the draft brief. During brief-writing, make the coarse
+decomposition call before writing the full proposal, then run the advisory
+`brief-sizing-preview` on the selected phase before save/promote. If the preview
+still reports near-ceiling or coupled work, revise the phase boundary or ask the
+operator to approve one larger bounded run before approval. That preview is a
+sanity signal only; it does not authorize spawn metadata.
+Dispatch records the chosen sizing in the local receipt as `executionMaxTurns`
+and `executionSizing`; the handoff contract should receive the concrete `run-id`
+so spawn metadata can carry the same value forward. Role frontmatter is only a
+generic fallback when no dispatch run is available.
+
+The default executor ceiling is a decomposition signal, not a silent failure
+mode. If `runtimePolicy.roles.executor.maxTurns` is configured above the default,
+it may raise the dispatch ceiling. A lower configured value must not clamp the
+brief-derived budget down; use an explicit per-dispatch Manager override only
+when the operator intentionally wants a smaller bounded run.
+
+When dispatch sizing is clamped, the receipt marks
+`executionSizing.requiresManagerDecision: true` and provides a one-line
+`executionSizing.summary`. Manager must handle that before executor spawn by
+splitting into phases, using an explicit bounded override with operator approval,
+or asking for a decision.
+
 ## Tool Shape
 
 If the approved brief includes `executionShape.toolNeeds`, the adapter derives
@@ -60,6 +96,10 @@ Local dispatch writes a queued transport run and event under
 `.nogra/transport/`. Dispatch state must keep role and runtime paired, for
 example `executionRole: "nogra:executor"` with
 `executionRuntime: "anthropic:sonnet"`.
+`owner` remains `Manager`. `nextOwner` is the next role id, for example
+`nogra:executor`; when dispatch sizing requires a Manager decision, `nextOwner`
+returns to `Manager` and the specific action stays in `executionSizing` and
+`executionCrossing.nextStep`.
 
 Runtime/model facts stay in the dispatch receipt and handoff metadata. The
 executor prompt should not add a separate runtime-settings line.

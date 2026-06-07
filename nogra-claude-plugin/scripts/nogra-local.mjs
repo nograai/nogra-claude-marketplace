@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const RELEASE_VERSION = "v1.0.0";
 const INIT_BUNDLE_VERSION = "v1.0.0";
@@ -14,6 +14,8 @@ const INIT_BUNDLE_SCHEMA = "nogra.init.bundle.v1";
 const TRANSPORT_STATUSES = new Set(["queued", "running", "returning", "returned", "ok", "partial", "blocked", "failed", "cancelled", "acknowledged"]);
 const BRIEF_STATUSES = new Set(["draft", "ready", "approved", "in_progress", "returned", "accepted", "archived"]);
 const EVIDENCE_LEVELS = new Set(["reported", "edited", "tested", "verified"]);
+const DEFAULT_EXECUTOR_TURN_CEILING = 96;
+const ABSOLUTE_EXECUTOR_TURN_CEILING = 192;
 
 const __filename = fileURLToPath(import.meta.url);
 const pluginRoot = path.resolve(path.dirname(__filename), "..");
@@ -29,10 +31,12 @@ function usage() {
     "  node scripts/nogra-local.mjs create-project <name> [--root <hub-dir>] [--workspace-id <id>] [--project-path <relative-dir>] [--apply] [--json]",
     "  node scripts/nogra-local.mjs brief-contract [--root <dir>] [--json]",
     "  node scripts/nogra-local.mjs brief-validate [--root <dir>] [--input <file>] [--json]",
+    "  node scripts/nogra-local.mjs brief-sizing-preview [--root <dir>] [--input <file>] [--json]",
     "  node scripts/nogra-local.mjs brief-save [--root <dir>] [--input <file>] [--source <label>] [--json]",
     "  node scripts/nogra-local.mjs brief-promote [--root <dir>] [--brief-id <id>] [--input <file>] [--json]",
-    "  node scripts/nogra-local.mjs handoff-contract [--root <dir>] --kind executor|verifier [--json]",
-    "  node scripts/nogra-local.mjs dispatch [--root <dir>] --brief-id <id> [--target executor] [--target-model <model>] [--json]",
+    "  node scripts/nogra-local.mjs ledger-smoke [--root <dir>] [--label <text>] [--json]",
+    "  node scripts/nogra-local.mjs handoff-contract [--root <dir>] --kind executor|verifier [--run-id <id>] [--json]",
+    "  node scripts/nogra-local.mjs dispatch [--root <dir>] --brief-id <id> [--target executor] [--target-model <model>] [--max-turns <n>] [--json]",
     "  node scripts/nogra-local.mjs verify [--root <dir>] --run-id <id> [--input <file>] [--json]",
     "",
     "All commands use local plugin contracts and workspace-local records."
@@ -53,7 +57,7 @@ function parseArgs(argv) {
       continue;
     }
     const name = value.slice(2);
-    if (["json", "apply", "dry-run", "migrate-local"].includes(name)) {
+    if (["json", "apply", "dry-run", "migrate-local", "help"].includes(name)) {
       out[name] = true;
       continue;
     }
@@ -89,8 +93,43 @@ function slugify(value, fallback = "brief") {
   return slug || fallback;
 }
 
-function workspaceRoot(options) {
-  return path.resolve(String(options.root || process.env.CLAUDE_PROJECT_DIR || process.cwd()));
+function directoryExists(file) {
+  try {
+    return fs.statSync(file).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function normalizeDirectory(value) {
+  const resolved = path.resolve(String(value || process.cwd()));
+  if (!fs.existsSync(resolved)) return resolved;
+  const stat = fs.statSync(resolved);
+  const directory = stat.isDirectory() ? resolved : path.dirname(resolved);
+  return fs.realpathSync(directory);
+}
+
+function nearestNograWorkspaceRoot(start) {
+  let current = normalizeDirectory(start);
+  while (true) {
+    if (directoryExists(path.join(current, ".nogra"))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return "";
+    }
+    current = parent;
+  }
+}
+
+function workspaceRoot(options, behavior = {}) {
+  const requested = options.root || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const fallback = normalizeDirectory(requested);
+  if (behavior.nearestNogra === false) {
+    return fallback;
+  }
+  return nearestNograWorkspaceRoot(fallback) || fallback;
 }
 
 function ensureDir(dir) {
@@ -129,6 +168,14 @@ function readJsonIfExists(file) {
   return readJson(file);
 }
 
+function readJsonIfValid(file) {
+  try {
+    return readJsonIfExists(file);
+  } catch {
+    return null;
+  }
+}
+
 function writeTextAtomic(file, content) {
   ensureDir(path.dirname(file));
   const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`);
@@ -158,6 +205,11 @@ function appendJsonlIfMissing(file, payload, idField = "eventId") {
   }
   fs.appendFileSync(file, `${JSON.stringify(payload)}\n`, "utf8");
   return "written";
+}
+
+function nonEmptyLineCount(file) {
+  if (!fs.existsSync(file)) return 0;
+  return readText(file).split(/\r?\n/u).filter((line) => line.trim()).length;
 }
 
 function safeRelativePath(value) {
@@ -531,6 +583,17 @@ function roleRuntimePair(scopedRole, runtime, status = "") {
   };
 }
 
+function scopedNograRole(value, fallback = "executor") {
+  const role = cleanInline(value || fallback);
+  if (!role) return `nogra:${fallback}`;
+  return role.includes(":") ? role : `nogra:${role}`;
+}
+
+function runtimeRoleForTarget(runtime, target) {
+  const scopedRole = scopedNograRole(target);
+  return scopedRole.endsWith(":verifier") ? runtime.verifier : runtime.executor;
+}
+
 function workspaceId(config = {}) {
   return cleanInline(config.workspaceId) || "local";
 }
@@ -636,8 +699,10 @@ function statusPayload(root) {
   const mode = detectMode(root);
   const config = mode.config && !mode.config.__invalid ? mode.config : {};
   const runtime = runtimePolicyState(config);
+  const routing = config.routingPolicy && typeof config.routingPolicy === "object" ? config.routingPolicy : {};
   const briefs = listBriefs(root, 1);
   const runs = listTransportRuns(root, 1);
+  const checkpoint = checkpointFreshness(root, config);
   return {
     schema: "nogra.local.status.v1",
     generatedAt: now(),
@@ -660,23 +725,29 @@ function statusPayload(root) {
       label: mode.label,
       source: mode.source,
       workspaceId: workspaceId(config),
+      contractVersion: cleanInline(config.releaseVersion) || "",
       releaseVersion: cleanInline(config.releaseVersion) || ""
     },
-    routingPolicy: config.routingPolicy
-      ? {
-          autoOfferEnabled: config.routingPolicy.autoOfferEnabled !== false && config.routingPolicy.enabled !== false,
-          sensitivityPercent: config.routingPolicy.sensitivityPercent ?? 50,
-          defaultLanguage: cleanInline(config.routingPolicy.defaultLanguage) || "en"
-        }
-      : null,
-    runtimePolicy: config.runtimePolicy
-      ? {
-          profile: runtime.profile,
-          rawProfile: runtime.rawProfile,
-          source: runtime.source,
-          legacyAgentFallback: runtime.legacyAgentFallback
-        }
-      : null,
+    routingPolicy: {
+      configured: Boolean(config.routingPolicy),
+      source: config.routingPolicy ? ".nogra/config.json" : "release default",
+      autoOfferEnabled: routing.autoOfferEnabled !== false && routing.enabled !== false,
+      sensitivityPercent: routing.sensitivityPercent ?? 50,
+      defaultLanguage: cleanInline(routing.defaultLanguage) || "en"
+    },
+    runtimePolicy: {
+      configured: Boolean(config.runtimePolicy),
+      profile: runtime.profile,
+      rawProfile: runtime.rawProfile,
+      source: runtime.source,
+      legacyAgentFallback: runtime.legacyAgentFallback
+    },
+    ledger: {
+      watermark: checkpoint.ledgerWatermark,
+      checkpointSourceWatermark: checkpoint.checkpointSourceWatermark,
+      checkpointStatus: checkpoint.status
+    },
+    continuity: continuityState(root, config),
     recent: {
       briefs,
       transportRuns: runs
@@ -837,6 +908,13 @@ function applyInit(root, workspaceName, options = {}) {
           writeTextAtomic(target, file.content.endsWith("\n") ? file.content : `${file.content}\n`);
           action = "written";
         }
+      } else if (normalized === ".nogra/state/SESSION-CHECKPOINT.md" && fs.existsSync(target)) {
+        const current = readText(target);
+        const next = ensureCheckpointSourceWatermark(current, currentLedgerWatermark(root));
+        if (current !== next) {
+          writeTextAtomic(target, next);
+          action = "updated";
+        }
       } else if (fs.existsSync(target)) {
         if (file.writePolicy === "create_or_update") {
           const next = file.content.endsWith("\n") ? file.content : `${file.content}\n`;
@@ -881,6 +959,7 @@ const NOGRA_DOMAIN_DIRS = [
   "receipts",
   "reports",
   "checkpoints",
+  "ledger",
   "index",
   "memory/local",
   "memory/sync",
@@ -928,25 +1007,28 @@ function ensureNograDomainDirs(root) {
 }
 
 function defaultManagerHubBootPolicy(existing = {}) {
-  const managerHub = existing.managerHub && typeof existing.managerHub === "object"
-    ? { ...existing.managerHub }
-    : {};
-  if (managerHub.includeSelf == null) managerHub.includeSelf = false;
-  if (!Array.isArray(managerHub.excludeWorkspaceIds)) managerHub.excludeWorkspaceIds = ["customer-template"];
-  if (managerHub.maxProjects == null) managerHub.maxProjects = 8;
-  managerHub.enabled = true;
+  const workspaceHub =
+    existing.workspaceHub && typeof existing.workspaceHub === "object"
+      ? { ...existing.workspaceHub }
+      : existing.managerHub && typeof existing.managerHub === "object"
+        ? { ...existing.managerHub }
+        : {};
+  if (workspaceHub.includeSelf == null) workspaceHub.includeSelf = false;
+  if (!Array.isArray(workspaceHub.excludeWorkspaceIds)) workspaceHub.excludeWorkspaceIds = ["customer-template"];
+  if (workspaceHub.maxProjects == null) workspaceHub.maxProjects = 8;
+  workspaceHub.enabled = true;
 
-  return {
+  const next = {
     ...existing,
     schema: existing.schema || "nogra.boot_policy.v1",
-    mode: "manager-hub",
+    mode: "workspace-hub",
     cwdResolution: existing.cwdResolution || "nearest-nogra-then-workspace-index",
     autoLoad: false,
     writeOnSessionStart: false,
     askOnAmbiguousProject: existing.askOnAmbiguousProject === false ? false : true,
     maxHintBytes: existing.maxHintBytes || 1200,
     maxRecentProjects: existing.maxRecentProjects || 5,
-    managerHub,
+    workspaceHub,
     hintSources: Array.isArray(existing.hintSources)
       ? existing.hintSources
       : [
@@ -963,6 +1045,8 @@ function defaultManagerHubBootPolicy(existing = {}) {
           "treat-memory-as-project-truth"
         ]
   };
+  delete next.managerHub;
+  return next;
 }
 
 function ensureManagerHubConfig(root) {
@@ -1037,7 +1121,7 @@ function projectCreatePlan(root, options = {}) {
     hub: {
       configPath: localPath(root, configPath(root)),
       indexPath: ".nogra/index/workspaces.jsonl",
-      willSetManagerHubMode: true
+      willSetWorkspaceHubMode: true
     },
     files: bundle.files.map((file) => ({
       path: path.posix.join(normalized.replaceAll(path.sep, "/"), file.path),
@@ -1207,6 +1291,7 @@ function normalizeBrief(input, config = {}, existing = {}) {
   const existingMax = existing.maxOutput && typeof existing.maxOutput === "object" ? existing.maxOutput : {};
   const returnPolicy = defaultReturnPolicy(config);
   const title = cleanInline(input.title || existing.title || "Untitled brief");
+  const targetRole = cleanInline(input.targetRole || input.target_role || existing.targetRole || "executor");
   const brief = {
     schema: cleanInline(input.schema || existing.schema || BRIEF_SCHEMA),
     releaseVersion: cleanInline(input.releaseVersion || existing.releaseVersion || RELEASE_VERSION),
@@ -1216,8 +1301,9 @@ function normalizeBrief(input, config = {}, existing = {}) {
     createdAt: cleanInline(input.createdAt || existing.createdAt || at),
     updatedAt: cleanInline(input.updatedAt || existing.updatedAt || at),
     status: cleanInline(input.status || existing.status || "draft") || "draft",
-    owner: cleanInline(input.owner || existing.owner || ""),
-    targetRole: cleanInline(input.targetRole || input.target_role || existing.targetRole || ""),
+    owner: cleanInline(input.owner || existing.owner || "Manager"),
+    nextOwner: cleanInline(input.nextOwner || input.next_owner || existing.nextOwner || scopedNograRole(targetRole)),
+    targetRole,
     targetModel: cleanInline(input.targetModel || input.target_model || existing.targetModel || defaultTargetModel(config)),
     intent: cleanText(input.intent || existing.intent),
     contextHandoff: cleanText(input.contextHandoff || existing.contextHandoff),
@@ -1249,7 +1335,7 @@ function normalizeBrief(input, config = {}, existing = {}) {
 
 function validateBrief(brief) {
   const errors = [];
-  for (const key of ["schema", "releaseVersion", "briefId", "workspaceId", "title", "createdAt", "intent", "contextHandoff", "scope", "successCriteria", "stopCriteria", "maxOutput"]) {
+  for (const key of ["schema", "releaseVersion", "briefId", "workspaceId", "title", "createdAt", "owner", "nextOwner", "intent", "contextHandoff", "scope", "successCriteria", "stopCriteria", "maxOutput"]) {
     if (brief[key] == null || brief[key] === "") errors.push(`brief missing ${key}`);
   }
   if (brief.schema !== BRIEF_SCHEMA) errors.push(`brief schema mismatch: ${brief.schema}`);
@@ -1297,6 +1383,14 @@ function localPath(root, file) {
   return path.relative(root, file).replaceAll(path.sep, "/");
 }
 
+function localFileUrl(file) {
+  return pathToFileURL(file).href;
+}
+
+function markdownFileLink(label, file) {
+  return `[${label}](${localFileUrl(file)})`;
+}
+
 function saveBrief(root, input, source = "") {
   const config = readWorkspaceConfig(root) || {};
   const candidateId = input.briefId || input.id;
@@ -1320,14 +1414,23 @@ function saveBrief(root, input, source = "") {
   const overviewFile = draftOverviewPath(root, draft.briefId);
   writeJsonAtomic(file, draft);
   writeTextAtomic(overviewFile, renderBriefOverview(draft));
+  const ledgerEvent = appendLedgerEvent(root, "brief_saved", {
+    briefId: draft.briefId,
+    briefStatus: draft.status,
+    source: cleanInline(source)
+  });
   return {
     ...draft,
     id: draft.briefId,
     path: localPath(root, file),
+    absolutePath: file,
+    fileUrl: localFileUrl(file),
+    openDraftLink: markdownFileLink("Open draft", file),
     overviewPath: localPath(root, overviewFile),
     status: "draft",
     valid: true,
     errors: [],
+    ledgerWatermark: ledgerEvent.ledgerWatermark,
     hostedMcpUsed: false
   };
 }
@@ -1409,6 +1512,7 @@ function renderBriefMarkdown(brief) {
     ["updatedAt", brief.updatedAt],
     ["status", brief.status],
     ["owner", brief.owner || ""],
+    ["nextOwner", brief.nextOwner || ""],
     ["targetRole", brief.targetRole || ""],
     ["targetModel", brief.targetModel || ""],
     ["evidenceRequired", brief.evidenceRequired || ""]
@@ -1460,13 +1564,37 @@ function promoteBrief(root, options) {
   writeJsonAtomic(draftFile, updatedDraft);
   writeTextAtomic(overviewFile, renderBriefOverview(updatedDraft));
   writeTextAtomic(briefFile, renderBriefMarkdown(updatedDraft));
+  const ledgerEvent = appendLedgerEvent(root, "brief_promoted", {
+    briefId: ready.briefId,
+    briefStatus: ready.status,
+    path: `.nogra/briefs/${ready.briefId}.md`
+  });
   return {
     status: "ready",
     valid: true,
     errors: [],
-    draft: { ...updatedDraft, id: ready.briefId, path: localPath(root, draftFile), overviewPath: localPath(root, overviewFile) },
-    brief: { ...updatedDraft, id: ready.briefId, path: localPath(root, briefFile) },
+    draft: {
+      ...updatedDraft,
+      id: ready.briefId,
+      path: localPath(root, draftFile),
+      absolutePath: draftFile,
+      fileUrl: localFileUrl(draftFile),
+      openDraftLink: markdownFileLink("Open draft", draftFile),
+      overviewPath: localPath(root, overviewFile)
+    },
+    brief: {
+      ...updatedDraft,
+      id: ready.briefId,
+      path: localPath(root, briefFile),
+      absolutePath: briefFile,
+      fileUrl: localFileUrl(briefFile),
+      openBriefLink: markdownFileLink("Open brief", briefFile)
+    },
     path: localPath(root, briefFile),
+    absolutePath: briefFile,
+    fileUrl: localFileUrl(briefFile),
+    openBriefLink: markdownFileLink("Open brief", briefFile),
+    ledgerWatermark: ledgerEvent.ledgerWatermark,
     hostedMcpUsed: false
   };
 }
@@ -1518,6 +1646,161 @@ function listTransportRuns(root, limit = 10) {
   return items.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, limit);
 }
 
+function ledgerEventsPath(root) {
+  return path.join(nograDir(root), "ledger", "events.jsonl");
+}
+
+function sessionAnchorPath(root) {
+  return path.join(nograDir(root), "runtime", "session-anchor.json");
+}
+
+function currentLedgerWatermark(root) {
+  return nonEmptyLineCount(ledgerEventsPath(root));
+}
+
+function transcriptIdFromPath(value) {
+  const base = path.basename(cleanInline(value));
+  return base.replace(/\.jsonl$/u, "");
+}
+
+function readSessionAnchor(root) {
+  const anchor = readJsonIfValid(sessionAnchorPath(root));
+  if (!anchor || typeof anchor !== "object") {
+    return { sessionId: "", transcriptId: "" };
+  }
+  return {
+    sessionId: cleanInline(anchor.sessionId),
+    transcriptId: cleanInline(anchor.transcriptId) || transcriptIdFromPath(anchor.transcriptPath),
+    hookEventName: cleanInline(anchor.hookEventName),
+    updatedAt: cleanInline(anchor.updatedAt)
+  };
+}
+
+function checkpointPath(root, config = {}) {
+  const configured = cleanInline(config?.paths?.currentCheckpoint);
+  return configured ? path.join(root, configured) : path.join(nograDir(root), "state", "SESSION-CHECKPOINT.md");
+}
+
+function checkpointSourceWatermark(root, config = {}) {
+  const file = checkpointPath(root, config);
+  if (!fs.existsSync(file)) return 0;
+  const text = readText(file);
+  const match = text.match(/^SourceWatermark:\s*(\d+)\s*$/imu);
+  return match ? Number(match[1]) : 0;
+}
+
+function checkpointHasSourceWatermark(root, config = {}) {
+  const file = checkpointPath(root, config);
+  return fs.existsSync(file) && /^SourceWatermark:\s*\d+\s*$/imu.test(readText(file));
+}
+
+function ensureCheckpointSourceWatermark(text, watermark = 0) {
+  if (/^SourceWatermark:\s*\d+\s*$/imu.test(text)) return text;
+  const normalized = text.endsWith("\n") ? text : `${text}\n`;
+  const line = `SourceWatermark: ${Math.max(0, Number(watermark) || 0)}`;
+  if (/^Updated:\s*.+$/imu.test(normalized)) {
+    return normalized.replace(/^Updated:\s*.+$/imu, (match) => `${match}\n${line}`);
+  }
+  if (/^Created:\s*.+$/imu.test(normalized)) {
+    return normalized.replace(/^Created:\s*.+$/imu, (match) => `${match}\n${line}`);
+  }
+  return `${line}\n${normalized}`;
+}
+
+function checkpointFreshness(root, config = {}) {
+  const ledgerWatermark = currentLedgerWatermark(root);
+  const sourceWatermark = checkpointSourceWatermark(root, config);
+  return {
+    ledgerWatermark,
+    checkpointSourceWatermark: sourceWatermark,
+    status: ledgerWatermark > sourceWatermark ? "stale" : "fresh"
+  };
+}
+
+function continuityState(root, config = {}) {
+  const ledgerDir = path.join(nograDir(root), "ledger");
+  const ledgerFile = ledgerEventsPath(root);
+  const checkpointFile = checkpointPath(root, config);
+  const anchorFile = sessionAnchorPath(root);
+  const checkpointHasWatermark = checkpointHasSourceWatermark(root, config);
+  const ledgerDirExists = directoryExists(ledgerDir);
+  const session = readSessionAnchor(root);
+  return {
+    schema: "nogra.local.continuity_status.v1",
+    status: ledgerDirExists && checkpointHasWatermark ? "ready" : "migration-needed",
+    ledgerDir: {
+      path: localPath(root, ledgerDir),
+      exists: ledgerDirExists
+    },
+    ledgerEvents: {
+      path: localPath(root, ledgerFile),
+      exists: fs.existsSync(ledgerFile),
+      watermark: currentLedgerWatermark(root)
+    },
+    checkpoint: {
+      path: localPath(root, checkpointFile),
+      exists: fs.existsSync(checkpointFile),
+      hasSourceWatermark: checkpointHasWatermark,
+      sourceWatermark: checkpointSourceWatermark(root, config)
+    },
+    sessionAnchor: {
+      path: localPath(root, anchorFile),
+      exists: fs.existsSync(anchorFile),
+      sessionId: session.sessionId,
+      transcriptId: session.transcriptId,
+      updatedAt: session.updatedAt
+    },
+    migrationHint: ledgerDirExists && checkpointHasWatermark
+      ? ""
+      : "Run /nogra:setup or local init --apply in this workspace to merge the 0.5.8 continuity layout without touching app files."
+  };
+}
+
+function appendLedgerEvent(root, type, extra = {}) {
+  const config = readWorkspaceConfig(root) || {};
+  const session = readSessionAnchor(root);
+  const ledgerWatermark = currentLedgerWatermark(root) + 1;
+  const at = now();
+  const event = {
+    schema: "nogra.ledger.event.v1",
+    releaseVersion: RELEASE_VERSION,
+    eventId: `ledger-event-${timestamp()}-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
+    ledgerWatermark,
+    generatedAt: at,
+    createdAt: at,
+    workspaceId: workspaceId(config),
+    sessionId: session.sessionId,
+    transcriptId: session.transcriptId,
+    type,
+    ...extra
+  };
+  appendJsonlIfMissing(ledgerEventsPath(root), event);
+  return event;
+}
+
+function diagnosticLedgerSmoke(root, options = {}) {
+  const before = checkpointFreshness(root, readWorkspaceConfig(root) || {});
+  const event = appendLedgerEvent(root, "diagnostic_ledger_smoke", {
+    label: cleanInline(options.label) || "Nogra local ledger smoke",
+    summary: "Diagnostic local ledger smoke event. No app files changed.",
+    diagnostic: true,
+    nextOwner: "Manager"
+  });
+  const after = checkpointFreshness(root, readWorkspaceConfig(root) || {});
+  return {
+    schema: "nogra.local.ledger_smoke.v1",
+    status: "ok",
+    hostedMcpUsed: false,
+    event,
+    ledgerWatermark: event.ledgerWatermark,
+    sessionId: event.sessionId,
+    transcriptId: event.transcriptId,
+    before,
+    after,
+    note: "Diagnostic event only; it does not create a brief, dispatch, verification or app-code change."
+  };
+}
+
 function safeTransportRunId(value) {
   const runId = cleanInline(value);
   if (!/^transport-[A-Za-z0-9_.-]+$/.test(runId)) throw new Error(`invalid transport run id: ${runId || "(empty)"}`);
@@ -1558,6 +1841,232 @@ function readDraftBrief(root, briefId) {
   return readJson(draftPath(root, briefId));
 }
 
+function positiveIntegerOrNull(value) {
+  if (value == null || cleanInline(value) === "") return null;
+  const number = Number(cleanInline(value));
+  return Number.isInteger(number) && number > 0 ? number : null;
+}
+
+function parseDispatchMaxTurns(value) {
+  if (value == null || cleanInline(value) === "") return null;
+  const number = positiveIntegerOrNull(value);
+  if (!number) {
+    throw new Error(`invalid max turns: ${cleanInline(value)}`);
+  }
+  if (number > ABSOLUTE_EXECUTOR_TURN_CEILING) {
+    throw new Error(`max turns exceeds safety ceiling: ${number} > ${ABSOLUTE_EXECUTOR_TURN_CEILING}`);
+  }
+  return number;
+}
+
+function countBriefItems(value) {
+  return Array.isArray(value) ? value.filter((item) => cleanInline(item)).length : 0;
+}
+
+function firstPathSegment(file) {
+  return cleanInline(file).replace(/^\.?\//, "").split("/").filter(Boolean)[0] || "";
+}
+
+function executionShapeListCount(shape, keys) {
+  if (!shape || typeof shape !== "object") return 0;
+  for (const key of keys) {
+    const value = shape[key];
+    if (Array.isArray(value)) return countBriefItems(value);
+    if (value && typeof value === "object") return Object.keys(value).filter(Boolean).length;
+  }
+  return 0;
+}
+
+function couplingSignalsForBrief(brief) {
+  const scope = brief.scope && typeof brief.scope === "object" ? brief.scope : {};
+  const files = Array.isArray(scope.files) ? scope.files.map(cleanInline).filter(Boolean) : [];
+  const roots = new Set(files.map(firstPathSegment).filter(Boolean));
+  const text = [
+    brief.intent,
+    brief.contextHandoff,
+    ...(Array.isArray(scope.in) ? scope.in : []),
+    ...(Array.isArray(scope.out) ? scope.out : []),
+    ...(Array.isArray(brief.successCriteria) ? brief.successCriteria : []),
+    ...(Array.isArray(brief.stopCriteria) ? brief.stopCriteria : []),
+    ...files
+  ].map(cleanInline).join(" ").toLowerCase();
+  const signals = [];
+  if (files.length >= 4) signals.push("multi-file");
+  if (roots.size >= 3) signals.push("cross-area");
+  if (/\b(migration|database|schema|prisma|sql|auth|payment|deploy|workflow|hook)\b/.test(text)) {
+    signals.push("stateful-or-runtime-risk");
+  }
+  return signals;
+}
+
+function summarizeExecutionSizing({ maxTurns, rawTurns, fileCount, evidenceRequired, couplingSignals, clamped }) {
+  if (clamped) {
+    return `maxTurns ${maxTurns}: clamped from ${rawTurns}; split into phases, raise the ceiling or use an explicit bounded override.`;
+  }
+  const factors = [`${fileCount} file${fileCount === 1 ? "" : "s"}`, evidenceRequired];
+  if (couplingSignals.length) factors.push(couplingSignals.join("+"));
+  return `maxTurns ${maxTurns}: ${factors.join(", ")}.`;
+}
+
+function deriveExecutionSizing(brief, runtimeRole, options = {}) {
+  const explicitMaxTurns = parseDispatchMaxTurns(options.maxTurns);
+  const explicitReason = cleanInline(options.maxTurnsReason);
+  if (explicitMaxTurns) {
+    return {
+      maxTurns: explicitMaxTurns,
+      source: "manager dispatch override",
+      summary: `maxTurns ${explicitMaxTurns}: explicit Manager override.`,
+      reason: explicitReason || "Manager supplied maxTurns after reading the approved brief.",
+      requiresManagerDecision: false,
+      managerAction: "spawn_executor",
+      factors: {
+        override: true,
+        absoluteCeiling: ABSOLUTE_EXECUTOR_TURN_CEILING
+      }
+    };
+  }
+
+  const scope = brief.scope && typeof brief.scope === "object" ? brief.scope : {};
+  const files = Array.isArray(scope.files) ? scope.files.map(cleanInline).filter(Boolean) : [];
+  const fileCount = files.length;
+  const scopeInCount = countBriefItems(scope.in);
+  const successCriteriaCount = countBriefItems(brief.successCriteria);
+  const stopCriteriaCount = countBriefItems(brief.stopCriteria);
+  const evidenceRequired = cleanInline(brief.evidenceRequired || "reported").toLowerCase();
+  const evidenceBumps = {
+    reported: 0,
+    edited: 4,
+    tested: 8,
+    verified: 12
+  };
+  const executionShape = brief.executionShape && typeof brief.executionShape === "object" ? brief.executionShape : {};
+  const phaseCount = executionShapeListCount(executionShape, ["phases", "runs", "steps"]);
+  const toolNeedCount = executionShapeListCount(executionShape, ["toolNeeds", "tool_needs", "toolFamilies", "tool_families"]);
+  const couplingSignals = couplingSignalsForBrief(brief);
+  const baseTurns = 24;
+  const rawTurns =
+    baseTurns +
+    Math.min(fileCount, 12) * 4 +
+    Math.min(scopeInCount, 6) * 2 +
+    Math.min(successCriteriaCount + stopCriteriaCount, 10) +
+    (evidenceBumps[evidenceRequired] ?? 0) +
+    Math.min(Math.max(phaseCount - 1, 0), 4) * 6 +
+    Math.min(toolNeedCount, 4) * 2 +
+    (couplingSignals.length ? 8 + Math.max(couplingSignals.length - 1, 0) * 4 : 0);
+  const configuredCeiling = positiveIntegerOrNull(runtimeRole?.maxTurns);
+  const defaultCeiling = DEFAULT_EXECUTOR_TURN_CEILING;
+  const absoluteCeiling = ABSOLUTE_EXECUTOR_TURN_CEILING;
+  const cap = Math.min(Math.max(defaultCeiling, configuredCeiling || 0), absoluteCeiling);
+  const minTurns = Math.min(20, cap);
+  const maxTurns = Math.min(Math.max(rawTurns, minTurns), cap);
+  const clamped = rawTurns > cap;
+  const summary = summarizeExecutionSizing({ maxTurns, rawTurns, fileCount, evidenceRequired, couplingSignals, clamped });
+  return {
+    maxTurns,
+    source: "approved brief dispatch sizing",
+    summary,
+    reason: clamped
+      ? "Derived after brief approval, then clamped to the executor turn ceiling. Split the work into phases or raise the configured ceiling when the approved scope requires more."
+      : "Derived after brief approval from scope files, evidence requirement, execution shape and coupling signals.",
+    requiresManagerDecision: clamped,
+    managerAction: clamped ? "split_or_confirm_single_run" : "spawn_executor",
+    factors: {
+      baseTurns,
+      fileCount,
+      scopeInCount,
+      successCriteriaCount,
+      stopCriteriaCount,
+      evidenceRequired,
+      evidenceBump: evidenceBumps[evidenceRequired] ?? 0,
+      phaseCount,
+      toolNeedCount,
+      couplingSignals,
+      rawTurns,
+      cap,
+      defaultCeiling,
+      configuredCeiling,
+      absoluteCeiling,
+      configuredCeilingClampedToAbsolute: Boolean(configuredCeiling && configuredCeiling > absoluteCeiling),
+      clamped,
+      clampReason: clamped ? "executor turn ceiling" : ""
+    }
+  };
+}
+
+function briefSizingPreview(root, input) {
+  const config = readWorkspaceConfig(root) || {};
+  const runtime = runtimePolicyState(config);
+  const validation = validateBriefPayload(root, input);
+  if (!validation.valid) {
+    return {
+      status: "invalid",
+      valid: false,
+      preview: true,
+      phase: "brief_draft",
+      errors: validation.errors,
+      normalized: validation.normalized,
+      hostedMcpUsed: false
+    };
+  }
+
+  const normalized = validation.normalized;
+  const dispatchSizing = deriveExecutionSizing(normalized, runtime.executor, {});
+  const factors = dispatchSizing.factors || {};
+  const defaultCeiling = positiveIntegerOrNull(factors.defaultCeiling) || DEFAULT_EXECUTOR_TURN_CEILING;
+  const rawTurns = positiveIntegerOrNull(factors.rawTurns) || dispatchSizing.maxTurns;
+  const nearDefaultCeiling = rawTurns >= Math.ceil(defaultCeiling * 0.85);
+  const coupledScopeRisk = rawTurns >= Math.ceil(defaultCeiling * 0.65) && Array.isArray(factors.couplingSignals) && factors.couplingSignals.length >= 2;
+  const requiresPreApprovalDecision = Boolean(dispatchSizing.requiresManagerDecision || nearDefaultCeiling || coupledScopeRisk);
+  const risk = dispatchSizing.requiresManagerDecision
+    ? "ceiling_clamped"
+    : nearDefaultCeiling
+      ? "near_default_ceiling"
+      : coupledScopeRisk
+        ? "coupled_scope"
+        : "low";
+  const managerAction = dispatchSizing.requiresManagerDecision
+    ? "split_or_reduce_before_approval"
+    : requiresPreApprovalDecision
+      ? "split_reduce_or_confirm_single_run_before_approval"
+      : "continue_to_validation_and_approval";
+  const guidance = dispatchSizing.requiresManagerDecision
+    ? "Do not save a one-run approval artifact by default. Split the draft, reduce scope, or get an explicit operator decision before approval."
+    : requiresPreApprovalDecision
+      ? "This draft is large enough to review before approval. Prefer splitting into phases unless the operator intentionally wants one bounded run."
+      : "Draft size looks compatible with a normal single-run approval flow.";
+  const summary = dispatchSizing.requiresManagerDecision
+    ? `estimated maxTurns ${dispatchSizing.maxTurns}: draft estimates ${rawTurns} turns before the ceiling; split or reduce before approval.`
+    : requiresPreApprovalDecision
+      ? `estimated maxTurns ${dispatchSizing.maxTurns}: ${risk.replaceAll("_", " ")}; split, reduce or confirm single-run before approval.`
+      : dispatchSizing.summary.replace(/^maxTurns /, "estimated maxTurns ");
+
+  return {
+    generatedAt: now(),
+    status: "ready",
+    valid: true,
+    preview: true,
+    phase: "brief_draft",
+    hostedMcpUsed: false,
+    briefId: normalized.briefId,
+    runtimePolicyProfile: runtime.profile,
+    targetModel: cleanInline(runtime.executor.model) || normalized.targetModel || defaultTargetModel(config),
+    sizingPreview: {
+      estimatedMaxTurns: dispatchSizing.maxTurns,
+      source: "draft brief sizing preview",
+      summary,
+      reason: "Advisory preview from the complete draft brief. It exists to shape or split the brief before approval; dispatch remains the authority for executionMaxTurns.",
+      risk,
+      requiresPreApprovalDecision,
+      managerAction,
+      guidance,
+      mustNotWriteMaxTurnsToBrief: true,
+      dispatchStillAuthoritative: true,
+      factors
+    },
+    normalized
+  };
+}
+
 function dispatch(root, options) {
   const config = readWorkspaceConfig(root) || {};
   const runtime = runtimePolicyState(config);
@@ -1569,15 +2078,37 @@ function dispatch(root, options) {
   const normalized = validation.normalized;
   const runId = newTransportRunId();
   const target = cleanInline(options.target) || "executor";
+  const targetRuntimeRole = runtimeRoleForTarget(runtime, target);
+  const targetRuntimeRoleName = scopedNograRole(target).split(":").pop() || "executor";
   const explicitTargetModel = cleanInline(options.targetModel);
-  const targetModel = explicitTargetModel || cleanInline(runtime.executor.model) || normalized.targetModel || defaultTargetModel(config);
+  const targetModel = explicitTargetModel || cleanInline(targetRuntimeRole.model) || normalized.targetModel || defaultTargetModel(config);
   const runtimeSource = explicitTargetModel
     ? "dispatch targetModel override"
     : runtime.profile === "custom"
-      ? "runtimePolicy.roles.executor"
+      ? `runtimePolicy.roles.${targetRuntimeRoleName}`
       : "release default";
-  const executionPair = roleRuntimePair("nogra:executor", targetModel, "queued");
+  const executionSizing = deriveExecutionSizing(normalized, targetRuntimeRole, {
+    maxTurns: options.maxTurns,
+    maxTurnsReason: options.maxTurnsReason
+  });
+  const executionPair = roleRuntimePair(scopedNograRole(target), targetModel, "queued");
+  const nextOwner = executionSizing.requiresManagerDecision ? "Manager" : executionPair.executionRole;
+  const executionNextStep = executionSizing.requiresManagerDecision
+    ? "Review dispatch sizing before spawning: split into phases when the approved brief/GO covers it, rerun with an explicit bounded override if the operator wants one larger run, or ask for a decision."
+    : `Spawn a subagent in the plugin-provided ${executionPair.executionRole} role with this run id and the full approved brief.`;
   const at = now();
+  const ledgerEvent = appendLedgerEvent(root, "dispatch_created", {
+    runId,
+    briefId: normalized.briefId,
+    target,
+    targetRole: target,
+    targetModel,
+    executionRole: executionPair.executionRole,
+    executionRuntime: executionPair.executionRuntime,
+    executionEffort: targetRuntimeRole.effort,
+    executionContext: targetRuntimeRole.context,
+    nextOwner
+  });
   const run = {
     schema: "nogra.transport.run.v1",
     releaseVersion: RELEASE_VERSION,
@@ -1586,17 +2117,23 @@ function dispatch(root, options) {
     updatedAt: at,
     status: "queued",
     phase: "queued",
+    owner: "Manager",
+    nextOwner,
     target,
     targetRole: target,
     targetModel,
     executionRole: executionPair.executionRole,
     executionRuntime: executionPair.executionRuntime,
-    executionEffort: runtime.executor.effort,
-    executionContext: runtime.executor.context,
-    executionMaxTurns: runtime.executor.maxTurns,
+    executionEffort: targetRuntimeRole.effort,
+    executionContext: targetRuntimeRole.context,
+    executionMaxTurns: executionSizing.maxTurns,
+    executionSizing,
     executionRuntimePolicyProfile: runtime.profile,
     executionRuntimeSource: runtimeSource,
     executionLabel: executionPair.executionLabel,
+    ledgerWatermark: ledgerEvent.ledgerWatermark,
+    sessionId: ledgerEvent.sessionId,
+    transcriptId: ledgerEvent.transcriptId,
     briefId: normalized.briefId,
     metadata: {
       mode: "local",
@@ -1608,13 +2145,17 @@ function dispatch(root, options) {
       stopCriteria: normalized.stopCriteria || [],
       executionRole: executionPair.executionRole,
       executionRuntime: executionPair.executionRuntime,
-      executionEffort: runtime.executor.effort,
-      executionContext: runtime.executor.context,
-      executionMaxTurns: runtime.executor.maxTurns,
+      executionEffort: targetRuntimeRole.effort,
+      executionContext: targetRuntimeRole.context,
+      executionMaxTurns: executionSizing.maxTurns,
+      executionSizing,
       executionRuntimePolicyProfile: runtime.profile,
       executionRuntimeSource: runtimeSource,
       executionLabel: executionPair.executionLabel,
-      nextOwner: "ManagerSpawnsPluginExecutor"
+      ledgerWatermark: ledgerEvent.ledgerWatermark,
+      sessionId: ledgerEvent.sessionId,
+      transcriptId: ledgerEvent.transcriptId,
+      nextOwner
     },
     paths: {
       artifactsDir: `.nogra/transport/artifacts/${runId}`,
@@ -1634,19 +2175,24 @@ function dispatch(root, options) {
   writeJsonAtomic(transportRunPath(root, runId), run);
   const event = transportEvent(runId, "local_dispatch_receipt_created", {
     workspaceId: workspaceId(config),
+    owner: "Manager",
     target,
     targetRole: target,
     targetModel,
     executionRole: executionPair.executionRole,
     executionRuntime: executionPair.executionRuntime,
-    executionEffort: runtime.executor.effort,
-    executionContext: runtime.executor.context,
-    executionMaxTurns: runtime.executor.maxTurns,
+    executionEffort: targetRuntimeRole.effort,
+    executionContext: targetRuntimeRole.context,
+    executionMaxTurns: executionSizing.maxTurns,
+    executionSizing,
     executionRuntimePolicyProfile: runtime.profile,
     executionRuntimeSource: runtimeSource,
     executionLabel: executionPair.executionLabel,
+    ledgerWatermark: ledgerEvent.ledgerWatermark,
+    sessionId: ledgerEvent.sessionId,
+    transcriptId: ledgerEvent.transcriptId,
     briefId: normalized.briefId,
-    nextOwner: "ManagerClaude"
+    nextOwner
   });
   appendJsonlIfMissing(transportEventsPath(root), event);
   return {
@@ -1656,45 +2202,57 @@ function dispatch(root, options) {
     receiptType: "localDispatchReceipt",
     runId,
     briefId: normalized.briefId,
+    owner: "Manager",
     target,
     targetRole: target,
     targetModel,
     executionRole: executionPair.executionRole,
     executionRuntime: executionPair.executionRuntime,
-    executionEffort: runtime.executor.effort,
-    executionContext: runtime.executor.context,
-    executionMaxTurns: runtime.executor.maxTurns,
+    executionEffort: targetRuntimeRole.effort,
+    executionContext: targetRuntimeRole.context,
+    executionMaxTurns: executionSizing.maxTurns,
+    executionSizing,
     executionRuntimePolicyProfile: runtime.profile,
     executionRuntimeSource: runtimeSource,
     executionLabel: executionPair.executionLabel,
+    ledgerWatermark: ledgerEvent.ledgerWatermark,
+    sessionId: ledgerEvent.sessionId,
+    transcriptId: ledgerEvent.transcriptId,
     hostedMcpUsed: false,
     transport: {
       armed: true,
       ledger: "local .nogra/",
-      runtime: "customer-side subagent in executor role",
+      runtime: `customer-side subagent in ${targetRuntimeRoleName} role`,
       localArtifacts: run.paths
     },
     executionCrossing: {
       required: true,
       managerMayImplement: false,
+      owner: "Manager",
+      nextOwner,
       role: executionPair.executionRole,
       runtime: executionPair.executionRuntime,
-      effort: runtime.executor.effort,
-      context: runtime.executor.context,
-      maxTurns: runtime.executor.maxTurns,
+      effort: targetRuntimeRole.effort,
+      context: targetRuntimeRole.context,
+      maxTurns: executionSizing.maxTurns,
+      maxTurnsSource: executionSizing.source,
+      maxTurnsSummary: executionSizing.summary,
+      maxTurnsReason: executionSizing.reason,
+      sizingDecisionRequired: executionSizing.requiresManagerDecision,
+      sizingManagerAction: executionSizing.managerAction,
       runtimePolicyProfile: runtime.profile,
       runtimeSource: `${runtimeSource}; Claude Code may resolve this to a concrete model id at spawn time`,
       label: executionPair.executionLabel,
-      nextStep: "Spawn a subagent in the plugin-provided nogra:executor role with this run id and the full approved brief.",
+      nextStep: executionNextStep,
       ifUnavailable: "Stop and surface the missing primitive. Do not execute inline unless the user explicitly leaves Nogra."
     },
     brief: normalized,
     run,
-    nextOwner: "ManagerSpawnsPluginExecutor"
+    nextOwner
   };
 }
 
-function handoffContract(root, kind) {
+function handoffContract(root, kind, options = {}) {
   const wanted = cleanInline(kind || "executor").toLowerCase();
   const file = wanted === "verifier" ? "verifier.md" : wanted === "executor" ? "executor.md" : "";
   if (!file) {
@@ -1718,6 +2276,21 @@ function handoffContract(root, kind) {
   const effortHint = runtime.profile === "custom" ? configuredRole.effort : RELEASE_RUNTIME_FALLBACK[wanted].effort;
   const runtimeSource = runtime.profile === "custom" ? `runtimePolicy.roles.${wanted}` : "release default";
   const pair = roleRuntimePair(scopedRole, modelHint);
+  const runId = cleanInline(options.runId || "");
+  const run = runId ? readJson(transportRunPath(root, runId)) : null;
+  const runMaxTurns = wanted === "executor"
+    ? positiveIntegerOrNull(run?.executionMaxTurns ?? run?.metadata?.executionMaxTurns)
+    : null;
+  const configuredMaxTurns = positiveIntegerOrNull(configuredRole.maxTurns);
+  const frontmatterMaxTurns = positiveIntegerOrNull(frontmatter.maxTurns);
+  const maxTurnsHint = runMaxTurns || configuredMaxTurns || frontmatterMaxTurns || undefined;
+  const maxTurnsHintSource = runMaxTurns
+    ? "dispatch receipt"
+    : configuredMaxTurns
+      ? runtimeSource
+      : frontmatterMaxTurns
+        ? "role frontmatter fallback"
+        : "none";
   return {
     schema: "nogra.handoff.contract.v1",
     releaseVersion: RELEASE_VERSION,
@@ -1734,8 +2307,18 @@ function handoffContract(root, kind) {
       modelHint,
       effortHint,
       contextHint: configuredRole.context,
-      maxTurnsHint: Number(frontmatter.maxTurns || 0) || undefined
+      maxTurnsHint,
+      maxTurnsHintSource
     },
+    dispatchContext: run ? {
+      runId: run.runId || runId,
+      briefId: run.briefId || "",
+      maxTurns: runMaxTurns,
+      maxTurnsSource: run.executionSizing?.source || run.metadata?.executionSizing?.source || "",
+      maxTurnsSummary: run.executionSizing?.summary || run.metadata?.executionSizing?.summary || "",
+      requiresManagerDecision: Boolean(run.executionSizing?.requiresManagerDecision || run.metadata?.executionSizing?.requiresManagerDecision),
+      managerAction: run.executionSizing?.managerAction || run.metadata?.executionSizing?.managerAction || ""
+    } : null,
     roleRuntime: {
       ...pair,
       executionEffort: effortHint,
@@ -1750,6 +2333,8 @@ function handoffContract(root, kind) {
       "Manager is not the role-runtime. If the role primitive is unavailable, stop and surface the missing primitive.",
       "Keep Nogra bookkeeping in Manager. The spawned role-runtime receives the brief, scope and evidence contract and returns a report.",
       "If runtimePolicy is custom and the client supports per-invocation model/effort overrides, request the configured model and effort; otherwise rely on the release default resolved by the local runtime and report the limitation plainly.",
+      "If targetSubagent.maxTurnsHint is present and the client supports per-invocation turn limits, pass that value to the spawn primitive. Prefer dispatch receipt sizing when a run id is available; role frontmatter is only a generic fallback.",
+      "If dispatchContext.requiresManagerDecision is true, do not spawn blindly. Manager must split the work, use an explicit bounded override with operator approval, or ask for a decision first.",
       "Surface role and runtime honestly: user-facing labels should be role plus runtime, such as Executor · Sonnet.",
       "Tier labels appear only when the approved role graph explicitly supplies them; executor is not Tier 1."
     ]
@@ -1833,6 +2418,13 @@ function verifySupport(root, options) {
     };
   }
   const at = now();
+  const ledgerEvent = appendLedgerEvent(root, "verification_recorded", {
+    runId,
+    briefId: run.briefId || "",
+    status,
+    verdict,
+    reason
+  });
   const verificationState = {
     verificationRole: run.verificationRole || run.metadata?.verificationRole || "",
     verificationRuntime: run.verificationRuntime || run.metadata?.verificationRuntime || "",
@@ -1854,6 +2446,9 @@ function verifySupport(root, options) {
     executionEffort: run.executionEffort || run.metadata?.executionEffort || "",
     executionContext: run.executionContext || run.metadata?.executionContext || "",
     executionRuntimePolicyProfile: run.executionRuntimePolicyProfile || run.metadata?.executionRuntimePolicyProfile || "",
+    ledgerWatermark: ledgerEvent.ledgerWatermark,
+    sessionId: ledgerEvent.sessionId,
+    transcriptId: ledgerEvent.transcriptId,
     executionLabel: roleRuntimePair(
       run.executionRole || run.metadata?.executionRole || "nogra:executor",
       run.executionRuntime || run.metadata?.executionRuntime || run.targetModel || "",
@@ -1880,6 +2475,9 @@ function verifySupport(root, options) {
       ...(run.artifacts || {}),
       validationExists: true
     },
+    ledgerWatermark: ledgerEvent.ledgerWatermark,
+    sessionId: ledgerEvent.sessionId || run.sessionId || run.metadata?.sessionId || "",
+    transcriptId: ledgerEvent.transcriptId || run.transcriptId || run.metadata?.transcriptId || "",
     summary: validation.summary
   };
   writeJsonAtomic(runFile, updatedRun);
@@ -1895,6 +2493,9 @@ function verifySupport(root, options) {
     executionEffort: updatedRun.executionEffort || updatedRun.metadata?.executionEffort || "",
     executionRuntimePolicyProfile: updatedRun.executionRuntimePolicyProfile || updatedRun.metadata?.executionRuntimePolicyProfile || "",
     executionLabel: updatedRun.executionLabel || "",
+    ledgerWatermark: ledgerEvent.ledgerWatermark,
+    sessionId: ledgerEvent.sessionId,
+    transcriptId: ledgerEvent.transcriptId,
     ...verificationState,
     briefId: updatedRun.briefId || "",
     summary: validation.summary,
@@ -1919,6 +2520,7 @@ function printText(payload) {
   if (payload.schema === "nogra.local.status.v1") {
     console.log("Nogra local status");
     console.log(`- Plugin: ${payload.plugin.name} ${payload.plugin.version}`);
+    console.log(`- Workspace contract: ${payload.workspace.contractVersion || "not initialized"}`);
     console.log(`- Control plane: ${payload.hostedMcpUsed ? "connected" : "local"}`);
     for (const warning of payload.plugin.diagnostics?.warnings || []) {
       console.log(`- Warning: ${warning.message}`);
@@ -1945,7 +2547,8 @@ function main() {
     console.log(usage());
     return 0;
   }
-  const root = workspaceRoot(options);
+  const targetsRequestedRoot = new Set(["init", "init-bundle"]);
+  const root = workspaceRoot(options, { nearestNogra: !targetsRequestedRoot.has(command) });
   let payload;
   if (command === "status") {
     payload = statusPayload(root);
@@ -1961,7 +2564,7 @@ function main() {
     }
   } else if (command === "create-project" || command === "create") {
     payload = createProject(root, {
-      name: options.name || options._[1] || "",
+      name: options._[1] || options.name || "",
       workspaceId: options["workspace-id"] || options.workspaceId || "",
       projectPath: options["project-path"] || options.projectPath || "",
       apply: Boolean(options.apply)
@@ -1970,6 +2573,8 @@ function main() {
     payload = briefContract(root);
   } else if (command === "brief-validate") {
     payload = validateBriefPayload(root, readInput(options));
+  } else if (command === "brief-sizing-preview" || command === "brief-size-preview") {
+    payload = briefSizingPreview(root, readInput(options));
   } else if (command === "brief-save") {
     payload = saveBrief(root, readInput(options), options.source || "");
   } else if (command === "brief-promote") {
@@ -1977,14 +2582,22 @@ function main() {
       briefId: options["brief-id"] || "",
       inputPayload: options.input ? readInput(options) : null
     });
+  } else if (command === "ledger-smoke") {
+    payload = diagnosticLedgerSmoke(root, {
+      label: options.label || ""
+    });
   } else if (command === "handoff-contract") {
-    payload = handoffContract(root, options.kind || "executor");
+    payload = handoffContract(root, options.kind || "executor", {
+      runId: options["run-id"] || options.runId || ""
+    });
   } else if (command === "dispatch") {
     payload = dispatch(root, {
       briefId: options["brief-id"] || "",
       inputPayload: options.input ? readInput(options) : null,
       target: options.target || "executor",
-      targetModel: options["target-model"] || options.targetModel || ""
+      targetModel: options["target-model"] || options.targetModel || "",
+      maxTurns: options["max-turns"] || options.maxTurns || "",
+      maxTurnsReason: options["max-turns-reason"] || options.maxTurnsReason || ""
     });
   } else if (command === "verify") {
     payload = verifySupport(root, {

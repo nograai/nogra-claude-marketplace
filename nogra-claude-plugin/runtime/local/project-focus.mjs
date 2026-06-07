@@ -136,10 +136,17 @@ function readWorkspaceIndex(indexPath) {
 function managerHubOptions(config) {
   const policy = config?.bootPolicy || {};
   const hub =
-    policy.managerHub && typeof policy.managerHub === "object"
+    policy.workspaceHub && typeof policy.workspaceHub === "object"
+      ? policy.workspaceHub
+      : policy.managerHub && typeof policy.managerHub === "object"
       ? policy.managerHub
       : {};
-  const enabled = policy.managerHub === true || hub.enabled === true || policy.mode === "manager-hub";
+  const enabled =
+    policy.workspaceHub === true ||
+    policy.managerHub === true ||
+    hub.enabled === true ||
+    policy.mode === "workspace-hub" ||
+    policy.mode === "manager-hub";
   return { enabled, hub };
 }
 
@@ -245,7 +252,7 @@ function focusContext(entry, summary, config) {
 
   return `<!-- nogra-plugin:project-focus workspaceId=${id} -->
 <NOGRA_PROJECT_FOCUS>
-The user selected project \`${name}\` from the Manager hub.
+The user selected project \`${name}\` from the workspace hub.
 
 Project root: ${entry.path}
 Workspace id: ${id}

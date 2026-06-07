@@ -75,7 +75,8 @@ Do not use this skill for:
    support with:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" verify --root "$PWD" --run-id "<runId>" --json
+   NOGRA_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" verify --root "$NOGRA_ROOT" --run-id "<runId>" --json
    ```
 
    Pass the evidence object on stdin or with `--input`. The local runtime writes
@@ -88,7 +89,7 @@ Do not use this skill for:
    consistency with:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-ledger.mjs" check-run --root "$PWD" --run-id "<runId>" --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-ledger.mjs" check-run --root "$NOGRA_ROOT" --run-id "<runId>" --json
    ```
 
    If the helper returns `inconsistent`, surface the differences and keep
@@ -111,6 +112,11 @@ Do not use this skill for:
 ## Verification Rules
 
 - Missing evidence is not success.
+- Executor self-report is never verdict evidence. Complete, truncated, missing
+  or polished reports are claim surfaces only; verify against independent tree,
+  artifact, command and diff evidence. Report quality can explain why
+  self-report evidence is unavailable, but it does not decide `ship`, `blocked`
+  or `failed`.
 - A visually good result can still be `deviation` if it changed framework,
   skipped a criterion, used substitute evidence, or moved scope without
   approval.

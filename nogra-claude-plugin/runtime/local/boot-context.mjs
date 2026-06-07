@@ -157,8 +157,31 @@ function extractCheckpointSummary(root, config, fallback = "") {
       if (paragraph.length) return cleanInline(paragraph.join(" ")).slice(0, 240);
     }
   }
-  const first = lines.find((line) => line && !line.startsWith("#") && !line.match(/^(workspace|created|updated):/i));
+  const first = lines.find((line) => line && !line.startsWith("#") && !line.match(/^(workspace|created|updated|sourcewatermark):/i));
   return cleanInline(first || fallback || "No checkpoint summary found.").slice(0, 240);
+}
+
+function ledgerWatermark(root) {
+  const file = path.join(root, ".nogra", "ledger", "events.jsonl");
+  if (!exists(file)) return 0;
+  return readText(file).split(/\r?\n/u).filter((line) => line.trim()).length;
+}
+
+function checkpointSourceWatermark(root, config) {
+  const checkpoint = workspaceFile(root, config?.paths?.currentCheckpoint, ".nogra/state/SESSION-CHECKPOINT.md");
+  if (!exists(checkpoint)) return 0;
+  const match = readText(checkpoint, 6000).match(/^SourceWatermark:\s*(\d+)\s*$/imu);
+  return match ? Number(match[1]) : 0;
+}
+
+function checkpointFreshness(root, config) {
+  const current = ledgerWatermark(root);
+  const source = checkpointSourceWatermark(root, config);
+  return {
+    ledgerWatermark: current,
+    checkpointSourceWatermark: source,
+    checkpointStatus: current > source ? "stale" : "fresh"
+  };
 }
 
 function bootHintForWorkspace(root, config, source, fallbackSummary = "") {
@@ -166,10 +189,11 @@ function bootHintForWorkspace(root, config, source, fallbackSummary = "") {
   const policy = config?.bootPolicy || {};
   const maxBytes = Number(policy.maxHintBytes || 1200);
   const summary = extractCheckpointSummary(root, config, fallbackSummary);
+  const freshness = checkpointFreshness(root, config);
   const lines = [
-    `Hej. Jeg er i \`${name}\`.`,
-    `Nogra fandt et lokalt checkpoint: "${summary}".`,
-    "Jeg loader først resten, når vi fortsætter arbejdet."
+    `Hi. I am in \`${name}\`.`,
+    `Nogra found a local checkpoint: "${summary}".`,
+    "I will load the rest only when we continue the work."
   ];
   const message = lines.join("\n").slice(0, maxBytes);
   return {
@@ -182,6 +206,7 @@ function bootHintForWorkspace(root, config, source, fallbackSummary = "") {
     stateRoot: config?.paths?.stateRoot || ".nogra/state",
     memoryIndex: config?.paths?.memoryIndex || ".nogra/memory/local/MEMORY.md",
     checkpointSummary: summary,
+    ...freshness,
     writes: [],
     autoLoaded: false,
     message
@@ -206,17 +231,24 @@ function bootHintForAmbiguous(cwd, entries, maxRecent = 5) {
     })),
     writes: [],
     autoLoaded: false,
-    message: `Hej. Jeg står i en mappe med flere Nogra-projekter: ${names}.\nHvilket projekt arbejder vi i?`
+    message: `Hi. This folder contains multiple Nogra projects: ${names}.\nWhich project are we working in?`
   };
 }
 
 function managerHubOptions(config) {
   const policy = config?.bootPolicy || {};
   const hub =
-    policy.managerHub && typeof policy.managerHub === "object"
+    policy.workspaceHub && typeof policy.workspaceHub === "object"
+      ? policy.workspaceHub
+      : policy.managerHub && typeof policy.managerHub === "object"
       ? policy.managerHub
       : {};
-  const enabled = policy.managerHub === true || hub.enabled === true || policy.mode === "manager-hub";
+  const enabled =
+    policy.workspaceHub === true ||
+    policy.managerHub === true ||
+    hub.enabled === true ||
+    policy.mode === "workspace-hub" ||
+    policy.mode === "manager-hub";
   return { enabled, hub, policy };
 }
 
@@ -251,17 +283,18 @@ function bootHintForManagerHub(root, config, entries) {
     : ["- No registered projects yet."];
 
   const maxBytes = Number(policy.maxHintBytes || 1600);
+  const freshness = checkpointFreshness(root, config);
   const lines = [
-    `Hej. Jeg er i \`${name}\` Manager hub.`,
-    "Nogra-projekter i index:",
+    `Hi. I am in the \`${name}\` workspace hub.`,
+    "Nogra projects in the index:",
     ...projectLines,
-    "Sig projektets navn for at fokusere. Jeg loader ikke projektets fulde checkpoint før du vælger det."
+    "Say the project name to focus it. I will not load the project's full checkpoint before you choose it."
   ];
 
   return {
     schema: "nogra.boot_context.v1",
     status: "hub",
-    source: "manager-hub-index",
+    source: "workspace-hub-index",
     workspaceName: name,
     workspaceId,
     workspaceRoot: root,
@@ -271,6 +304,7 @@ function bootHintForManagerHub(root, config, entries) {
       path: entry.path,
       lastCheckpointSummary: cleanInline(entry.lastCheckpointSummary)
     })),
+    ...freshness,
     writes: [],
     autoLoaded: false,
     message: lines.join("\n").slice(0, maxBytes)
@@ -284,7 +318,7 @@ function bootHintForMissing(cwd) {
     cwd,
     writes: [],
     autoLoaded: false,
-    message: "Hej. Jeg finder ingen Nogra-state i denne mappe.\nSig projektet, eller kør `/nogra:setup` her."
+    message: "Hi. I do not find Nogra state in this folder.\nSay the project, or run `/nogra:setup` here."
   };
 }
 

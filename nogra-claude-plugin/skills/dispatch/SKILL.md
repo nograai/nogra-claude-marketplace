@@ -59,6 +59,9 @@ status should stay with role plus runtime.
 role provided by the Nogra plugin, taken on by the selected runtime for this
 run." Nogra state should expose both axes together: `executionRole` plus
 `executionRuntime`, and user-facing status should preserve that pairing.
+`owner` is the Manager-owned control-plane contract. `nextOwner` is the next
+role expected to act, normally `nogra:executor`; use Manager action fields and
+`executionCrossing.nextStep` for prose such as sizing review or spawn guidance.
 
 Only promise to wait when the current Claude Code client can actually deliver
 the executor-role return before the command exits. In one-shot/non-interactive
@@ -94,26 +97,43 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
    Read `.nogra/config.json` and capture the runtime facts needed for the run.
    Use `skills/help/references/runtime.md` for runtime-policy meaning and
    `references/dispatch-contract.md` for dispatch shape mechanics.
+   Before any transient `cd`, pin the Nogra workspace root once and use that
+   absolute path for every local runtime or ledger command:
+
+   ```bash
+   NOGRA_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+   ```
+
+   The runtime helpers resolve a nested root to the nearest parent containing
+   `.nogra/`, and fall back to the requested root when no `.nogra/` exists so
+   fresh setup still works. Pinning the root is still the Manager contract:
+   verification/test commands may change cwd, but control-plane calls must not
+   depend on a mutable `$PWD`.
 2. Promote the brief if it is still a draft with the local runtime:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "$PWD" --brief-id "<briefId>" --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "$NOGRA_ROOT" --brief-id "<briefId>" --json
    ```
 
    The default dispatch control plane is local.
-3. Before local dispatch, perform a Manager-internal routing check on
-   the approved brief. This is not a new scoring model, threshold system or
+3. Before local dispatch, perform a Manager-internal routing and sizing check
+   on the approved brief. This is not a new scoring model, threshold system or
    user prompt by default. This step asks the Manager phase to choose the
-   execution shape for the approved work.
+   execution shape and `maxTurns` sizing for the approved work. Concrete
+   `maxTurns` belongs here after the approved brief exists. The brief flow
+   should already have made the coarse decomposition call before writing the
+   proposal and then run `brief-sizing-preview` on the selected phase before
+   approval; if not, treat dispatch sizing as a late decomposition gate instead
+   of spawning automatically.
 
    Ask yourself:
 
    ```text
-   What is the right execution shape for this approved brief?
+   What is the right execution shape and turn budget for this approved brief?
    ```
 
    Use `references/dispatch-contract.md` for execution-shape examples, phase
-   criteria and tool-shape handling.
+   criteria, execution sizing and tool-shape handling.
 
    Keep routing rationale qualitative and brief. If the routing answer changes
    scope, authority, risk or requires a decision the current approved brief/GO
@@ -123,29 +143,44 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
    workspace is intentionally connected:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" registry --root "$PWD" --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" registry --root "$NOGRA_ROOT" --json
    ```
 
    The default dispatch control plane is plugin-local.
 5. Create a local dispatch receipt/run id for the approved brief:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" dispatch --root "$PWD" --brief-id "<briefId>" --target executor --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" dispatch --root "$NOGRA_ROOT" --brief-id "<briefId>" --target executor --json
    ```
 
    Pass `--target-model` only for an explicit per-dispatch override. Otherwise
    the local runtime resolves the configured runtime policy or release default.
+   Pass `--max-turns` only when Manager intentionally overrides the brief-derived
+   sizing for this dispatch. Otherwise the local runtime derives `executionMaxTurns`
+   from the approved brief and records the factors in `executionSizing`.
    The local runtime writes the queued transport run and event under
    `.nogra/transport/`.
-6. Fetch the local handoff contract:
+6. Inspect `executionSizing` in the dispatch receipt before spawning. If
+   `executionSizing.requiresManagerDecision` is true, do not continue to handoff
+   and spawn by default. Treat this as a decomposition gate:
+
+   - split into phases when the approved brief and GO already cover that route
+   - rerun dispatch with an explicit bounded `--max-turns` override only when the
+     operator wants one larger run
+   - ask the operator when splitting, widening runtime budget or changing the run
+     shape needs a fresh decision
+
+   Surface the receipt's `executionSizing.summary` in one line when a decision is
+   needed.
+7. Fetch the local handoff contract:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" handoff-contract --root "$PWD" --kind executor --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" handoff-contract --root "$NOGRA_ROOT" --kind executor --run-id "<runId>" --json
    ```
 
-7. If any local runtime write fails, stop and surface the failure. Local runtime
+8. If any local runtime write fails, stop and surface the failure. Local runtime
    helpers own transport record writes.
-8. Spawn a subagent in the plugin-provided `nogra:executor` role when
+9. Spawn a subagent in the plugin-provided `nogra:executor` role when
    available. It is the preferred execution role contract because the plugin
    role file defines the responsibility while the local runtime resolves
    runtime metadata. Include:
@@ -154,6 +189,10 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
    - run id and brief id
    - scope files, stop criteria and required evidence
    Runtime/model facts stay in the dispatch receipt and handoff metadata.
+   If the client supports per-invocation turn limits, pass
+   `targetSubagent.maxTurnsHint` from the handoff contract to the spawn
+   primitive. With a concrete run id, that value comes from the dispatch receipt,
+   not role frontmatter.
    Long-running commands should set Bash timeout directly for the scaffold,
    build or test step. Progress monitoring uses `run_in_background` rather than
    sleep-poll command chains.
@@ -171,18 +210,18 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
    the background agent result to Manager before exit, leave the local run
    queued and tell the operator to resume/check/verify the run in an
    interactive Claude Code session.
-9. While the executor-role subagent runs, keep the main chat focused on state
+10. While the executor-role subagent runs, keep the main chat focused on state
    and decisions. If the user asks to stop or cancel it, stop that subagent first,
    then update the local run through the local ledger/finalize path or return a
    short cancelled or partial state report if no terminal record can be safely
    written. Further implementation, verification, screenshots, browser opening
    or file-opening require a fresh user ask.
-10. When the executor-role subagent returns, read evidence in the Manager phase
+11. When the executor-role subagent returns, read evidence in the Manager phase
    and choose the run status. Then persist report/output/run/event records
    locally with the local ledger helper:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-ledger.mjs" finalize-run --root "$PWD" --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-ledger.mjs" finalize-run --root "$NOGRA_ROOT" --json
    ```
 
    Pass JSON on stdin with:
@@ -201,10 +240,19 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
    Manager phase owns the language and the status decision. Do not use task
    wrapper `completed` as completion evidence, and do not invent
    `completed/completed`.
+   Executor self-report is never verdict evidence. Complete, truncated, missing
+   or polished reports are claim surfaces only; Manager derives `ship`,
+   `deviation`, `blocked` or `failed` from independent tree, artifact, command
+   and diff evidence. Report quality can explain why self-report evidence is
+   unavailable, but it is never in itself `ship` or failure.
 
    If the helper returns `inconsistent` or `conflict`, stop and surface the
    differences. Do not auto-fix, force-correct, or rewrite Manager's prose.
-11. For an ordinary single-run, compare executor-role evidence against the
+   When an executor report is `blocked` because a pre-flight stop criterion fired,
+   read its `Safe Continuation` section before returning to the user. If a safe
+   route is present, include both the blocker and that route in the Manager
+   verification/return surface.
+12. For an ordinary single-run, compare executor-role evidence against the
     approved brief and return the verification. Spawn a subagent in the
     plugin-provided `nogra:verifier` role only for noisy log/test checks,
     explicit independent verification, explicitly requested adapter evidence or
@@ -217,7 +265,7 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
     `deviation`, `blocked`, `decision_required` or `unverified` in the
     `finalize-run` payload. Do not overwrite `executionRole`; that remains the
     executor-role run.
-12. If the result differs from the approved brief in a material way, return
+13. If the result differs from the approved brief in a material way, return
     `deviation` / `partial` even when the result looks good. Examples:
     requested framework/version changed, a success criterion was satisfied by
     substitute evidence, a screenshot was skipped, or scope moved without user
@@ -233,7 +281,8 @@ If any required crossing piece is missing, stop cleanly:
 - no `nogra:executor` role primitive: stop
 - required `nogra:verifier` role primitive missing: stop
 - executor-role subagent reports a stop criterion: stop and return the stop
-  reason
+  reason; if its report includes `Safe Continuation`, include that path and
+  whether it needs a fresh Manager/user decision
 
 A failed crossing returns to the operator instead of turning into inline
 implementation. Recovery paths outside plugin dispatch need explicit user
@@ -245,6 +294,7 @@ direction; do not propose a bypass from this flow.
 - Local dispatch returns a receipt/run id and writes local `.nogra/transport/`
   records. Execution starts at the agent handoff.
 - Private transport packets are outside plugin-mode execution.
-- `handoff-contract --kind executor` returns the local handoff prompt supplied
-  to the plugin-provided `nogra:executor` role subagent.
+- `handoff-contract --kind executor --run-id <runId>` returns the local handoff
+  prompt supplied to the plugin-provided `nogra:executor` role subagent, with
+  dispatch-derived sizing when the run id is available.
 - Default dispatch support is plugin-local.

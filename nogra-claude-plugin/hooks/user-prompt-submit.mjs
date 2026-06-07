@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { resolveProjectFocus } from "../runtime/local/project-focus.mjs";
+import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
 function readStdin() {
   try {
@@ -24,15 +25,39 @@ function nonEmptyString(value) {
   return typeof value === "string" && value.trim() !== "" ? value : "";
 }
 
+function firstWorkspaceRoot(input) {
+  if (!Array.isArray(input.workspace_roots)) return "";
+  return input.workspace_roots.find((entry) => typeof entry === "string" && entry.trim() !== "") || "";
+}
+
+function hasNograConfig(root) {
+  return Boolean(root) && existsSync(join(resolve(root), ".nogra", "config.json"));
+}
+
+function nearestNograRoot(start) {
+  if (!start) return "";
+  let current = resolve(start);
+  while (true) {
+    if (hasNograConfig(current)) return current;
+    const next = resolve(current, "..");
+    if (next === current) return "";
+    current = next;
+  }
+}
+
 function projectRoot(input) {
-  const workspaceRoot = Array.isArray(input.workspace_roots)
-    ? input.workspace_roots.find((entry) => typeof entry === "string" && entry.trim() !== "")
-    : "";
+  const explicitRoot = process.env.CLAUDE_PROJECT_ROOT || process.env.CURSOR_PROJECT_DIR || "";
+  if (explicitRoot) return resolve(explicitRoot);
+
+  const workspaceRoot = firstWorkspaceRoot(input);
+  if (hasNograConfig(workspaceRoot)) return resolve(workspaceRoot);
+
+  const cwdRoot = nearestNograRoot(nonEmptyString(input.cwd));
+  if (cwdRoot) return cwdRoot;
+
   return resolve(
-    process.env.CLAUDE_PROJECT_ROOT ||
-      process.env.CURSOR_PROJECT_DIR ||
+    workspaceRoot ||
       nonEmptyString(input.cwd) ||
-      workspaceRoot ||
       process.cwd()
   );
 }
@@ -66,7 +91,7 @@ const DEFAULT_SCORING = {
   ambiguity: 10,
   lowRiskEdit: -30,
   singleFileLowScope: -15,
-  directOverride: -40,
+  directOverride: 0,
   pureQuestion: -50
 };
 
@@ -82,7 +107,30 @@ const DEFAULT_DICTIONARY = {
   ambiguity: ["unclear", "risky", "hard to revert"],
   lowRiskEdit: ["readme", "one sentence", "single sentence", "hello nogra"],
   singleFileLowScope: ["single file", "one file"],
-  directOverride: ["direct", "skip brief", "skip nogra", "no nogra", "without nogra", "no ceremony", "just build"]
+  directOverride: [
+    "direct",
+    "direct/native",
+    "skip brief",
+    "skip nogra",
+    "no nogra",
+    "without nogra",
+    "no ceremony",
+    "just build",
+    "claude native",
+    "direkte",
+    "uden nogra",
+    "uden brief",
+    "ingen nogra",
+    "ingen brief",
+    "spring nogra over",
+    "spring brief over",
+    "kør uden nogra",
+    "koer uden nogra",
+    "køre uden nogra",
+    "koere uden nogra"
+  ],
+  toggleOn: [],
+  toggleOff: []
 };
 
 function numericSetting(value, fallback) {
@@ -260,7 +308,6 @@ function scorePrompt(prompt, scoring = DEFAULT_SCORING, dictionary = DEFAULT_DIC
     reasons.push("single-file low-scope signal");
   }
   if (signals.directOverride) {
-    score += scoring.directOverride;
     reasons.push("user asks for direct work");
   }
   if (signals.pureQuestion) {
@@ -281,13 +328,13 @@ function semanticText(prompt) {
 
 function judgmentFallback(prompt, { score, topicRelated, directOverride }, threshold) {
   const text = semanticText(prompt);
-  if (directOverride || score >= threshold) {
+  if (score >= threshold) {
     return { active: false, reasons: [] };
   }
 
   const genericScoreQuestion =
     /\b(score|scorer|scoring|procent|percent|threshold|tærskel|taerskel)\b/u.test(text) &&
-    !/\b(build|byg|bygger|rebuild|re-build|redesign|re-design|design|research|researcher|change|ændr|aendr)\b/u.test(text);
+    !/\b(build|byg|bygger|rebuild|re-build|redesign|re-design|re-designe|redesigne|design|research|researcher|change|ændr|aendr)\b/u.test(text);
 
   if (genericScoreQuestion) {
     return { active: false, reasons: [] };
@@ -295,9 +342,9 @@ function judgmentFallback(prompt, { score, topicRelated, directOverride }, thres
 
   const actionLanguage =
     /^(?:please\s+)?(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|make|create|research|design)\b/u.test(text) ||
-    /\b(?:we|vi)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|rework|redo|change|fix|byg|bygger|bygge|laver|lav|ændr|ændrer|aendr|aendrer|redesign|redesigner|ombyg|ombygger)\b/u.test(text) ||
-    /\b(?:jeg kunne godt tænke mig|jeg kunne godt taenke mig|jeg vil gerne|i want|i would like|i'd like)\b.{0,120}\b(?:research|researcher|undersøg|undersog|undersøge|undersoege|redesign|re-design|design|byg|bygge|change|fix|lav|lave)\b/u.test(text) ||
-    /\b(?:kan du|gider du|could you|can you)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|research|researcher|undersøg|undersog|design|change|fix|byg|bygge|lav|lave|ret|rette)\b/u.test(text);
+    /\b(?:we|vi)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|re-designe|redesigne|rework|redo|change|fix|byg|bygger|bygge|laver|lav|ændr|ændrer|aendr|aendrer|redesign|redesigner|ombyg|ombygger)\b/u.test(text) ||
+    /\b(?:jeg kunne godt tænke mig|jeg kunne godt taenke mig|jeg vil gerne|i want|i would like|i'd like)\b.{0,120}\b(?:research|researcher|undersøg|undersog|undersøge|undersoege|redesign|re-design|re-designe|redesigne|design|byg|bygge|change|fix|lav|lave)\b/u.test(text) ||
+    /\b(?:kan du|gider du|could you|can you)\b.{0,80}\b(?:build|rebuild|re-build|redesign|re-design|re-designe|redesigne|research|researcher|undersøg|undersog|design|change|fix|byg|bygge|lav|lave|ret|rette)\b/u.test(text);
 
   const productSurface =
     /\b(?:blog|bloggen|blogsiden|blogside|blogpost|blog post|post|article|artikel|side|siden|page|site|website|app|produkt|product|cms|frontend|ui|ux|route|component|komponent|dashboard|flow|schema|database|auth|metadata|meta felter|meta fields)\b/u.test(text);
@@ -336,10 +383,19 @@ Primary Nogra routing template scored ${score}, below the workspace threshold ${
 
 The template missed, but the prompt has product-work signals: ${reasons.join("; ")}.
 
-Apply the 70/30 rule now: use current-prompt judgment as the fallback. If the user is asking to build, change, redesign, research or verify a product/workspace surface, make the Nogra brief/direct offer before tool use. If it is meta chat, pure Q&A, or clearly direct/simple work, continue directly.
+Apply the 70/30 rule now: use current-prompt judgment as the fallback. If the user is asking to build, change, redesign, research or verify a product/workspace surface, make the Nogra brief/direct choice visible before tool use. If it is meta chat, pure Q&A, or clearly simple low-risk work, continue directly.
 
 Offer first and wait if your judgment says it is product work. Brief drafting starts only after the user accepts the workflow.
 </NOGRA_JUDGMENT_FALLBACK>`);
+}
+
+function emitDirectChoice() {
+  emitContext(`<!-- nogra-plugin:direct-choice -->
+<NOGRA_DIRECT_CHOICE>
+The user chose direct work for the pending Nogra offer. Nogra automatic routing stays ON for the workspace.
+
+Proceed directly for this task. If new heat/risk/scope appears while working, surface that judgment and ask whether to switch to the Nogra brief flow.
+</NOGRA_DIRECT_CHOICE>`);
 }
 
 function userAuthoredText(prompt) {
@@ -363,8 +419,28 @@ function exactIntentLines(prompt) {
     .filter(Boolean);
 }
 
-function toggleIntent(prompt) {
+function dictionaryToggleLine(line, dictionary = DEFAULT_DICTIONARY) {
+  for (const [key, intent] of [["toggleOff", "off"], ["toggleOn", "on"]]) {
+    const terms = Array.isArray(dictionary[key]) ? dictionary[key] : [];
+    for (const term of terms) {
+      if (
+        line === term ||
+        line.startsWith(`${term} og `) ||
+        line.startsWith(`${term} and `)
+      ) {
+        return intent;
+      }
+    }
+  }
+  return "";
+}
+
+function toggleIntent(prompt, dictionary = DEFAULT_DICTIONARY) {
   for (const line of exactIntentLines(prompt)) {
+    const dictionaryIntent = dictionaryToggleLine(line, dictionary);
+    if (dictionaryIntent) {
+      return dictionaryIntent;
+    }
     if (
       /^handle this nogra request:\s*off$/u.test(line) ||
       /^\/nogra[:\s-]?off$/u.test(line) ||
@@ -459,6 +535,52 @@ function writeRoutingOffState(configInfo, policy = {}) {
   });
 }
 
+function readJsonFile(path) {
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function recentRoutingRecord(configInfo, policy = {}) {
+  const root = workspaceRootFromConfig(configInfo.configPath);
+  const record = readJsonFile(join(root, ".nogra", "runtime", "last-routing-score.json"));
+  if (!record || typeof record !== "object") return null;
+
+  const maxAgeMs = numericSetting(policy.pendingOfferMaxAgeMs, 30 * 60 * 1000);
+  const updatedAtMs = Date.parse(record.updatedAt);
+  if (!Number.isFinite(updatedAtMs) || Date.now() - updatedAtMs > maxAgeMs) return null;
+  if (record.autoOfferEnabled === false || record.offerResolution) return null;
+
+  const fallback = record.judgmentFallback && typeof record.judgmentFallback === "object"
+    ? record.judgmentFallback
+    : {};
+  if (record.offerTriggered !== true && fallback.active !== true) return null;
+  return record;
+}
+
+function isDirectChoicePrompt(prompt) {
+  const lines = exactIntentLines(prompt);
+  if (!lines.length || lines.length > 2) return false;
+  const text = lines.join(" ");
+  if (text.length > 80) return false;
+  return /^(?:direct|directly|work directly|take it directly|go direct|skip brief|no brief|without brief|direkte|bare direkte|du kører bare direkte|du koerer bare direkte|du køre bare direkte|du koere bare direkte|kør direkte|koer direkte|køre direkte|koere direkte|arbejd direkte|uden brief|ingen brief|uden nogra|ingen nogra)$/u.test(text);
+}
+
+function writeRoutingResolution(configInfo, record, resolution) {
+  writeRoutingScore(configInfo, {
+    ...record,
+    updatedAt: new Date().toISOString(),
+    offerResolution: resolution,
+    offerResolvedAt: new Date().toISOString(),
+    route: resolution,
+    routingDecision: resolution,
+    offerTriggered: false
+  });
+}
+
 const input = parseInput(readStdin());
 const root = projectRoot(input);
 const configInfo = readConfig(root);
@@ -466,6 +588,8 @@ const configInfo = readConfig(root);
 if (!configInfo) {
   process.exit(0);
 }
+
+captureSessionAnchor(root, input, "UserPromptSubmit");
 
 const prompt = promptText(input);
 if (!prompt) {
@@ -481,13 +605,13 @@ const policy = config.routingPolicy || {};
 const dictionary = dictionaryPolicy(policy);
 const routingPrompt = userAuthoredText(prompt);
 
-const toggle = toggleIntent(prompt);
+const toggle = toggleIntent(prompt, dictionary);
 if (toggle) {
   emitContext(`<!-- nogra-plugin:routing-toggle intent=${toggle} -->
 <NOGRA_ROUTING_TOGGLE_REQUEST>
 The user asked to turn Nogra automatic offers ${toggle} for this workspace.
 
-Hooks are soft guardrails only. Do not treat this hook as the actor, and do not say the hook already changed config.
+Hooks are routing guardrails only. Do not treat this hook as the actor, and do not say the hook already changed config.
 
 Use the nogra:${toggle} skill now. The skill owns reading and updating local .nogra/config.json, then reporting the result visibly to the user.
 
@@ -513,6 +637,13 @@ if (!routingPrompt) {
   process.exit(0);
 }
 
+const pendingRecord = recentRoutingRecord(configInfo, policy);
+if (pendingRecord && isDirectChoicePrompt(routingPrompt)) {
+  writeRoutingResolution(configInfo, pendingRecord, "direct");
+  emitDirectChoice();
+  process.exit(0);
+}
+
 const focus = resolveProjectFocus({ cwd: root, prompt: routingPrompt });
 if (focus.additionalContext) {
   emitContext(focus.additionalContext);
@@ -524,7 +655,6 @@ const { sensitivityPercent, autoOfferThreshold, strongOfferThreshold } = routing
 const topicGate = policy.topicGate !== false;
 const fallback = judgmentFallback(routingPrompt, { score, topicRelated, directOverride }, autoOfferThreshold);
 const offerTriggered =
-  !directOverride &&
   !(topicGate && !topicRelated) &&
   score >= autoOfferThreshold;
 
@@ -539,14 +669,16 @@ writeRoutingScore(configInfo, {
   strongThreshold: strongOfferThreshold,
   sensitivityPercent,
   offerTriggered,
+  route: offerTriggered ? "offer" : "none",
+  routingDecision: offerTriggered ? "offer" : "none",
   judgmentFallback: {
     active: fallback.active,
     reasons: fallback.reasons
   }
 });
 
-if (directOverride || (topicGate && !topicRelated)) {
-  if (!directOverride && fallback.active) {
+if (topicGate && !topicRelated) {
+  if (fallback.active) {
     emitJudgmentFallback({
       score,
       threshold: autoOfferThreshold,
@@ -571,18 +703,19 @@ if (score < autoOfferThreshold) {
 
 const offer =
   score >= strongOfferThreshold
-    ? "This is scoped enough that I recommend a Nogra brief before work starts. I can write the brief first, or work directly if you prefer."
-    : "This has enough scope that a Nogra brief would help. I can write the brief first, or work directly if you prefer.";
+    ? "This is scoped enough that Nogra should write the brief before work starts. I can start the Nogra brief, or take it directly if you want that for this task."
+    : "This has enough scope that a Nogra brief would help. I can start the Nogra brief, or take it directly if you want that for this task.";
 
 emitContext(`<!-- nogra-plugin:offer-gate score=${score} threshold=${autoOfferThreshold} reasons=${reasons.join("; ")} -->
 <NOGRA_OFFER_GATE>
 This user prompt locally scores ${score} for Nogra routing, which meets the workspace threshold ${autoOfferThreshold}. Current Nogra sensitivity is ${sensitivityPercent}%.
 
 Before Bash, Write, Edit, Task, browser automation, package install, app scaffolding, dispatch, verification, or brief drafting:
-1. Make the brief/direct offer before entering the Nogra workflow.
+1. Make the Nogra choice visible before entering the workflow: brief flow or direct for this task.
 2. Stop after the offer and wait for the user's choice.
-3. If the user chooses direct work, proceed directly and do not call Nogra.
+3. If the user chooses direct/native/no-brief/no-Nogra work, treat it as a per-task direct decision while Nogra stays on. Proceed directly only if current heat/risk/scope judgment supports it.
 4. If the user accepts the brief flow, then use nogra:brief.
+5. Mention /nogra:off only when the user asks to disable automatic routing for the workspace.
 
 Recommended offer text:
 ${offer}

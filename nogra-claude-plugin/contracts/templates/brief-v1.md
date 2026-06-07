@@ -6,8 +6,9 @@ workspaceId: local
 title: Brief title
 createdAt: 2026-05-04T00:00:00Z
 status: draft
-owner: ""
-targetRole: ""
+owner: Manager
+nextOwner: nogra:executor
+targetRole: executor
 targetModel: anthropic:sonnet
 evidenceRequired: reported
 ---

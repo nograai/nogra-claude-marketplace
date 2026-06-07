@@ -10,6 +10,8 @@
     "workspaceId",
     "title",
     "createdAt",
+    "owner",
+    "nextOwner",
     "intent",
     "contextHandoff",
     "scope",
@@ -59,7 +61,13 @@
       "default": "draft"
     },
     "owner": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
+    },
+    "nextOwner": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Next role expected to act on this Manager-owned brief, for example nogra:executor."
     },
     "targetRole": {
       "type": "string"

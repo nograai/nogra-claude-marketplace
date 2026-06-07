@@ -136,6 +136,9 @@ call dispatch from this skill. A brief is not GO.
    reactive failure handling. If the work depends on a tool, runtime,
    credential or service, write the check as the executor's first action and
    forbid recovery improvisation unless the user explicitly wants setup work.
+   When a dangerous route is foreseeable but a safe route is known, include both:
+   block the dangerous route and require the executor to return the safe
+   continuation if that block is triggered.
    Example: `First action: run which pnpm. If not found, status: blocked,
    reason: pnpm missing. Do not install pnpm or scaffold partial files.` Avoid
    reactive phrasing such as `If pnpm fails during work, stop`, because it
@@ -156,9 +159,19 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-contract --root "$PWD
 ```
 
    Do not discover the schema by repeated validation failures.
-10. Draft a complete brief payload from the contract. Use
+10. Before writing a full brief payload, make a Manager-internal decomposition
+   check from the user request, known repo context, expected files/areas,
+   coupling and runtime risk. If the work naturally splits, or is likely to sit
+   near/over a normal executor run, choose or ask for the phase boundary before
+   drafting. Do not spend tokens writing an all-in brief and then split it after
+   the preview trips.
+11. Draft a complete brief payload for the selected phase/run from the contract.
+   Use
    `references/brief-contract.md` for shape guidance:
    - `title`
+   - `owner: "Manager"` because Manager owns the brief contract.
+   - `nextOwner` as the scoped role expected to act after approval, normally
+     `nogra:executor`.
    - `intent`
    - `contextHandoff`
    - `scope.in`, `scope.out` and `scope.files` when known
@@ -171,7 +184,20 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-contract --root "$PWD
      `runtimePolicy.roles.executor.model` when present; otherwise use the local
      runtime default.
    - `maxOutput` from workspace return policy unless the user asks otherwise
-11. Validate once with the local runtime when the draft is ready to become an
+12. Preview brief size and decomposition pressure for the selected phase before
+   saving/promoting the approval artifact:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-sizing-preview --root "$PWD" --json
+```
+
+   Pass the complete structured brief payload on stdin or with `--input`. This
+   is a sanity check on the already selected phase, not the first decomposition
+   pass. If `sizingPreview.requiresPreApprovalDecision` is true, revise the phase
+   boundary, reduce scope or ask the operator to approve one larger bounded run
+   before saving/promoting a one-run approval artifact. Do not copy the estimated
+   max turns into the brief; concrete `executionMaxTurns` belongs to dispatch.
+13. Validate once with the local runtime when the draft is ready to become an
    artifact:
 
 ```bash
@@ -179,9 +205,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-validate --root "$PWD
 ```
 
    Pass the structured brief payload on stdin or with `--input`.
-12. If validation fails after using the contract, stop and report the mismatch or
+14. If validation fails after using the contract, stop and report the mismatch or
    missing decision. Do not keep mutating blindly.
-13. Save the brief with the local runtime:
+15. Save the brief with the local runtime:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-save --root "$PWD" --json
@@ -191,7 +217,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-save --root "$PWD" --
     runtime writes both the normalized draft JSON and a deterministic ASCII
     overview beside it. The overview is rendered from the same normalized
     payload; it is not a second source of truth.
-14. Promote it only when it is ready for user approval:
+16. Promote it only when it is ready for user approval:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "$PWD" --brief-id "<briefId>" --json
@@ -199,10 +225,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "$PWD"
 
     The local runtime writes only under `.nogra/briefs/` and uses bundled
     `brief-v1.schema.json`.
-15. Do not manually repair local runtime writes by hand-writing `.nogra/`
+17. Do not manually repair local runtime writes by hand-writing `.nogra/`
     artifacts after a runtime error. Stop and surface the failure instead.
-16. Present the brief to the user in a compact summary plus the saved brief id.
-17. Ask for explicit GO before execution. If the user approves, use the
+18. Present the brief to the user in a compact summary plus the saved brief id.
+19. Ask for explicit GO before execution. If the user approves, use the
     `dispatch` skill. Do not continue into implementation inside this skill.
 
 ## Brief Writing Rules
@@ -230,10 +256,16 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "$PWD"
   be first-turn checks when the work depends on them. During-work guards should
   use exact exit/status language such as `exits non-zero`; setup, recovery or
   partial-scaffold fallback belongs in scope only when the user explicitly wants
-  that work.
-- Keep execution shape deliberate. Large or multi-purpose work should decompose
-  into bounded briefs or phases; otherwise keep one coherent run. Use
-  `references/brief-contract.md` for execution-shape details.
+  that work. If a stop criterion blocks one unsafe path and the safe path is
+  already known, require the executor to return `Safe Continuation` with the
+  specific next route instead of only returning the blocker.
+- Keep execution shape deliberate. Make the primary decomposition call before
+  writing the brief proposal; use the draft sizing preview only as a sanity check
+  on the selected phase before saving/promoting. Large, near-ceiling or
+  multi-purpose work should decompose into bounded briefs or phases unless the
+  operator intentionally approves one bounded run. The preview is not a
+  maxTurns authority. Use `references/brief-contract.md` for execution-shape
+  details.
 - Keep the brief executable, not bloated. Include rejected paths/no-go areas
   when known, label methodology claims by confidence and evidence level, and
   keep current Manager-phase guardrails out of future executor
@@ -254,12 +286,12 @@ The minimum floor (never omit these):
 - compact scope in/out
 - 3-5 brief-specific success criteria
 - non-obvious stop criteria
-- brief id and GO line
+- brief id, `Open brief` link and GO line
 
 For richer briefs, draw from this structural inventory and omit any section that
 would be empty (but never omit scope / stop / GO):
 
-- title/path or brief id
+- title, `Open brief` link or brief id
 - goal
 - execution flow
 - phases
@@ -281,8 +313,22 @@ The full normalized brief and its rendered overview live in `.nogra/briefs/`;
 the chat shows the compact approval artifact, never the full brief body or
 payload echoed a second time.
 
+Use the promoted runtime payload's `openBriefLink` as the primary file
+affordance when available. It must render as a bare Markdown link with the
+English-first label `Open brief`:
+
+```md
+[Open brief](file:///absolute/path/to/brief.md)
+```
+
+Do not wrap the link in backticks. Do not append `:1` or any line number to a
+`file://` URL. Build `file://` values from the runtime payload or an equivalent
+URL encoder; do not hand-write unencoded paths with spaces or special
+characters. The storage mechanism is a local markdown file, but the user-facing
+artifact name remains "brief", not "file".
+
 End with:
 
 ```text
-Brief is ready: <briefId>. Review it, and say GO if you want me to dispatch it through Nogra.
+Brief is ready: <briefId>. [Open brief](file:///absolute/path/to/brief.md). Review it, and say GO if you want me to dispatch it through Nogra.
 ```

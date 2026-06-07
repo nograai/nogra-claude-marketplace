@@ -3,6 +3,7 @@
 Workspace: {{workspaceName}}
 Created: {{generatedAt}}
 Updated: {{generatedAt}}
+SourceWatermark: 0
 
 ## Current State
 
@@ -20,4 +21,3 @@ and each project should own its own `.nogra/` folder.
 
 - Use `/nogra:create <name>` to create a project under `projects/<workspaceId>/`.
 - Use `/nogra:adapt` inside an existing project to write project-specific state.
-

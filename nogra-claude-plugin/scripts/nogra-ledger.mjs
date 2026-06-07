@@ -140,8 +140,40 @@ function readInput(options, required = true) {
   return parsed;
 }
 
+function directoryExists(file) {
+  try {
+    return fs.statSync(file).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function normalizeDirectory(value) {
+  const resolved = path.resolve(String(value || process.cwd()));
+  if (!fs.existsSync(resolved)) return resolved;
+  const stat = fs.statSync(resolved);
+  const directory = stat.isDirectory() ? resolved : path.dirname(resolved);
+  return fs.realpathSync(directory);
+}
+
+function nearestNograWorkspaceRoot(start) {
+  let current = normalizeDirectory(start);
+  while (true) {
+    if (directoryExists(path.join(current, ".nogra"))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return "";
+    }
+    current = parent;
+  }
+}
+
 function workspaceRoot(options) {
-  return path.resolve(String(options.root || process.env.CLAUDE_PROJECT_DIR || process.cwd()));
+  const requested = options.root || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const fallback = normalizeDirectory(requested);
+  return nearestNograWorkspaceRoot(fallback) || fallback;
 }
 
 function ensureDir(dir) {
@@ -327,8 +359,72 @@ function eventsFile(root) {
   return path.join(root, ".nogra", "transport", "events.jsonl");
 }
 
+function ledgerEventsFile(root) {
+  return path.join(root, ".nogra", "ledger", "events.jsonl");
+}
+
+function sessionAnchorFile(root) {
+  return path.join(root, ".nogra", "runtime", "session-anchor.json");
+}
+
 function readJsonFile(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function readJsonFileIfValid(file) {
+  try {
+    if (!fs.existsSync(file)) return null;
+    return readJsonFile(file);
+  } catch {
+    return null;
+  }
+}
+
+function nonEmptyLineCount(file) {
+  if (!fs.existsSync(file)) return 0;
+  return fs.readFileSync(file, "utf8").split(/\r?\n/u).filter((line) => line.trim()).length;
+}
+
+function transcriptIdFromPath(value) {
+  const base = path.basename(cleanInline(value));
+  return base.replace(/\.jsonl$/u, "");
+}
+
+function readSessionAnchor(root) {
+  const anchor = readJsonFileIfValid(sessionAnchorFile(root));
+  if (!anchor || typeof anchor !== "object") {
+    return { sessionId: "", transcriptId: "" };
+  }
+  return {
+    sessionId: cleanInline(anchor.sessionId),
+    transcriptId: cleanInline(anchor.transcriptId) || transcriptIdFromPath(anchor.transcriptPath)
+  };
+}
+
+function appendLedgerEvent(root, type, extra = {}) {
+  const session = readSessionAnchor(root);
+  const eventId = cleanInline(extra.eventId) || `ledger-event-${cleanInline(extra.runId || "local")}-${type}`;
+  const existing = eventId && fs.existsSync(ledgerEventsFile(root))
+    ? parseJsonl(ledgerEventsFile(root)).find((item) => String(item?.eventId ?? "") === eventId)
+    : null;
+  if (existing) return existing;
+  const ledgerWatermark = nonEmptyLineCount(ledgerEventsFile(root)) + 1;
+  const at = now();
+  const event = {
+    schema: "nogra.ledger.event.v1",
+    releaseVersion: cleanInline(extra.releaseVersion) || "v1.0.0",
+    eventId,
+    ledgerWatermark,
+    generatedAt: at,
+    createdAt: at,
+    workspaceId: cleanInline(extra.workspaceId) || "local",
+    sessionId: session.sessionId,
+    transcriptId: session.transcriptId,
+    type,
+    ...extra
+  };
+  appendJsonlIfMissing(ledgerEventsFile(root), JSON.stringify(event), "eventId", event.eventId);
+  return event;
 }
 
 function localTarget(root, localPath) {
@@ -389,6 +485,16 @@ function finalizeRun(root, input, options = {}) {
   const completedAt = record.completedAt || cleanInline(input.completedAt) || now();
   const executionPair = roleRuntimePair(record, status);
   const verificationPair = verificationRoleRuntimePair(record, input);
+  const ledgerEvent = appendLedgerEvent(root, status === "cancelled" ? "transport_run_cancelled" : "transport_run_returned", {
+    releaseVersion: String(record.releaseVersion || "v1.0.0"),
+    eventId: `ledger-event-${runId}-terminal-${status}`,
+    workspaceId: cleanInline(input.workspaceId) || "local",
+    runId,
+    status,
+    phase,
+    briefId: cleanInline(record.briefId || input.briefId || ""),
+    summary: cleanInline(input.summary || "")
+  });
   const verificationFields = verificationPair
     ? {
         verificationRole: verificationPair.verificationRole,
@@ -406,6 +512,9 @@ function finalizeRun(root, input, options = {}) {
     phase,
     paths,
     artifacts: flags,
+    ledgerWatermark: ledgerEvent.ledgerWatermark,
+    sessionId: ledgerEvent.sessionId || record.sessionId || record.metadata?.sessionId || "",
+    transcriptId: ledgerEvent.transcriptId || record.transcriptId || record.metadata?.transcriptId || "",
     executionRole: executionPair.executionRole || record.executionRole || "",
     executionRuntime: executionPair.executionRuntime || record.executionRuntime || "",
     executionRuntimeSource: executionPair.executionRuntimeSource || record.executionRuntimeSource || "",
@@ -422,6 +531,9 @@ function finalizeRun(root, input, options = {}) {
           executionRuntime: executionPair.executionRuntime || record.metadata.executionRuntime || "",
           executionRuntimeSource: executionPair.executionRuntimeSource || record.metadata.executionRuntimeSource || "",
           executionLabel: executionPair.executionLabel || record.metadata.executionLabel || "",
+          ledgerWatermark: ledgerEvent.ledgerWatermark,
+          sessionId: ledgerEvent.sessionId || record.metadata.sessionId || "",
+          transcriptId: ledgerEvent.transcriptId || record.metadata.transcriptId || "",
           ...verificationFields,
           nextOwner: input.nextOwner || "Manager"
         }
@@ -430,6 +542,9 @@ function finalizeRun(root, input, options = {}) {
           executionRuntime: executionPair.executionRuntime,
           executionRuntimeSource: executionPair.executionRuntimeSource,
           executionLabel: executionPair.executionLabel,
+          ledgerWatermark: ledgerEvent.ledgerWatermark,
+          sessionId: ledgerEvent.sessionId,
+          transcriptId: ledgerEvent.transcriptId,
           ...verificationFields,
           nextOwner: input.nextOwner || "Manager"
         }
@@ -450,6 +565,9 @@ function finalizeRun(root, input, options = {}) {
     executionRuntime: executionPair.executionRuntime,
     executionRuntimeSource: executionPair.executionRuntimeSource,
     executionLabel: executionPair.executionLabel,
+    ledgerWatermark: ledgerEvent.ledgerWatermark,
+    sessionId: ledgerEvent.sessionId,
+    transcriptId: ledgerEvent.transcriptId,
     ...verificationFields,
     briefId: cleanInline(record.briefId || input.briefId || ""),
     summary: cleanInline(input.summary || ""),

@@ -80,7 +80,7 @@ verification and subagents start from accepted user intent.
 
 - `/nogra:setup`: enable the current folder for Nogra.
 - `/nogra:create <name>`: create a new project under
-  `projects/<workspaceId>/` from a Manager hub.
+  `projects/<workspaceId>/` from a workspace hub.
 - `/nogra:adapt`: teach Nogra an existing project by writing a local project
   map under `.nogra/` while app files stay unchanged.
 - `/nogra:brief`: write and lock scoped work into a Nogra brief.
@@ -100,12 +100,17 @@ verification and subagents start from accepted user intent.
    Use `/nogra:brief`, or ask Claude to write a Nogra brief for the work.
    If the user did not ask for Nogra, offer the brief/direct choice first and
    stop until the user accepts.
-2. Make the user approve the brief before dispatch.
-3. Dispatch approved work with a scoped run and a clean execution crossing.
-4. Package evidence before calling work complete.
-5. For a normal single-run, compare the returned evidence against the approved
+2. Before drafting the brief, make a coarse decomposition call from scope,
+   coupling and likely runtime. Draft only the selected phase/run, then preview
+   size before saving/promoting. Split, reduce or ask before approval when that
+   phase is still too large for a normal single run. Do not put `maxTurns` in the
+   brief.
+3. Make the user approve the brief before dispatch.
+4. Dispatch approved work with a scoped run and a clean execution crossing.
+5. Package evidence before calling work complete.
+6. For a normal single-run, compare the returned evidence against the approved
    brief and return a concise verification with remaining risk.
-6. Use a separate verifier only for noisy log/test checks, explicit
+7. Use a separate verifier only for noisy log/test checks, explicit
    independent verification or larger multi-agent flows.
 
 If the user asks whether work is actually done, use `/nogra:verify` or the
@@ -155,13 +160,17 @@ The clean crossing is:
 1. Get a local dispatch receipt/run id for the approved brief.
 2. Persist local `.nogra/transport/` records through the local runtime
    or local ledger helper.
-3. Fetch the local `handoff-contract --kind executor`.
-4. Spawn the plugin-provided `executor` subagent with the executor role
+3. Inspect `executionSizing`; concrete `executionMaxTurns` is chosen here, after
+   approval. When it requires a Manager decision, split, override with operator
+   approval or ask before spawning.
+4. Fetch the local `handoff-contract --kind executor --run-id <runId>`.
+5. Spawn the plugin-provided `executor` subagent with the executor role
    contract, full brief, run id, scope, stop criteria and required evidence.
    The local runtime resolves executor model/effort from runtime policy or the
-   release default instead of relying on role frontmatter.
-5. Wait for the executor report, then compare evidence against the brief.
-6. Use the plugin-provided `verifier` only when independent verification
+   release default and carries dispatch-derived `maxTurns` from the run receipt
+   instead of relying on role frontmatter.
+6. Wait for the executor report, then compare evidence against the brief.
+7. Use the plugin-provided `verifier` only when independent verification
    is explicitly needed or the evidence surface is noisy.
 
 If the dispatch receipt, handoff contract, `executor` primitive, or required

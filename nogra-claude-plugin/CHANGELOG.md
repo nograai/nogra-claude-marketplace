@@ -2,63 +2,105 @@
 
 ## Unreleased
 
-## 0.5.0 - 2026-05-30
+## 0.6.2 - 2026-06-07
 
-- Moved automatic-off handling ahead of routing score evaluation so disabled
-  automatic offers resolve to route none without scoring, HIT flags or offers.
-- Kept explicit `/nogra:*` invocations available while automatic offers are off.
-- Tightened toggle detection to slash commands or clear imperatives and ignored
-  quoted, pasted or transcript-style lines when routing prompt text is scored.
+- Promoted the clean Continue/project-focus path validated on live BoligScout:
+  workspace-hub boot stays thin, project questions use the Nogra workspace
+  index, and project focus reads the selected project's local checkpoint only
+  after the user chooses it.
+- Extended SessionStart continuity context with ledger watermarks and checkpoint
+  freshness so resumed sessions can distinguish fresh checkpoints from stale
+  projections without loading full project state.
+- Added local-language no-Nogra bypass handling and kept automatic Nogra offers
+  advisory: scoped work stops for a brief/direct choice, while pure questions
+  stay direct.
 
-## 0.4.9 - 2026-05-29
+## 0.6.1 - 2026-06-06
 
-- Removed the 0.4.8 `/nogra:create` command wrapper so the Nogra surface stays
-  skill-based and `create` does not appear twice in Claude Code inventory.
-- Updated package assertions to guard against duplicating Nogra skills as
-  separate command wrappers.
+- Added `ledger-smoke` as a bounded diagnostic command for testing local ledger
+  watermarks without creating brief artifacts or touching app code.
+- Clarified status wording so plugin version and workspace contract version are
+  displayed as separate concepts.
+- Removed blank `source` and `model` fields from session-anchor writes when the
+  hook input does not provide them.
 
-## 0.4.8 - 2026-05-29
+## 0.6.0 - 2026-06-06
 
-- Added a registered `/nogra:create <project-name>` slash command wrapper for
-  the Manager hub project-create flow.
-- Added package assertions so the create slash command cannot disappear while
-  the create skill remains documented.
+- Updated `/nogra:status` guidance to surface local continuity migration state
+  and point prior-layout workspaces at `/nogra:setup` for a merge-only layout
+  update.
 
-## 0.4.7 - 2026-05-29
+## 0.5.9 - 2026-06-06
 
-- Removed release-positioning and tier-adjacent product language from public
-  README copy and setup-seeded workspace files.
-- Removed internal migration diary copy from the shipped plugin README.
-- Added a product-language package gate with known-bad and known-good fixtures
-  covering README copy and init-bundle files stamped into user workspaces.
+- Added compatibility status for prior-layout local workspaces: missing
+  `routingPolicy` and `runtimePolicy` now resolve visibly to release defaults
+  instead of appearing as null runtime state.
+- Added setup migration for existing checkpoints without `SourceWatermark` and
+  existing workspaces without the `.nogra/ledger/` continuity lane.
+- Extended local runtime smoke with a prior-layout workspace migration case.
 
-## 0.4.6 - 2026-05-29
+## 0.5.8 - 2026-06-06
 
-- Added `/nogra:create` as a skill-backed local runtime flow for creating
-  `projects/<workspaceId>/` under a Manager hub with project-local `.nogra/`
-  state and hub-index registration.
-- Expanded `/nogra:setup` so the init bundle creates the standard `.nogra/`
-  domain structure instead of only writing config.
+- Added local session continuity anchors: existing hooks capture `sessionId` and a
+  transcript anchor into bounded local runtime state without reading transcript
+  contents.
+- Added append-only `.nogra/ledger/` events with monotonic `ledgerWatermark`
+  values for brief, dispatch, verification and terminal run records.
+- Added checkpoint freshness reporting by comparing checkpoint `SourceWatermark`
+  with the current ledger watermark, so boot/status can detect stale projections
+  deterministically.
 
-## 0.4.5 - 2026-05-29
+## 0.5.7 - 2026-06-05
 
-- Added Manager hub boot context so a hub workspace can list indexed Nogra
-  projects instead of forcing the user to `cd` into each project.
-- Added read-only project focus from the hub: a prompt like "Client App" can
-  focus the indexed project and point Claude at that project's local
-  `.nogra/state/*` files without writing state, dispatching or loading full
-  history.
-- Shipped the shared local `boot-context` and `project-focus` runtime modules in
-  the public package so the behavior is available outside the internal lab.
+- Added reviewer-facing working examples and sample workspaces for Anthropic
+  submission: setup, build a small local task tracker, and save a local
+  checkpoint.
+- Added README no-data and support guidance for the local-only plugin: no
+  account, no network calls, nothing collected, stored or shared by Nogra.
+- Promoted the public listing copy to `Nogra workflow` with the concise
+  approve-run-verify description.
 
-## 0.4.4 - 2026-05-29
+## 0.5.6 - 2026-06-05
 
-- Hardened `/nogra:on` and `/nogra:off` routing so hooks only treat slash
-  commands or the internal command wrapper as toggle intent.
-- Fixed the false-positive where ordinary text such as "Nogra on Reddit"
-  matched `nogra on` and surfaced a toggle request.
-- Kept hooks as soft guardrails: `UserPromptSubmit` may surface toggle context,
-  while the `on` and `off` skills remain the actors that write local config.
+- Added promoted brief file-link metadata so approval returns can show a bare
+  `[Open brief](file://...)` markdown link with URL-encoded local paths, without
+  editor-specific schemes, line-number suffixes or code-span wrapping.
+
+## 0.5.5 - 2026-06-05
+
+- Made local root resolution command-aware: setup commands target the requested
+  directory even when a parent `.nogra/` exists, while existing workspace
+  control-plane and ledger commands still resolve nested paths to the nearest
+  parent `.nogra/` workspace.
+
+## 0.5.4 - 2026-06-05
+
+- Hardened local runtime root resolution so control-plane and ledger calls from
+  nested working directories resolve to the nearest parent `.nogra/` workspace
+  while fresh setup still falls back to the requested root when no `.nogra/`
+  exists.
+
+## 0.5.3 - 2026-06-05
+
+- Promoted the reconciled runtime, setup and create-project payload under a
+  fresh version key so installs already on 0.5.2 receive the routing fixes and
+  expanded local workspace layout cleanly.
+
+## 0.5.2 - 2026-06-04
+
+- Added a read-only draft brief sizing preview before brief save/promote, so
+  oversized work can be split or reduced before approval while dispatch remains
+  the authority for concrete `executionMaxTurns`.
+
+## 0.5.1 - 2026-06-03
+
+- Added Manager-derived execution sizing after brief approval and carried the
+  resulting max-turn budget through dispatch and handoff.
+- Added safe-continuation reporting for pre-flight blocks, so a blocked
+  executor can return the safe route without executing past the stop criterion.
+- Recentered verification on independent tree/artifact/command evidence:
+  executor self-reports are claim surfaces, whether complete, truncated or
+  missing.
 
 ## 0.4.3 - 2026-05-28
 
@@ -268,7 +310,7 @@
   concrete live model/effort display remains Claude Code's own surface truth.
 - Cleaned local plugin role, skill and init surfaces so runtime details live in
   runtime policy and dispatch metadata instead of generated brief prose.
-- Reduced bundled brief-writing guidance to six main rules and tightened stop
+- Reduced bundled brief-writing guidance to six core rules and tightened stop
   criteria around pre-flight checks and non-zero exit handling.
 
 ## 0.2.4 - 2026-05-22
