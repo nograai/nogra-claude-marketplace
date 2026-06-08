@@ -9,8 +9,8 @@
   "plugins": [
     {
       "name": "nogra",
-      "displayName": "Nogra workflow",
-      "version": "0.6.4",
+      "displayName": "nogra workflow",
+      "version": "0.6.5",
       "source": "./",
       "description": "Approve, run, verify in Claude Code - the work is checked against the plan before it is marked done.",
       "author": {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Restored the public plugin display name to lowercase `nogra workflow` across
+  marketplace manifests so Claude Code menus match the intended listing label.
 - Removed core automatic-offer scoring, sensitivity controls and the PreToolUse
   command tripwire. Nogra core is now pull-first: explicit `/nogra:*` requests
   start Nogra flows, ordinary work stays direct, and Claude Code's native
