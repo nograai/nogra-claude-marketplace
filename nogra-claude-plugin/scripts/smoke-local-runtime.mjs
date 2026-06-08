@@ -14,6 +14,8 @@ const repoRoot = path.resolve(pluginRoot, "..", "..");
 const localRuntime = path.join(pluginRoot, "scripts", "nogra-local.mjs");
 const ledgerRuntime = path.join(pluginRoot, "scripts", "nogra-ledger.mjs");
 const sessionStartHook = path.join(pluginRoot, "hooks", "session-start.mjs");
+const postCompactHook = path.join(pluginRoot, "hooks", "post-compact.mjs");
+const sessionEndHook = path.join(pluginRoot, "hooks", "session-end.mjs");
 const userPromptSubmitHook = path.join(pluginRoot, "hooks", "user-prompt-submit.mjs");
 
 function parseFrontmatter(text) {
@@ -102,6 +104,14 @@ function runSessionStartHook(input) {
   return runHook(sessionStartHook, input);
 }
 
+function runPostCompactHook(input) {
+  return runHook(postCompactHook, input);
+}
+
+function runSessionEndHook(input) {
+  return runHook(sessionEndHook, input);
+}
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -139,6 +149,7 @@ function resolveManagerRoot() {
 function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-local-runtime-smoke-"));
   const managerRoot = resolveManagerRoot();
+  const hooksConfig = JSON.parse(pluginText("hooks/hooks.json"));
   const executorFrontmatter = agentFrontmatter("executor.md");
   const verifierFrontmatter = agentFrontmatter("verifier.md");
   const executorPrompt = agentText("executor.md");
@@ -147,6 +158,9 @@ function main() {
   const expectedExecutorRuntime = "anthropic:sonnet";
   const expectedExecutorRuntimeDisplay = displayRuntime(expectedExecutorRuntime);
   const expectedVerifierRuntime = "sonnet";
+  assert(hooksConfig.hooks?.SessionStart?.[0]?.matcher === "startup|resume|clear", "SessionStart should not match compact");
+  assert(hooksConfig.hooks?.PostCompact?.[0]?.matcher === "manual|auto", "PostCompact should handle compact rehydration");
+  assert(Boolean(hooksConfig.hooks?.SessionEnd?.[0]), "SessionEnd should record lifecycle anchor");
   assert(!executorFrontmatter.model, "executor role frontmatter should not hardcode model");
   assert(!executorFrontmatter.effort, "executor role frontmatter should not hardcode effort");
   assert(!verifierFrontmatter.model, "verifier role frontmatter should not hardcode model");
@@ -236,7 +250,35 @@ function main() {
   const rootPreferenceContext = rootPreference.hookSpecificOutput?.additionalContext || "";
   assert(rootPreferenceContext.includes(`workspaceRoot=${temp}`), "SessionStart should prefer workspace root .nogra over nested cwd .nogra");
   assert(!rootPreferenceContext.includes(`workspaceRoot=${nestedManagerRoot}`), "SessionStart should not boot from nested manager .nogra when workspace root has .nogra");
+  assert(rootPreferenceContext.includes("NOGRA_SESSION_BOOT"), "SessionStart startup should emit boot context");
+  assert(!rootPreferenceContext.includes("NOGRA_ROUTING_POLICY"), "SessionStart startup should not emit the old routing policy block");
   assert(!fs.existsSync(path.join(nestedManagerRoot, ".nogra", "runtime", "session-anchor.json")), "SessionStart should not write session anchor under nested manager .nogra");
+
+  const resumePointer = runSessionStartHook({
+    cwd: nestedManagerRoot,
+    workspace_roots: [temp],
+    source: "resume",
+    session_id: "session-root-resume-001",
+    transcript_path: "/tmp/transcript-root-resume-001.jsonl"
+  });
+  const resumePointerContext = resumePointer.hookSpecificOutput?.additionalContext || "";
+  assert(resumePointerContext.includes("NOGRA_SESSION_RESUME"), "SessionStart resume should emit a resume pointer");
+  assert(resumePointerContext.includes(`workspaceRoot=${temp}`), "SessionStart resume pointer should use workspace root");
+  assert(!resumePointerContext.includes("NOGRA_ROUTING_POLICY"), "SessionStart resume should not emit full routing policy");
+
+  const compactPointer = runPostCompactHook({
+    cwd: nestedManagerRoot,
+    workspace_roots: [temp],
+    source: "auto",
+    session_id: "session-root-compact-001",
+    transcript_path: "/tmp/transcript-root-compact-001.jsonl"
+  });
+  const compactPointerContext = compactPointer.hookSpecificOutput?.additionalContext || "";
+  assert(compactPointer.hookSpecificOutput?.hookEventName === "PostCompact", "PostCompact should identify its hook event");
+  assert(compactPointerContext.includes("NOGRA_COMPACT_POINTER"), "PostCompact should emit a thin compact pointer");
+  assert(compactPointerContext.includes(`workspaceRoot=${temp}`), "PostCompact pointer should use workspace root");
+  assert(!compactPointerContext.includes("NOGRA_ROUTING_POLICY"), "PostCompact should not emit full routing policy");
+
   const rootRoutingScorePath = path.join(temp, ".nogra", "runtime", "last-routing-score.json");
   const nestedRoutingScorePath = path.join(nestedManagerRoot, ".nogra", "runtime", "last-routing-score.json");
   const submitPreference = runHook(userPromptSubmitHook, {
@@ -251,15 +293,46 @@ function main() {
   assert(!fs.existsSync(rootRoutingScorePath), "UserPromptSubmit should not write routing score under workspace root .nogra");
   assert(!fs.existsSync(nestedRoutingScorePath), "UserPromptSubmit should not write routing score under nested manager .nogra");
 
-  const capturedAnchor = captureSessionAnchor(temp, {
+  const routerReference = pluginText("skills/help/references/router.md");
+  const usageReference = pluginText("skills/help/references/usage.md");
+  const initClaude = pluginText("contracts/init-bundle/files/CLAUDE.md");
+  const readme = pluginText("README.md");
+  assert(routerReference.includes("If no route matches, stay direct."), "router reference should default unmatched prompts to direct work");
+  assert(routerReference.includes("Never turn it into prompt scoring"), "router reference should forbid rebuilding prompt scoring");
+  assert(usageReference.includes("A thin intent router maps explicit user intent"), "usage reference should expose the thin router");
+  assert(initClaude.includes("## Nogra Intent Router"), "init-bundle CLAUDE.md should include the Nogra intent router");
+  assert(initClaude.includes("If no route matches, stay direct."), "init-bundle router should default unmatched prompts to direct work");
+  assert(readme.includes("### Build directly"), "README should show direct work as the ordinary scoped-work default");
+  assert(!readme.includes("Nogra treats this as scoped work, shapes a brief first"), "README should not promise automatic brief shaping for ordinary scoped work");
+
+  const anchorHelperWorkspace = path.join(temp, "anchor-helper-workspace");
+  run(["init", "--apply", "--root", anchorHelperWorkspace, "--workspace-name", "Anchor Helper"]);
+  const capturedAnchor = captureSessionAnchor(anchorHelperWorkspace, {
     session_id: "session-smoke-001",
     transcript_path: "/tmp/transcript-smoke-001.jsonl",
-    cwd: temp,
+    cwd: anchorHelperWorkspace,
     permission_mode: "default"
   }, "SessionStart");
   assert(capturedAnchor?.sessionId === "session-smoke-001", "session anchor helper should preserve session id");
   assert(!Object.hasOwn(capturedAnchor, "source"), "session anchor helper should omit blank source field");
   assert(!Object.hasOwn(capturedAnchor, "model"), "session anchor helper should omit blank model field");
+
+  const sessionEndOutput = runSessionEndHook({
+    cwd: nestedManagerRoot,
+    workspace_roots: [temp],
+    source: "prompt_input_exit",
+    session_id: "session-root-end-001",
+    transcript_path: "/tmp/transcript-root-end-001.jsonl"
+  });
+  assert(Object.keys(sessionEndOutput).length === 0, "SessionEnd should stay silent");
+  const sessionEndAnchor = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "runtime", "session-anchor.json"), "utf8"));
+  assert(sessionEndAnchor.hookEventName === "SessionEnd", "SessionEnd should update session anchor only");
+  captureSessionAnchor(temp, {
+    session_id: "session-smoke-001",
+    transcript_path: "/tmp/transcript-smoke-001.jsonl",
+    cwd: temp,
+    permission_mode: "default"
+  }, "SessionStart");
 
   const createPlan = run(["create-project", "Smoke Child", "--root", temp]);
   assert(createPlan.status === "ready", "create-project plan should be ready in initialized hub");
@@ -682,6 +755,53 @@ function main() {
   const legacyAfter = run(["status", "--root", legacyWorkspace]);
   assert(legacyAfter.continuity?.status === "ready", "legacy status should report ready after migration");
 
+  const staleRoutingWorkspace = path.join(temp, "stale-routing-workspace");
+  fs.mkdirSync(path.join(staleRoutingWorkspace, ".nogra"), { recursive: true });
+  writeJson(path.join(staleRoutingWorkspace, ".nogra", "config.json"), {
+    schema: "nogra.workspace.config.v1",
+    workspaceName: "Stale Routing Workspace",
+    workspaceId: "stale-routing-workspace",
+    connectionMode: "local",
+    routingPolicy: {
+      autoOfferEnabled: true,
+      sensitivityPercent: 50,
+      sensitivityStepPercent: 5,
+      autoOfferThreshold: 60,
+      strongOfferThreshold: 80,
+      offerOncePerIntent: true,
+      topicGate: true,
+      defaultLanguage: "da",
+      translationFallback: "claude-current-prompt",
+      scoring: {
+        createIntent: 25
+      },
+      dictionary: {
+        createIntent: [],
+        productSurface: [],
+        evidenceNeed: [],
+        completionClaim: [],
+        qualityCritical: [],
+        riskyDomain: [],
+        ambiguity: [],
+        lowRiskEdit: [],
+        singleFileLowScope: [],
+        directOverride: [],
+        toggleOn: [],
+        toggleOff: []
+      },
+      guidance: "legacy automatic offer controls"
+    }
+  });
+  const staleRoutingMigration = run(["init", "--root", staleRoutingWorkspace, "--apply"]);
+  assert(staleRoutingMigration.status === "ok", "stale routing init migration should apply cleanly");
+  const staleRoutingConfigAfter = JSON.parse(fs.readFileSync(path.join(staleRoutingWorkspace, ".nogra", "config.json"), "utf8"));
+  assert(staleRoutingConfigAfter.routingPolicy?.defaultLanguage === "da", "stale routing migration should preserve user language");
+  assert(staleRoutingConfigAfter.routingPolicy?.translationFallback === "claude-current-prompt", "stale routing migration should preserve translation fallback");
+  assert(!Object.hasOwn(staleRoutingConfigAfter.routingPolicy || {}, "autoOfferEnabled"), "stale routing migration should remove automatic offer controls");
+  assert(!Object.hasOwn(staleRoutingConfigAfter.routingPolicy || {}, "sensitivityPercent"), "stale routing migration should remove sensitivity controls");
+  assert(!Object.hasOwn(staleRoutingConfigAfter.routingPolicy || {}, "scoring"), "stale routing migration should remove scoring controls");
+  assert(!Object.hasOwn(staleRoutingConfigAfter.routingPolicy || {}, "dictionary"), "stale routing migration should remove legacy scoring dictionary");
+
   const ledgerSmokeWorkspace = path.join(temp, "ledger-smoke-workspace");
   run(["init", "--root", ledgerSmokeWorkspace, "--apply"]);
   captureSessionAnchor(ledgerSmokeWorkspace, {
@@ -845,6 +965,7 @@ function main() {
           "fresh init avoids product-version fields",
           "fresh init writes runtimePolicy default without concrete role choices",
           "fresh init is English-first without automatic routing controls",
+          "thin router docs map explicit intent while normal scoped work stays direct",
           "fresh init and status expose ledger/checkpoint freshness",
           "hooks prefer workspace root .nogra over nested cwd .nogra",
           "legacy workspaces resolve defaults and migrate continuity layout",

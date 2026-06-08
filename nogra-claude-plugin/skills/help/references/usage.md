@@ -45,6 +45,9 @@ hub folder, then use `/nogra:create <name>` to create
 - The workspace owns `.nogra/` records as its local trust source.
 - Nogra is pull-first. Ordinary direct work stays direct unless the user asks
   for the Nogra workflow.
+- A thin intent router maps explicit user intent to setup, adapt, brief,
+  dispatch, verify, status, settings, update or help. If no Nogra route matches,
+  stay direct.
 - Nogra calls are authority gates, not ambient polling. Do not call Nogra just
   because a session started or ordinary chat is happening.
 - For irreversible or externally expensive work, use Claude Code's native
@@ -56,14 +59,28 @@ hub folder, then use `/nogra:create <name>` to create
 - Runtime preferences are local workspace policy. Detailed runtime behavior
   lives in `references/runtime.md`.
 
-Detailed routing configuration lives in `references/routing.md`. Detailed
-runtime and status/version configuration lives in `references/runtime.md`.
+Detailed router behavior lives in `references/router.md`. Detailed routing
+configuration lives in `references/routing.md`. Detailed runtime and
+status/version configuration lives in `references/runtime.md`.
 
 ## Routing Policy
 
 Use routing only for explicit Nogra intent. If the user asks for Nogra, use the
 relevant Nogra flow; if the user asks for direct/simple/no-ceremony work, stay
 direct.
+
+The router is:
+
+- brief intent -> `/nogra:brief`;
+- approved GO after a reviewed brief -> `/nogra:dispatch`;
+- "is this done?", evidence or verification intent -> `/nogra:verify`;
+- project/state/checkpoint/version intent -> `/nogra:status`;
+- setup/adapt/create/settings/update/help intent -> the matching Nogra skill;
+- no matching Nogra intent -> direct work.
+
+For unusually large autonomous work, Claude may give one short non-blocking
+brief nudge before the run starts. Do not repeat it, do not block on it, and do
+not turn it into prompt scoring.
 
 Detailed routing and language defaults live in `references/routing.md`.
 Runtime calls, dispatch, verification and subagents start from accepted user

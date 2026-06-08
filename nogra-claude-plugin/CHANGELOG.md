@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a thin intent-router contract to help/reference docs, the bundled
+  workspace `CLAUDE.md` and reviewer README: explicit Nogra intent maps to the
+  matching skill, while ordinary work stays direct.
 - Restored the public plugin display name to lowercase `nogra workflow` across
   marketplace manifests so Claude Code menus match the intended listing label.
 - Removed core automatic-offer scoring, sensitivity controls and the PreToolUse
@@ -10,6 +13,11 @@
   permission model remains responsible for tool permissions.
 - Simplified core hooks to session boot context and workspace-hub project
   focus only.
+- Split lifecycle state across event-aware hooks: `SessionStart` no longer
+  matches compact, `PostCompact` emits only a thin continuity pointer, and
+  `SessionEnd` silently updates the local session anchor.
+- Added init migration cleanup for obsolete automatic-offer routing controls in
+  existing `.nogra/config.json` files while preserving language/runtime values.
 - Removed separate brief/workspace release-version fields from fresh records,
   schemas, init config and status output. The plugin version is now the product
   release identity; schema ids remain the artifact-format contracts.

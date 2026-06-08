@@ -2,11 +2,35 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume|clear|compact",
+        "matcher": "startup|resume|clear",
         "hooks": [
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\"",
+            "async": false
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/post-compact.mjs\"",
+            "async": false
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "clear|resume|logout|prompt_input_exit|bypass_permissions_disabled|other",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.mjs\"",
             "async": false
           }
         ]

@@ -108,55 +108,6 @@ function cleanLabel(value, fallback = "") {
   return typeof value === "string" && value.trim() !== "" ? value.trim().replace(/\s+/g, " ") : fallback;
 }
 
-function roleValue(role, key) {
-  return cleanLabel(role && typeof role === "object" ? role[key] : "", "").toLowerCase();
-}
-
-function isStockLegacyBalancedRuntime(runtime) {
-  if (!runtime || typeof runtime !== "object") return false;
-  const roles = runtime.roles && typeof runtime.roles === "object" ? runtime.roles : {};
-  const budget = runtime.budget && typeof runtime.budget === "object" ? runtime.budget : {};
-  const manager = roles.manager && typeof roles.manager === "object" ? roles.manager : {};
-  const agent = roles.agent && typeof roles.agent === "object" ? roles.agent : {};
-  const verifier = roles.verifier && typeof roles.verifier === "object" ? roles.verifier : {};
-  return cleanLabel(runtime.profile, "").toLowerCase() === "balanced" &&
-    roleValue(manager, "model") === "inherit" &&
-    roleValue(manager, "effort") === "auto" &&
-    roleValue(agent, "model") === "sonnet" &&
-    roleValue(agent, "effort") === "high" &&
-    roleValue(verifier, "model") === "sonnet" &&
-    roleValue(verifier, "effort") === "medium" &&
-    ["", "balanced"].includes(cleanLabel(budget.mode, "").toLowerCase());
-}
-
-function runtimeSummary(config) {
-  const runtime = config.runtimePolicy && typeof config.runtimePolicy === "object" ? config.runtimePolicy : {};
-  const roles = runtime.roles && typeof runtime.roles === "object" ? runtime.roles : {};
-  const rawProfile = cleanLabel(runtime.profile, "default").toLowerCase();
-  const profile = rawProfile === "custom" || (rawProfile && rawProfile !== "default" && !isStockLegacyBalancedRuntime(runtime))
-    ? "custom"
-    : "default";
-  const roleLine = (name, fallbackModel, fallbackEffort, legacy = "") => {
-    const role = roles[name] && typeof roles[name] === "object"
-      ? roles[name]
-      : legacy && roles[legacy] && typeof roles[legacy] === "object"
-        ? roles[legacy]
-        : {};
-    const model = cleanLabel(role.model, fallbackModel);
-    const effort = cleanLabel(role.effort, fallbackEffort);
-    const context = cleanLabel(role.context, "");
-    return `${name}=${model}/${effort}${context ? `/${context}` : ""}`;
-  };
-
-  return {
-    profile,
-    rawProfile: rawProfile || "default",
-    manager: roleLine("manager", "inherit", "auto"),
-    executor: profile === "custom" ? roleLine("executor", "sonnet", "medium", "agent") : "executor=default",
-    verifier: profile === "custom" ? roleLine("verifier", "sonnet", "medium") : "verifier=default"
-  };
-}
-
 function emitContext(context) {
   process.stdout.write(
     JSON.stringify({
@@ -187,6 +138,42 @@ function bootContextBlock(root) {
   return `<!-- nogra-plugin:boot-context status=${boot.status} -->\n${lines.join("\n")}`;
 }
 
+function sessionStartSource(input) {
+  const source = cleanLabel(input.source || input.trigger || input.sessionStartSource || "", "").toLowerCase();
+  return ["startup", "resume", "clear", "compact"].includes(source) ? source : "startup";
+}
+
+function sessionBootContext(root, config, source) {
+  const plugin = pluginInstallInfo();
+  return `<!-- nogra-plugin:session-boot source=${source} -->
+<NOGRA_SESSION_BOOT>
+Nogra plugin: ${plugin.id} ref=${plugin.ref}.
+Nogra is pull-first. Explicit /nogra:* commands and direct Nogra requests start Nogra flows; ordinary workspace work stays direct.
+Use the thin Nogra intent router from workspace guidance/skills to choose a flow; if no Nogra route matches, stay direct.
+Hooks are lifecycle state surfaces only. They keep local workspace/project/session context visible; they do not score prompts, inspect tool calls, write routing telemetry, dispatch, verify, spawn agents, draft briefs or promote checkpoints.
+Session state lives in local .nogra/ records. Ledger state is the truth source; checkpoint state is a human-readable projection.
+</NOGRA_SESSION_BOOT>
+
+${bootContextBlock(root)}`;
+}
+
+function resumePointerContext(root, config, source) {
+  const boot = resolveBootContext({ cwd: root });
+  const plugin = pluginInstallInfo();
+  return `<!-- nogra-plugin:session-resume source=${source} -->
+<NOGRA_SESSION_RESUME>
+Nogra plugin: ${plugin.id} ref=${plugin.ref}.
+workspaceId=${boot.workspaceId || ""}
+workspaceRoot=${boot.workspaceRoot || root}
+ledgerWatermark=${boot.ledgerWatermark ?? 0}
+checkpointSourceWatermark=${boot.checkpointSourceWatermark ?? 0}
+checkpointStatus=${boot.checkpointStatus || "fresh"}
+status=${boot.status || ""}
+
+This is a continuity pointer after a resumed session. Do not treat compacted or resumed chat summaries as project truth. If current-state claims matter, read the project-local .nogra/state files before acting.
+</NOGRA_SESSION_RESUME>`;
+}
+
 const input = parseInput(readStdin());
 const root = projectRoot(input);
 const config = readConfig(root);
@@ -203,36 +190,11 @@ When the user asks for Nogra status or version, include this plugin ref and say 
   process.exit(0);
 }
 
-const policy = config.routingPolicy || {};
+const source = sessionStartSource(input);
 captureSessionAnchor(root, input, "SessionStart");
-const defaultLanguage = nonEmptyString(policy.defaultLanguage) || "en";
-const translationFallback = nonEmptyString(policy.translationFallback) || "claude-current-prompt";
-const runtime = runtimeSummary(config);
-const plugin = pluginInstallInfo();
 
-emitContext(`<!-- nogra-plugin:session-policy -->
-<NOGRA_ROUTING_POLICY>
-This workspace has .nogra/config.json. Nogra is pull-first.
-
-Use Nogra skills as the first move for Nogra decisions:
-- For explicit /nogra:* commands or direct Nogra requests, use the matching Nogra skill.
-- Normal workspace work stays direct unless the user asks for Nogra.
-- Simple edits, blog/content work, refactors, UI work, normal scoped implementation and pure Q&A stay direct.
-- If work crosses an irreversible, production, billing, data, permissions or secrets boundary, use Claude Code's native permission model and your own judgment; Nogra core does not intercept tool calls.
-- Nogra extension plugins own their own /nogra-* commands and hooks. If a prompt is for an installed /nogra-* extension, let that extension append its behavior; do not turn it into Nogra ceremony.
-- If the user asks which Nogra projects/workspaces exist, use the boot context workspace index/candidates to show a compact project list and ask what they want to do next. Do not load every project checkpoint unless they choose one.
-
-Language routing is English-first. defaultLanguage=${defaultLanguage}, translationFallback=${translationFallback}. translationFallback=claude-current-prompt is Claude's own current-prompt understanding, not an external translation call or transcript/history read.
-
-Current local runtimePolicy: profile=${runtime.profile}, rawProfile=${runtime.rawProfile}, ${runtime.manager}, ${runtime.executor}, ${runtime.verifier}. Default runtime uses the release default executor/verifier preferences without writing those concrete choices into default config.
-
-Current installed Nogra plugin: ${plugin.id} ref=${plugin.ref}. When the user asks for Nogra status, include this plugin ref plus workspace id and local runtime state. Use the local runtime for status.
-
-runtimePolicy is a user-facing Nogra preference. Default/custom is the Nogra-level state. Concrete executor/verifier model and effort belong in config only when profile=custom, and should be included in dispatch handoffs and run-agent instructions when the client/runtime can honor them. Claude Code's native /model, /effort and subagent UI remain the source of truth for the actual running model/effort shown by Claude Code.
-
-Hooks are context guardrails only. They read local .nogra/config.json and may write the current local session anchor under .nogra/runtime/session-anchor.json. They do not inspect tool calls, score prompts, write routing telemetry, change config, dispatch, verify, spawn agents, run extension plugins, draft briefs, read full transcripts, or promote checkpoints. Nogra actions use the local runtime and local .nogra/ records. UserPromptSubmit does not regex-route natural-language intent; it only adds project-focus context when the user clearly selects a project from the workspace hub.
-
-Session continuity rule: ledger state is the truth source and checkpoint state is a human-readable projection. If checkpointStatus=stale, the ledger has newer facts than .nogra/state/SESSION-CHECKPOINT.md. Treat the checkpoint as stale; when the user asks to continue, wrap up, or save progress, refresh/propose the checkpoint from ledger facts rather than inventing memory from chat.
-</NOGRA_ROUTING_POLICY>
-
-${bootContextBlock(root)}`);
+if (source === "resume") {
+  emitContext(resumePointerContext(root, config, source));
+} else {
+  emitContext(sessionBootContext(root, config, source));
+}

@@ -10,9 +10,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 const pluginRoot = path.join(repoRoot, "nogra-claude-plugin");
+const hooksConfigPath = path.join(pluginRoot, "hooks", "hooks.json");
+const sessionStartHook = path.join(pluginRoot, "hooks", "session-start.mjs");
+const postCompactHook = path.join(pluginRoot, "hooks", "post-compact.mjs");
+const sessionEndHook = path.join(pluginRoot, "hooks", "session-end.mjs");
 const userPromptSubmitHook = path.join(pluginRoot, "hooks", "user-prompt-submit.mjs");
-const preToolUseHook = path.join(pluginRoot, "hooks", "pre-tool-use.mjs");
-const userPromptExpansionHook = path.join(pluginRoot, "hooks", "user-prompt-expansion.mjs");
 
 let failures = 0;
 
@@ -25,33 +27,53 @@ function assert(condition, message) {
   console.error(`  fail - ${message}`);
 }
 
-function workspace(autoOfferEnabled = true) {
-  const root = fs.mkdtempSync(path.join("/private/tmp", "nogra-routing-"));
-  const nograDir = path.join(root, ".nogra");
-  fs.mkdirSync(nograDir, { recursive: true });
+function workspace() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-lifecycle-"));
+  fs.mkdirSync(path.join(root, ".nogra"), { recursive: true });
   fs.writeFileSync(
-    path.join(nograDir, "config.json"),
+    path.join(root, ".nogra", "config.json"),
     `${JSON.stringify(
       {
-        workspaceId: "routing-test",
+        schema: "nogra.workspace.config.v1",
+        workspaceId: "lifecycle-test",
+        workspaceName: "Lifecycle Test",
+        connectionMode: "local",
         routingPolicy: {
-          autoOfferEnabled,
-          enabled: true,
-          sensitivityPercent: 100,
-          topicGate: true
+          defaultLanguage: "en",
+          translationFallback: "claude-current-prompt"
+        },
+        paths: {
+          currentCheckpoint: ".nogra/state/SESSION-CHECKPOINT.md"
         }
       },
       null,
       2
     )}\n`
   );
+  fs.mkdirSync(path.join(root, ".nogra", "state"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, ".nogra", "state", "SESSION-CHECKPOINT.md"),
+    [
+      "# Session Checkpoint",
+      "",
+      "Workspace: Lifecycle Test",
+      "SourceWatermark: 0",
+      "",
+      "## Current State",
+      "",
+      "Lifecycle smoke workspace."
+    ].join("\n"),
+    "utf8"
+  );
   return root;
 }
 
 function runHook(hookPath, input) {
   const result = spawnSync(process.execPath, [hookPath], {
+    cwd: repoRoot,
     input: JSON.stringify(input),
-    encoding: "utf8"
+    encoding: "utf8",
+    env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginRoot }
   });
   if (result.error) throw result.error;
   return {
@@ -61,300 +83,117 @@ function runHook(hookPath, input) {
   };
 }
 
-function runUserPrompt(root, prompt) {
-  return runHook(userPromptSubmitHook, { cwd: root, prompt });
+function parseHookOutput(result) {
+  if (!result.stdout) return {};
+  return JSON.parse(result.stdout);
 }
 
-function runPreTool(root, prompt = "") {
-  const input = {
+function additionalContext(result) {
+  return parseHookOutput(result).hookSpecificOutput?.additionalContext || "";
+}
+
+console.log("Lifecycle hook wiring:");
+{
+  const hooksConfig = JSON.parse(fs.readFileSync(hooksConfigPath, "utf8"));
+  assert(hooksConfig.hooks?.SessionStart?.[0]?.matcher === "startup|resume|clear", "SessionStart excludes compact");
+  assert(hooksConfig.hooks?.PostCompact?.[0]?.matcher === "manual|auto", "PostCompact handles compaction");
+  assert(Boolean(hooksConfig.hooks?.SessionEnd?.[0]), "SessionEnd is wired");
+  assert(Boolean(hooksConfig.hooks?.UserPromptSubmit?.[0]), "UserPromptSubmit remains wired");
+  assert(!Object.hasOwn(hooksConfig.hooks || {}, "PreToolUse"), "core PreToolUse is not wired");
+}
+
+console.log("SessionStart lifecycle:");
+{
+  const root = workspace();
+  const startup = runHook(sessionStartHook, {
     cwd: root,
-    tool_name: "Bash",
-    tool_input: { command: "true" }
-  };
-  if (prompt) input.prompt = prompt;
-  return runHook(preToolUseHook, input);
-}
-
-function runExpansion(root, input) {
-  return runHook(userPromptExpansionHook, { cwd: root, ...input });
-}
-
-function readRouting(root) {
-  return JSON.parse(fs.readFileSync(path.join(root, ".nogra", "runtime", "last-routing-score.json"), "utf8"));
-}
-
-function writeStaleHit(root) {
-  const runtime = path.join(root, ".nogra", "runtime");
-  fs.mkdirSync(runtime, { recursive: true });
-  fs.writeFileSync(
-    path.join(runtime, "last-routing-score.json"),
-    `${JSON.stringify(
-      {
-        schema: "nogra.routingScore.v1",
-        updatedAt: new Date().toISOString(),
-        score: 100,
-        hitPercent: 100,
-        autoOfferEnabled: true,
-        offerTriggered: true,
-        directOverride: false,
-        threshold: 25,
-        reasons: ["stale hit"]
-      },
-      null,
-      2
-    )}\n`
-  );
-}
-
-const normalScopedPrompt = "Build and verify a multi-file dashboard with charts, filters, tests and screenshots.";
-const naturalRiskPrompt = "Just build Stripe checkout and push it to produktion for vores app.";
-
-console.log("UserPromptSubmit preconditions:");
-{
-  const root = workspace(false);
-  writeStaleHit(root);
-  const result = runUserPrompt(root, naturalRiskPrompt);
-  assert(result.status === 0, "off+auto prompt exits cleanly");
-  assert(!result.stdout.includes("NOGRA_OFFER_GATE"), "off+auto prompt emits no offer");
-  assert(!result.stdout.includes("NOGRA_JUDGMENT_FALLBACK"), "off+auto prompt emits no fallback");
-  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "off+auto prompt emits no tripwire");
-  const record = readRouting(root);
-  assert(record.route === "none", "off+auto prompt writes route none");
-  assert(record.hitPercent === 0, "off+auto prompt clears stale HIT percent");
-  assert(record.autoOfferEnabled === false, "off+auto prompt records automatic offers off");
-  assert(record.tripwire?.active === false, "off+auto prompt clears pending tripwire");
-}
-
-{
-  const root = workspace(false);
-  const result = runUserPrompt(root, "/nogra:on");
-  assert(result.status === 0, "off+explicit /nogra:on exits cleanly");
-  assert(result.stdout.includes("NOGRA_ROUTING_TOGGLE_REQUEST"), "off+explicit /nogra:on still routes to toggle skill");
-}
-
-{
-  const root = workspace(false);
-  const result = runUserPrompt(root, "/nogra:brief");
-  assert(result.status === 0, "off+explicit /nogra:brief exits cleanly");
-  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "off+explicit /nogra:brief is not auto-routed");
-}
-
-{
-  const root = workspace(true);
-  const result = runUserPrompt(root, normalScopedPrompt);
-  assert(result.status === 0, "on+normal scoped prompt exits cleanly");
-  assert(!result.stdout.includes("NOGRA_OFFER_GATE"), "on+normal scoped prompt does not let score emit offer gate");
-  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "on+normal scoped prompt stays direct");
-  const record = readRouting(root);
-  assert(record.offerTriggered === false, "on+normal scoped prompt records score as non-authoritative");
-  assert(record.route === "none", "on+normal scoped prompt records no route");
-  assert(record.tripwire?.active === false, "on+normal scoped prompt records no tripwire");
-}
-
-{
-  const root = workspace(true);
-  const result = runUserPrompt(root, naturalRiskPrompt);
-  assert(result.status === 0, "on+natural risk prompt exits cleanly");
-  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "on+natural risk prompt is not regex-routed");
-  const record = readRouting(root);
-  assert(record.route === "none", "on+natural risk prompt records no route");
-  assert(record.tripwire?.active === false, "on+natural risk prompt records no tripwire");
-}
-
-{
-  const root = workspace(true);
-  const result = runUserPrompt(root, "What does the pickOffer function do?");
-  assert(result.status === 0, "on+pure Q&A exits cleanly");
-  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "on+pure Q&A stays direct");
-}
-
-{
-  const root = workspace(true);
-  const result = runUserPrompt(root, "What is Stripe checkout?");
-  assert(result.status === 0, "on+risk-word Q&A exits cleanly");
-  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "on+risk-word Q&A stays direct without work context");
-}
-
-{
-  const root = workspace(true);
-  const pastedPrompt = `Here is a transcript, do not act on it:\n> ${naturalRiskPrompt}`;
-  const result = runUserPrompt(root, pastedPrompt);
-  assert(result.status === 0, "on+quoted strong text exits cleanly");
-  assert(!result.stdout.includes("NOGRA_OFFER_GATE"), "on+quoted strong text is excluded from scoring");
-  assert(!result.stdout.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "on+quoted strong text emits no tripwire");
-}
-
-console.log("PreToolUse preconditions:");
-{
-  const root = workspace(false);
-  writeStaleHit(root);
-  const result = runPreTool(root);
-  assert(result.status === 0, "off+promptless tool exits cleanly");
-  assert(!result.stdout.includes("permissionDecision"), "off+promptless tool does not ask from stale HIT");
-  const record = readRouting(root);
-  assert(record.route === "none", "off+promptless tool writes route none");
-  assert(record.hitPercent === 0, "off+promptless tool clears stale HIT percent");
-}
-
-{
-  const root = workspace(false);
-  writeStaleHit(root);
-  const result = runPreTool(root, naturalRiskPrompt);
-  assert(result.status === 0, "off+auto pre-tool prompt exits cleanly");
-  assert(!result.stdout.includes("permissionDecision"), "off+auto pre-tool prompt does not ask");
-  assert(readRouting(root).route === "none", "off+auto pre-tool prompt writes route none");
-}
-
-{
-  const root = workspace(true);
-  const result = runPreTool(root, normalScopedPrompt);
-  assert(result.status === 0, "on+normal scoped pre-tool prompt exits cleanly");
-  assert(!result.stdout.includes("permissionDecision"), "on+normal scoped pre-tool prompt stays direct");
-}
-
-{
-  const root = workspace(true);
-  const result = runPreTool(root, naturalRiskPrompt);
-  assert(result.status === 0, "on+natural risk pre-tool prompt exits cleanly");
-  assert(!result.stdout.includes("permissionDecision"), "on+natural risk pre-tool prompt stays direct without dangerous command");
-}
-
-{
-  const root = workspace(true);
-  const result = runHook(preToolUseHook, {
-    cwd: root,
-    tool_name: "Bash",
-    tool_input: { command: "vercel --prod" }
+    workspace_roots: [root],
+    source: "startup",
+    session_id: "session-startup-001",
+    transcript_path: "/tmp/transcript-startup-001.jsonl"
   });
-  assert(result.status === 0, "on+promptless production tool exits cleanly");
-  assert(result.stdout.includes("permissionDecision"), "on+promptless production tool asks before tool use");
-}
+  const startupContext = additionalContext(startup);
+  assert(startup.status === 0, "startup exits cleanly");
+  assert(startupContext.includes("NOGRA_SESSION_BOOT"), "startup emits boot context");
+  assert(startupContext.includes("workspaceRoot="), "startup includes workspace root");
+  assert(!startupContext.includes("NOGRA_ROUTING_POLICY"), "startup does not emit old routing policy block");
 
-{
-  const root = workspace(true);
-  const result = runHook(preToolUseHook, {
+  const resume = runHook(sessionStartHook, {
     cwd: root,
-    tool_name: "Bash",
-    tool_input: { command: "npx prisma migrate deploy" }
+    workspace_roots: [root],
+    source: "resume",
+    session_id: "session-resume-001",
+    transcript_path: "/tmp/transcript-resume-001.jsonl"
   });
-  assert(result.status === 0, "on+promptless migration tool exits cleanly");
-  assert(result.stdout.includes("permissionDecision"), "on+promptless migration tool asks before tool use");
+  const resumeContext = additionalContext(resume);
+  assert(resume.status === 0, "resume exits cleanly");
+  assert(resumeContext.includes("NOGRA_SESSION_RESUME"), "resume emits a continuity pointer");
+  assert(!resumeContext.includes("NOGRA_ROUTING_POLICY"), "resume does not emit full routing policy");
 }
 
+console.log("PostCompact lifecycle:");
 {
-  const root = workspace(true);
-  const result = runHook(preToolUseHook, {
+  const root = workspace();
+  const compact = runHook(postCompactHook, {
     cwd: root,
-    tool_name: "Bash",
-    tool_input: { command: "psql \"$DATABASE_URL\" -c \"drop table users\"" }
+    workspace_roots: [root],
+    source: "auto",
+    session_id: "session-compact-001",
+    transcript_path: "/tmp/transcript-compact-001.jsonl"
   });
-  assert(result.status === 0, "on+promptless destructive sql exits cleanly");
-  assert(result.stdout.includes("permissionDecision"), "on+promptless destructive sql asks before tool use");
+  const compactContext = additionalContext(compact);
+  assert(compact.status === 0, "PostCompact exits cleanly");
+  assert(parseHookOutput(compact).hookSpecificOutput?.hookEventName === "PostCompact", "PostCompact reports its hook event");
+  assert(compactContext.includes("NOGRA_COMPACT_POINTER"), "PostCompact emits compact pointer");
+  assert(compactContext.includes("ledgerWatermark="), "PostCompact includes ledger watermark");
+  assert(!compactContext.includes("NOGRA_ROUTING_POLICY"), "PostCompact does not emit full routing policy");
 }
 
+console.log("SessionEnd lifecycle:");
 {
-  const dangerousTargets = ["/", "~", "$HOME", "../..", "./.git", ".env", ".", "*", "/prod/db"];
-  for (const target of dangerousTargets) {
-    const result = runHook(preToolUseHook, {
-      cwd: workspace(true),
-      tool_name: "Bash",
-      tool_input: { command: `rm -rf ${target}` }
-    });
-    assert(result.status === 0, `on+danger recursive remove exits cleanly for ${target}`);
-    assert(result.stdout.includes("permissionDecision"), `on+danger recursive remove asks for ${target}`);
-  }
-}
-
-{
-  const cleanupTargets = [
-    "node_modules",
-    ".next",
-    "./.next",
-    "dist",
-    "./dist",
-    ".svelte-kit",
-    "target",
-    "./target",
-    "__pycache__",
-    ".pytest_cache",
-    ".venv",
-    "vendor",
-    "tmp",
-    ".eslintcache",
-    "./src",
-    "./components",
-    "./lib",
-    "./app",
-    "./pages",
-    "./hooks",
-    "./styles"
-  ];
-  for (const target of cleanupTargets) {
-    const result = runHook(preToolUseHook, {
-      cwd: workspace(true),
-      tool_name: "Bash",
-      tool_input: { command: `rm -rf ${target}` }
-    });
-    assert(result.status === 0, `on+local cleanup recursive remove exits cleanly for ${target}`);
-    assert(!result.stdout.includes("permissionDecision"), `on+local cleanup recursive remove stays direct for ${target}`);
-  }
-}
-
-{
-  const root = workspace(true);
-  const result = runHook(preToolUseHook, {
+  const root = workspace();
+  const ended = runHook(sessionEndHook, {
     cwd: root,
-    tool_name: "Bash",
-    tool_input: { command: "npm test" }
+    workspace_roots: [root],
+    source: "prompt_input_exit",
+    session_id: "session-end-001",
+    transcript_path: "/tmp/transcript-end-001.jsonl"
   });
-  assert(result.status === 0, "on+promptless safe tool exits cleanly");
-  assert(!result.stdout.includes("permissionDecision"), "on+promptless safe tool stays direct");
+  assert(ended.status === 0, "SessionEnd exits cleanly");
+  assert(!ended.stdout, "SessionEnd emits no chat context");
+  const anchor = JSON.parse(fs.readFileSync(path.join(root, ".nogra", "runtime", "session-anchor.json"), "utf8"));
+  assert(anchor.hookEventName === "SessionEnd", "SessionEnd writes only session anchor state");
+  assert(anchor.sessionId === "session-end-001", "SessionEnd preserves session id");
 }
 
+console.log("UserPromptSubmit lifecycle:");
 {
-  const root = workspace(true);
-  const result = runPreTool(root, "What is Stripe checkout?");
-  assert(result.status === 0, "on+risk-word Q&A pre-tool prompt exits cleanly");
-  assert(!result.stdout.includes("permissionDecision"), "on+risk-word Q&A pre-tool prompt stays direct without work context");
-}
+  const root = workspace();
+  const result = runHook(userPromptSubmitHook, {
+    cwd: root,
+    workspace_roots: [root],
+    session_id: "session-submit-001",
+    transcript_path: "/tmp/transcript-submit-001.jsonl",
+    prompt: "Build and verify a multi-file dashboard with tests and screenshots."
+  });
+  const context = additionalContext(result);
+  assert(result.status === 0, "normal scoped prompt exits cleanly");
+  assert(!context, "normal scoped prompt emits no proactive Nogra context");
+  assert(!fs.existsSync(path.join(root, ".nogra", "runtime", "last-routing-score.json")), "normal scoped prompt writes no routing score");
 
-{
-  const root = workspace(true);
-  const pastedPrompt = `Transcript only:\n> ${naturalRiskPrompt}`;
-  const result = runPreTool(root, pastedPrompt);
-  assert(result.status === 0, "on+quoted pre-tool text exits cleanly");
-  assert(!result.stdout.includes("permissionDecision"), "on+quoted pre-tool text is excluded from scoring");
+  const routerReference = fs.readFileSync(path.join(pluginRoot, "skills", "help", "references", "router.md"), "utf8");
+  const initClaude = fs.readFileSync(path.join(pluginRoot, "contracts", "init-bundle", "files", "CLAUDE.md"), "utf8");
+  const readme = fs.readFileSync(path.join(pluginRoot, "README.md"), "utf8");
+  assert(routerReference.includes("If no route matches, stay direct."), "router reference defaults unmatched prompts to direct");
+  assert(routerReference.includes("Never turn it into prompt scoring"), "router reference forbids prompt scoring");
+  assert(initClaude.includes("## Nogra Intent Router"), "init bundle includes intent router");
+  assert(readme.includes("### Build directly"), "README documents direct scoped work as default");
+  assert(!readme.includes("Nogra treats this as scoped work, shapes a brief first"), "README no longer promises automatic brief shaping");
 }
-
-console.log("Toggle intent strictness:");
-for (const prompt of ["/nogra:on", "/nogra off", "/nogra-off", "turn Nogra on", "disable Nogra"]) {
-  const result = runUserPrompt(workspace(true), prompt);
-  assert(result.stdout.includes("NOGRA_ROUTING_TOGGLE_REQUEST"), `toggle emitted for clear intent: ${prompt}`);
-}
-
-for (const prompt of [
-  "turn Nogra on when we package this",
-  "Nogra on its own is not enough without a brief",
-  "He wrote /nogra:off in the docs",
-  "> /nogra:off",
-  "```\n/nogra:off\n```",
-  `> ${naturalRiskPrompt}`
-]) {
-  const result = runUserPrompt(workspace(true), prompt);
-  assert(!result.stdout.includes("NOGRA_ROUTING_TOGGLE_REQUEST"), `no toggle for non-action text: ${prompt.split("\n")[0]}`);
-}
-
-for (const prompt of ["turn Nogra off", "> turn Nogra off", "turn Nogra off when testing later"]) {
-  const result = runExpansion(workspace(true), { prompt });
-  const shouldToggle = prompt === "turn Nogra off";
-  assert(result.stdout.includes("NOGRA_ROUTING_TOGGLE_REQUEST") === shouldToggle, `expansion toggle strictness for: ${prompt}`);
-}
-
-assert(os.tmpdir(), "node tmpdir is available");
 
 if (failures > 0) {
-  console.error(`\nResults: ${failures} failed.`);
+  console.error(`\n${failures} routing lifecycle checks failed.`);
   process.exit(1);
 }
 
-console.log("\nResults: routing precondition regression passed.");
+console.log("\nRouting lifecycle checks passed.");

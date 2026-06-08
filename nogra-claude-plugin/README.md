@@ -30,8 +30,10 @@ You can also ask Claude:
 Can you help me set up Nogra in this folder?
 ```
 
-The plugin provides three primitives - brief, dispatch, verify - plus the local
-`.nogra/` ledger they write to.
+The plugin provides three primitives - brief, dispatch, verify - plus a thin
+intent router and the local `.nogra/` ledger they write to. The router maps
+explicit Nogra intent to the right skill. If no Nogra route matches, ordinary
+work stays direct.
 Folder-local state is created only when `/nogra:setup` runs.
 
 By default, setup, brief contracts, brief validation, local dispatch receipts and
@@ -65,7 +67,7 @@ explicit GO, then creates `.nogra/` workspace state and a root `CLAUDE.md` only
 when missing. Existing app files, `.claude/`, package files, git config and
 provider settings are preserved.
 
-### Build something
+### Build directly
 
 Ask Claude:
 
@@ -73,9 +75,21 @@ Ask Claude:
 Build me a small local task tracker in this workspace.
 ```
 
-Expected behavior: Nogra treats this as scoped work, shapes a brief first, waits
-for user approval, dispatches the approved work, then verifies the result
-against the brief and available evidence before calling it done.
+Expected behavior: Claude works directly unless you ask for Nogra. Nogra should
+not score the prompt, emit a proactive brief prompt or start a workflow just
+because the task has scope.
+
+### Build through Nogra
+
+Ask Claude:
+
+```text
+Use Nogra to brief this task tracker build before you implement it.
+```
+
+Expected behavior: Nogra shapes a brief first, waits for user approval,
+dispatches only after GO, then verifies the result against the brief and
+available evidence before calling it done.
 
 ### Save a checkpoint
 
@@ -149,15 +163,38 @@ preserves or merges existing Nogra files according to the bundled write policy.
 - `/nogra:update`: pull current Nogra contract/guidance on demand.
 - `/nogra:help`: explain Nogra and choose the right Nogra flow.
 
-The plugin includes lightweight lifecycle hooks for boot and project focus.
-`SessionStart` adds compact Nogra context when `.nogra/config.json` exists.
-`UserPromptSubmit` may add project-focus context when the user clearly selects
-an indexed project from a workspace hub. Hooks do not score prompts, emit
-proactive brief prompts, inspect tool calls, change config, draft briefs, dispatch,
-verify or spawn agents. Skills own all `.nogra/` writes, brief drafting,
-dispatch, verification and agent spawning. Claude transcript and history stay
-outside Nogra's routing input. Claude must still use Nogra skills for the
-workflow and wait for the user's choice before entering brief flow.
+## Thin Intent Router
+
+Nogra's router is a small intent index, not a hook gate. It maps accepted user
+intent to the matching skill:
+
+- setup/enable -> `/nogra:setup`
+- learn or map this project -> `/nogra:adapt`
+- create a project under a hub -> `/nogra:create`
+- brief or Nogra workflow -> `/nogra:brief`
+- GO after a reviewed brief -> `/nogra:dispatch`
+- evidence, "is this done?", or verification -> `/nogra:verify`
+- state, checkpoint, version or recent records -> `/nogra:status`
+- runtime/language configuration -> `/nogra:settings`
+- guidance refresh -> `/nogra:update`
+- help choosing a flow -> `/nogra:help`
+
+If no Nogra route matches, stay direct. For unusually large autonomous work,
+Claude may give one short non-blocking brief nudge before the run starts, but
+must not repeat it, block on it or turn it into prompt scoring.
+
+The plugin includes lightweight lifecycle hooks for boot, compact continuity and
+project focus. `SessionStart` adds a small boot or resume pointer when
+`.nogra/config.json` exists. `PostCompact` rehydrates only a thin continuity
+pointer after context compaction. `SessionEnd` updates the local session anchor
+without adding chat context. `UserPromptSubmit` may add project-focus context
+when the user clearly selects an indexed project from a workspace hub. Hooks do
+not score prompts, emit proactive brief prompts, inspect tool calls, change
+config, draft briefs, dispatch, verify or spawn agents. Skills own all `.nogra/`
+writes, brief drafting, dispatch, verification and agent spawning. Claude
+transcript and history stay outside Nogra's routing input. Claude must still use
+Nogra skills for the workflow and wait for the user's choice before entering
+brief flow.
 
 Session continuity is local and explicit. Session-start and prompt hooks may
 write a bounded session anchor under `.nogra/runtime/session-anchor.json`, and

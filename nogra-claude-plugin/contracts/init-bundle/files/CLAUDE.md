@@ -1,7 +1,6 @@
 # Nogra Workspace
 
-This workspace can use Nogra when work needs a brief, explicit approval,
-scoped execution, evidence, and a verification.
+This workspace can use Nogra when work needs a brief, explicit approval, scoped execution, evidence, and a verification.
 
 ## Identity
 
@@ -26,20 +25,34 @@ quietly merge Manager and Executor.
 - If the user chooses direct work, respect direct work.
 - A brief is not GO.
 
+## Nogra Intent Router
+
+Route only accepted user intent:
+
+- setup/adapt/create/status/settings/update/help intent -> matching `/nogra:*`;
+- brief or Nogra workflow intent -> `/nogra:brief`;
+- GO after a reviewed approved brief -> `/nogra:dispatch`;
+- "is this done?", evidence or verification intent -> `/nogra:verify`.
+
+If no route matches, stay direct.
+
+For unusually large autonomous work, one short non-blocking brief nudge is
+allowed. If the user continues direct, do not repeat it for that task. Never
+turn this into prompt scoring, keyword scoring, tool interception or a
+permission layer.
+
 ## Configuration Detail
 
 Routing policy, runtime preferences and status reporting mechanics live in
-plugin reference docs. Use `/nogra:help` to access them when needed. CLAUDE.md
-intentionally stays lightweight: config schema lives in `.nogra/config.json`,
-not here.
+plugin reference docs. Use `/nogra:help` when needed. CLAUDE.md stays
+lightweight; config schema lives in `.nogra/config.json`, not here.
 
 ## Roles
 
 - User: intent, approval, final judgment.
 - Manager: brief, route, local `.nogra/` records, evidence-vs-brief verification.
 - Executor: scoped implementation after dispatch.
-- Verifier: optional independent check for noisy log, test, review, or
-  explicitly requested adapter evidence.
+- Verifier: optional independent check for noisy or explicitly requested evidence.
 
 ## Local State
 

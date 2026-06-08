@@ -847,14 +847,58 @@ function initBundlePayload(root, workspaceName = "") {
     optionalFeatures: [],
     nextSteps: [
       "Preview files before applying them.",
-      "Merge .nogra/config.json preserving existing values.",
+      "Merge .nogra/config.json preserving existing user values and removing obsolete automatic-offer controls.",
       "Preserve .claude/ files; setup writes only returned Nogra files.",
       "Use /nogra:adapt for existing projects after setup."
     ]
   };
 }
 
-function mergeConfig(existing, incoming, options = {}) {
+const OBSOLETE_ROUTING_POLICY_KEYS = new Set([
+  "autoOfferEnabled",
+  "sensitivityPercent",
+  "sensitivityStepPercent",
+  "autoOfferThreshold",
+  "strongOfferThreshold",
+  "offerOncePerIntent",
+  "topicGate",
+  "scoring"
+]);
+
+const LEGACY_ROUTING_DICTIONARY_KEYS = new Set([
+  "createIntent",
+  "productSurface",
+  "evidenceNeed",
+  "completionClaim",
+  "qualityCritical",
+  "riskyDomain",
+  "ambiguity",
+  "lowRiskEdit",
+  "singleFileLowScope",
+  "directOverride",
+  "toggleOn",
+  "toggleOff"
+]);
+
+function isLegacyRoutingDictionary(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length > 0 && keys.every((key) => LEGACY_ROUTING_DICTIONARY_KEYS.has(key));
+}
+
+function stripObsoleteRoutingPolicy(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const out = { ...value };
+  for (const key of OBSOLETE_ROUTING_POLICY_KEYS) {
+    delete out[key];
+  }
+  if (isLegacyRoutingDictionary(out.dictionary)) {
+    delete out.dictionary;
+  }
+  return out;
+}
+
+function mergeConfig(existing, incoming, options = {}, pathKey = "") {
   const out = Array.isArray(existing) ? [...existing] : { ...existing };
   for (const [key, value] of Object.entries(incoming)) {
     if (!Object.hasOwn(out, key)) {
@@ -869,10 +913,10 @@ function mergeConfig(existing, incoming, options = {}) {
       typeof out[key] === "object" &&
       !Array.isArray(out[key])
     ) {
-      out[key] = mergeConfig(out[key], value, options);
+      out[key] = mergeConfig(out[key], value, options, key);
     }
   }
-  return out;
+  return pathKey === "routingPolicy" ? stripObsoleteRoutingPolicy(out) : out;
 }
 
 function applyInit(root, workspaceName, options = {}) {
