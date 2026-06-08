@@ -9,6 +9,7 @@ const TERMINAL_STATUSES = new Set(["ok", "partial", "blocked", "failed", "cancel
 const TERMINAL_EVENT_TYPES = new Set([
   "transport_run_returned",
   "transport_run_cancelled",
+  "local_verification_recorded",
   "transport_acknowledged"
 ]);
 const VALID_PHASES = new Set(["queued", "running", "returning", "returned", "acknowledged"]);
