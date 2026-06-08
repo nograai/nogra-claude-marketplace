@@ -51,8 +51,9 @@ For support, contact `support@nogra.ai`.
 ## Working Examples
 
 Run these examples in disposable workspaces, not in the Nogra plugin source
-repo. They are meant to show the core local workflow: setup, brief-first work,
-dispatch, verification and checkpoint continuity.
+repo. They show the two intended paths: choose Nogra before planned work starts,
+or stay direct when you mean direct. Nogra is not a cleanup step to insert after
+Claude has already started implementing.
 
 ### Set up a workspace
 
@@ -67,29 +68,28 @@ explicit GO, then creates `.nogra/` workspace state and a root `CLAUDE.md` only
 when missing. Existing app files, `.claude/`, package files, git config and
 provider settings are preserved.
 
-### Build directly
-
-Ask Claude:
-
-```text
-Build me a small local task tracker in this workspace.
-```
-
-Expected behavior: Claude works directly unless you ask for Nogra. Nogra should
-not score the prompt, emit a proactive brief prompt or start a workflow just
-because the task has scope.
-
 ### Build through Nogra
 
 Ask Claude:
 
 ```text
-Use Nogra to brief this task tracker build before you implement it.
+Use Nogra to brief and run a small local task tracker build.
 ```
 
 Expected behavior: Nogra shapes a brief first, waits for user approval,
 dispatches only after GO, then verifies the result against the brief and
 available evidence before calling it done.
+
+### Work directly when you mean direct
+
+Ask Claude:
+
+```text
+Build a small local task tracker directly. Do not use Nogra.
+```
+
+Expected behavior: Claude works directly. Nogra stays silent: no prompt scoring,
+no proactive brief prompt and no workflow just because the task has scope.
 
 ### Save a checkpoint
 
