@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.5 - 2026-06-08
 
 - Added a thin intent-router contract to help/reference docs, the bundled
   workspace `CLAUDE.md` and reviewer README: explicit Nogra intent maps to the
