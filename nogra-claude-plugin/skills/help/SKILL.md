@@ -9,7 +9,7 @@ Use this skill to answer Nogra help questions and choose the right Nogra flow.
 Keep the response compact and user-facing.
 
 Read `references/usage.md` as the source for general help content. For routing
-thresholds and offer sensitivity, read `references/routing.md`. For runtime,
+and language defaults, read `references/routing.md`. For runtime,
 model/effort preference and status/version details, read
 `references/runtime.md`. Summarize the relevant section instead of dumping the
 full reference unless the user explicitly asks for the full text.

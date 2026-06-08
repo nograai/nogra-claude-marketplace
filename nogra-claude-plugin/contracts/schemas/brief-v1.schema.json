@@ -5,7 +5,6 @@
   "type": "object",
   "required": [
     "schema",
-    "releaseVersion",
     "briefId",
     "workspaceId",
     "title",
@@ -22,10 +21,6 @@
   "properties": {
     "schema": {
       "const": "nogra.brief.v1"
-    },
-    "releaseVersion": {
-      "type": "string",
-      "pattern": "^v[1-9][0-9]*\\.[0-9]+\\.[0-9]+$"
     },
     "briefId": {
       "type": "string",

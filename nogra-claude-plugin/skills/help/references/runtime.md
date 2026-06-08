@@ -64,7 +64,7 @@ When the user asks for Nogra status or version, include:
 
 - installed Nogra plugin id/ref from the plugin session context when available;
 - local runtime status;
-- workspace `releaseVersion` from `.nogra/config.json`.
+- workspace id and current runtime/routing posture.
 
 Report the active Nogra build directly so the user does not need to inspect
 Claude Code's raw `/plugin` menu.

@@ -5,7 +5,6 @@
   "type": "object",
   "required": [
     "schema",
-    "releaseVersion",
     "eventId",
     "workspaceId",
     "eventType",
@@ -15,10 +14,6 @@
   "properties": {
     "schema": {
       "const": "nogra.event.v1"
-    },
-    "releaseVersion": {
-      "type": "string",
-      "pattern": "^v[1-9][0-9]*\\.[0-9]+\\.[0-9]+$"
     },
     "eventId": {
       "type": "string",

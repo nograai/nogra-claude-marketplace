@@ -1,6 +1,5 @@
 ---
 schema: nogra.brief.v1
-releaseVersion: v1.0.0
 briefId: brief-slug
 workspaceId: local
 title: Brief title

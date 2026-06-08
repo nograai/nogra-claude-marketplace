@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Removed core automatic-offer scoring, sensitivity controls and the PreToolUse
+  command tripwire. Nogra core is now pull-first: explicit `/nogra:*` requests
+  start Nogra flows, ordinary work stays direct, and Claude Code's native
+  permission model remains responsible for tool permissions.
+- Simplified core hooks to session boot context and workspace-hub project
+  focus only.
+- Removed separate brief/workspace release-version fields from fresh records,
+  schemas, init config and status output. The plugin version is now the product
+  release identity; schema ids remain the artifact-format contracts.
+
 ## 0.6.3 - 2026-06-07
 
 - Changed brief sizing preview from a binary user prompt into a three-level
@@ -29,8 +39,8 @@
 
 - Added `ledger-smoke` as a bounded diagnostic command for testing local ledger
   watermarks without creating brief artifacts or touching app code.
-- Clarified status wording so plugin version and workspace contract version are
-  displayed as separate concepts.
+- Clarified then-current status wording around plugin and workspace version
+  fields.
 - Removed blank `source` and `model` fields from session-anchor writes when the
   hook input does not provide them.
 

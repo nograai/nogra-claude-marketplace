@@ -1,20 +1,18 @@
 ---
 name: settings
-description: Show or update local Nogra settings for routing, executor/verifier runtime profile, effort, language and auto behavior. Use when the user runs /nogra:settings or asks to configure Nogra executor/verifier model, effort, profile, language or automatic offers.
+description: Show or update local Nogra settings for executor/verifier runtime profile, effort and language. Use when the user runs /nogra:settings or asks to configure Nogra executor/verifier model, effort, profile or language.
 ---
 
 # Nogra Settings
 
 Show or update local Nogra settings in `.nogra/config.json`.
 
-This is a local workspace control surface for routing, runtime preferences,
-language and automatic offers.
+This is a local workspace control surface for runtime preferences and language.
+Nogra core is pull-first; this skill does not configure proactive brief prompts.
 
 ## Boundary
 
-Read and write only `.nogra/config.json`. For `/nogra:settings auto off`, also
-clear stale routing telemetry by writing route-none state to
-`.nogra/runtime/last-routing-score.json`. App files, `.claude/`, `CLAUDE.md`,
+Read and write only `.nogra/config.json`. App files, `.claude/`, `CLAUDE.md`,
 package files, hooks, plugin files, Claude Code configuration and agent
 spawning stay outside this skill.
 
@@ -54,18 +52,14 @@ Interpret these forms:
 - `/nogra:settings verifier <model> <effort>` -> update verifier role.
 - `/nogra:settings language <code>` -> set
   `routingPolicy.defaultLanguage`.
-- `/nogra:settings auto on|off` -> set `routingPolicy.autoOfferEnabled`; when
-  turning it off, clear stale routing telemetry to route none.
-
-For sensitivity changes, prefer `/nogra:sensitivity <percent>`. The settings
-menu may show the current value with context.
 
 ## Write Rules
 
 When updating:
 
 1. Read `.nogra/config.json`.
-2. Add missing `runtimePolicy` defaults without overwriting existing values.
+2. Add missing `runtimePolicy` and minimal `routingPolicy` defaults without
+   overwriting existing values.
 3. Apply the requested change.
 4. Preserve `routingPolicy`, `briefPolicy`, `returnPolicy`, paths and unknown
    keys.
@@ -75,21 +69,13 @@ When updating:
 ## Menu Shape
 
 Use a compact inline menu like this. It is a visual guide, not a rigid template.
-For the sensitivity bar, use exactly 12 characters. Filled characters are
-`round(percent / 100 * 12)`. Examples: `50% -> ++++++------`,
-`70% -> ++++++++----`, `100% -> ++++++++++++`.
 
 ```text
-╭────────────────────────────────────────╮
-│ NOGRA SETTINGS                         │
-╰────────────────────────────────────────╯
+Nogra settings
 
-Profile      default
-Auto         ON
-Sensitivity  50%   0% ++++++------ 100%
 Language     en
 
-Runtime      Default
+Runtime      default
 Executor     default
 Verifier     default
 
@@ -97,7 +83,7 @@ Commands:
   /nogra:settings profile default
   /nogra:settings executor opus medium
   /nogra:settings verifier sonnet medium
-  /nogra:sensitivity 70%
+  /nogra:settings language da
 ```
 
 When a setting changes, start with one short confirmation:

@@ -14,8 +14,7 @@ quietly merge Manager and Executor.
 ## The Simple Rule
 
 - Read and clarify freely.
-- Nogra is pull-first. Offer it when the user asks for the workflow or when an
-  irreversible-boundary tripwire fires.
+- Nogra is pull-first. Use it when the user asks for the workflow.
 - Enter the Nogra runtime only after the user accepts the brief flow or
   explicitly runs a Nogra command.
 - By default, brief, dispatch and verification records use plugin-bundled
@@ -122,9 +121,8 @@ If the user asks for a demo, do not reuse a canned demo.
 
 Suggest 2-3 bounded demo ideas that fit this folder and what the user seems to
 care about. Recommend one. If the user chooses an idea, stay direct unless they
-ask for Nogra or the idea crosses an irreversible boundary tripwire. If the user
-accepts Nogra, write a Nogra brief for it. Do not dispatch until the user says
-GO.
+ask for Nogra. If the user accepts Nogra, write a Nogra brief for it. Do not
+dispatch until the user says GO.
 
 ## Boundaries
 

@@ -1,6 +1,5 @@
 {
   "schema": "nogra.event.v1",
-  "releaseVersion": "v1.0.0",
   "eventId": "event-slug",
   "workspaceId": "local",
   "eventType": "note",

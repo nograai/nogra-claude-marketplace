@@ -67,7 +67,7 @@ Keep the answer short. Use this shape:
 ```text
 Nogra update check complete.
 - Local runtime: <status>
-- Brief contract: <schema/version>
+- Brief schema: <schema>
 - Local action needed: <yes/no>
 ```
 

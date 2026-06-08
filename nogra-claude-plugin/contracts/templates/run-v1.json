@@ -1,6 +1,5 @@
 {
   "schema": "nogra.run.v1",
-  "releaseVersion": "v1.0.0",
   "runId": "run-slug",
   "workspaceId": "local",
   "briefId": "brief-slug",

@@ -1,6 +1,6 @@
 ---
 name: brief
-description: Shape scoped, risky, or ambiguous work into a validated Nogra brief (an approved plan) before execution. Use after /nogra:brief, when you accept a Nogra brief offer, or when you say "do this through Nogra" — not for casual mentions or ordinary direct work.
+description: Shape scoped, risky, or ambiguous work into a validated Nogra brief (an approved plan) before execution. Use after /nogra:brief or when the user explicitly asks for a Nogra brief/workflow — not for casual mentions or ordinary direct work.
 ---
 
 # Nogra Brief
@@ -8,14 +8,13 @@ description: Shape scoped, risky, or ambiguous work into a validated Nogra brief
 Use this skill to turn an accepted Nogra intent into a brief. The brief is the
 agreement that execution and verification will later be checked against.
 
-Nogra invites; it does not enforce. Offer this flow when the user asks for
-Nogra or when the pre-tool executable-boundary tripwire fires. If the user
-chooses direct work, respect that choice.
+Nogra is pull-first. Use this flow when the user asks for Nogra, asks for a
+brief, or says to do the work through Nogra. If the user chooses direct work,
+respect that choice.
 
 Nogra calls are authority gates, not ambient polling. This skill may call Nogra
-only after the user accepts the brief flow or explicitly asks for `/nogra:brief`.
-If the user has not accepted the brief flow, stop and make the direct/Nogra
-choice visible only when a tripwire boundary is present.
+only after the user explicitly asks for `/nogra:brief`, a Nogra brief, or the
+Nogra workflow.
 
 ## Entry Condition
 
@@ -23,7 +22,6 @@ Continue in this skill only if one of these is true:
 
 - the user invoked `/nogra:brief`
 - the user explicitly asked to write, draft or prepare a Nogra brief
-- the user accepted a prior Nogra brief/direct offer
 - the user said to do the work through Nogra
 
 If the user asks a named provider, external assistant, or extension plugin to
@@ -32,61 +30,31 @@ Keep it outside the Nogra flow unless the user explicitly asks to turn it into
 a Nogra brief.
 
 If none of these are true, do not call the Nogra runtime and do not draft a
-brief. Make the brief/direct offer yourself, then stop.
+brief. Return to direct work.
 
 ## Routing Gate
 
-This section is a guardrail for accidental invocation. When the user has not
-explicitly asked for Nogra, decide locally whether to offer a brief before any
-Nogra runtime call. Use the current hook context plus
-`skills/help/references/routing.md` as the routing authority; do not duplicate
-score tables or create a second threshold system in this skill.
+This section is a guardrail for accidental invocation. Nogra core does not score
+prompts, intercept tool calls, or decide that ordinary work needs a brief.
+Accepted user intent starts the brief flow.
 
-For ordinary topic-related workspace work, stay direct unless the user asks for
-Nogra or accepts a tripwire offer. For executable irreversible boundaries, make
-the brief/direct offer and stop. For pure chat, Q&A, explicit direct/simple work
-or low-risk edits, stay direct.
-
-Legacy heat never authorizes a Nogra runtime call, dispatch, verification, or
-subagent. It is advisory telemetry only.
-
-Use executable tripwire boundaries as the only proactive routing source:
-production deploy commands, data migration/loss commands, auth/security/secret
-writes, payments/billing commands, destructive bulk commands, or external
-customer-impacting send commands. Do not create a second score, tier table,
-threshold table or automatic high/medium/low routing rule. Surface legacy heat,
-task character and any runtime-policy mismatch as facts only; accepted user
-intent starts the brief flow.
+For ordinary workspace work, stay direct unless the user asks for Nogra. For
+irreversible, production, billing, data, permissions or secrets work, use Claude
+Code's native permission model and current-task judgment; do not enter the
+Nogra runtime unless the user pulls Nogra.
 
 ## Trigger
 
 Use this skill when the user:
 
 - asks to write, create, draft or prepare a Nogra brief
-- accepts a Nogra brief/direct offer
 - wants evidence, verification, a receipt, a run id or a verification
 - says "let's do this through Nogra" or equivalent
 
 Do not use this skill directly for generic build, refactor, debug or change
-requests. If this skill is invoked accidentally before acceptance, offer the
-brief first instead of silently entering ceremony:
-
-```text
-This has enough scope that a Nogra brief would help. I can write the brief
-first, or work directly if you prefer.
-```
-
-If the routing context clearly calls for a stronger recommendation, use a
-stronger but still optional offer:
-
-```text
-This is scoped enough that I recommend a Nogra brief before work starts. I can
-write the brief first, or work directly if you prefer.
-```
-
-After either offer, stop and wait. Do not say "I'll write the brief" and do not
-call the Nogra runtime until the user accepts the brief flow. If the user
-chooses direct work, do not call Nogra.
+requests. If this skill is invoked accidentally before explicit Nogra intent,
+stop and continue direct. Do not say "I'll write the brief" and do not call the
+Nogra runtime until the user pulls the brief flow.
 
 Do not use this skill for:
 
@@ -115,27 +83,21 @@ call dispatch from this skill. A brief is not GO.
 
 ## Flow
 
-1. If the user did not explicitly request Nogra, apply the Routing Gate before
-   any Nogra runtime call.
-   - If the task is ordinary work, pure chat, Q&A or low-risk direct work, work
-     directly.
-   - If an executable-boundary tripwire fired, show the offer and stop.
-   - Continue only after the user accepts the brief flow.
-2. Confirm the user's intended outcome in plain language.
-3. Apply workspace root discipline before calling the runtime. If the target
+1. Confirm the user's intended outcome in plain language.
+2. Apply workspace root discipline before calling the runtime. If the target
    workspace is ambiguous, ask one location question before saving a brief.
-4. Inspect enough project context to avoid guessing. Prefer existing docs,
+3. Inspect enough project context to avoid guessing. Prefer existing docs,
    relevant files, recent decisions and current structure over assumptions.
    Use `skills/help/references/runtime.md` for runtime-policy meaning. Capture
    only the default/custom profile and any custom executor/verifier values that
    materially affect the brief. If brief shape and runtime capacity look
    mismatched, name the mismatch as a fact instead of inventing a new tier or
    runtime rule.
-5. If a missing decision would materially change scope, ask one concrete
+4. If a missing decision would materially change scope, ask one concrete
    question. Ask one question at a time.
-6. If there are multiple viable routes, present 2-3 approaches with trade-offs
+5. If there are multiple viable routes, present 2-3 approaches with trade-offs
    and a recommendation. Keep it short enough for the user to choose.
-7. Phrase environment-dependent stop criteria as pre-flight checks, not
+6. Phrase environment-dependent stop criteria as pre-flight checks, not
    reactive failure handling. If the work depends on a tool, runtime,
    credential or service, write the check as the executor's first action and
    forbid recovery improvisation unless the user explicitly wants setup work.
@@ -147,14 +109,14 @@ call dispatch from this skill. A brief is not GO.
    reactive phrasing such as `If pnpm fails during work, stop`, because it
    invites the executor to spend run budget on workaround attempts before
    stopping.
-8. Read the plugin-local registry/status once for this brief flow:
+7. Read the plugin-local registry/status once for this brief flow:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" registry --root "$PWD" --json
 ```
 
    Use the local runtime path below for the default brief flow.
-9. Read the local brief contract before drafting unless a fresh contract was
+8. Read the local brief contract before drafting unless a fresh contract was
    already fetched in this same brief flow:
 
 ```bash
@@ -162,13 +124,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-contract --root "$PWD
 ```
 
    Do not discover the schema by repeated validation failures.
-10. Before writing a full brief payload, make a Manager-internal decomposition
+9. Before writing a full brief payload, make a Manager-internal decomposition
    check from the user request, known repo context, expected files/areas,
    coupling and runtime risk. If the work naturally splits, or is likely to sit
    near/over a normal executor run, choose or ask for the phase boundary before
    drafting. Do not spend tokens writing an all-in brief and then split it after
    the preview trips.
-11. Draft a complete brief payload for the selected phase/run from the contract.
+10. Draft a complete brief payload for the selected phase/run from the contract.
    Use
    `references/brief-contract.md` for shape guidance:
    - `title`
@@ -187,7 +149,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-contract --root "$PWD
      `runtimePolicy.roles.executor.model` when present; otherwise use the local
      runtime default.
    - `maxOutput` from workspace return policy unless the user asks otherwise
-12. Preview brief size and decomposition pressure for the selected phase before
+11. Preview brief size and decomposition pressure for the selected phase before
    saving/promoting the approval artifact:
 
 ```bash
@@ -213,7 +175,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-sizing-preview --root
    escalate to the user only when one of `sizingPreview.escalateToUserIf` holds.
    Do not copy the estimated max turns into the brief; concrete
    `executionMaxTurns` belongs to dispatch.
-13. Validate once with the local runtime when the draft is ready to become an
+12. Validate once with the local runtime when the draft is ready to become an
    artifact:
 
 ```bash
@@ -221,9 +183,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-validate --root "$PWD
 ```
 
    Pass the structured brief payload on stdin or with `--input`.
-14. If validation fails after using the contract, stop and report the mismatch or
+13. If validation fails after using the contract, stop and report the mismatch or
    missing decision. Do not keep mutating blindly.
-15. Save the brief with the local runtime:
+14. Save the brief with the local runtime:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-save --root "$PWD" --json
@@ -233,7 +195,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-save --root "$PWD" --
     runtime writes both the normalized draft JSON and a deterministic ASCII
     overview beside it. The overview is rendered from the same normalized
     payload; it is not a second source of truth.
-16. Promote it only when it is ready for user approval:
+15. Promote it only when it is ready for user approval:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "$PWD" --brief-id "<briefId>" --json
@@ -241,10 +203,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "$PWD"
 
     The local runtime writes only under `.nogra/briefs/` and uses bundled
     `brief-v1.schema.json`.
-17. Do not manually repair local runtime writes by hand-writing `.nogra/`
+16. Do not manually repair local runtime writes by hand-writing `.nogra/`
     artifacts after a runtime error. Stop and surface the failure instead.
-18. Present the brief to the user in a compact summary plus the saved brief id.
-19. Ask for explicit GO before execution. If the user approves, use the
+17. Present the brief to the user in a compact summary plus the saved brief id.
+18. Ask for explicit GO before execution. If the user approves, use the
     `dispatch` skill. Do not continue into implementation inside this skill.
 
 ## Brief Writing Rules

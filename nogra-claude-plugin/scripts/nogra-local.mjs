@@ -7,8 +7,6 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const RELEASE_VERSION = "v1.0.0";
-const INIT_BUNDLE_VERSION = "v1.0.0";
 const BRIEF_SCHEMA = "nogra.brief.v1";
 const INIT_BUNDLE_SCHEMA = "nogra.init.bundle.v1";
 const TRANSPORT_STATUSES = new Set(["queued", "running", "returning", "returned", "ok", "partial", "blocked", "failed", "cancelled", "acknowledged"]);
@@ -661,8 +659,6 @@ function registryPayload(root) {
   return {
     name: "nogra-local-runtime",
     version: plugin.version,
-    releaseVersion: RELEASE_VERSION,
-    initBundleVersion: INIT_BUNDLE_VERSION,
     status: "v1-local-plugin-runtime",
     hostedMcpUsed: false,
     workspaceMode: mode.mode,
@@ -724,15 +720,12 @@ function statusPayload(root) {
       mode: mode.mode,
       label: mode.label,
       source: mode.source,
-      workspaceId: workspaceId(config),
-      contractVersion: cleanInline(config.releaseVersion) || "",
-      releaseVersion: cleanInline(config.releaseVersion) || ""
+      workspaceId: workspaceId(config)
     },
     routingPolicy: {
       configured: Boolean(config.routingPolicy),
       source: config.routingPolicy ? ".nogra/config.json" : "release default",
-      autoOfferEnabled: routing.autoOfferEnabled !== false && routing.enabled !== false,
-      sensitivityPercent: routing.sensitivityPercent ?? 50,
+      model: "pull-first",
       defaultLanguage: cleanInline(routing.defaultLanguage) || "en"
     },
     runtimePolicy: {
@@ -820,8 +813,6 @@ function initBundlePayload(root, workspaceName = "") {
     workspaceId: slugify(cleanName, "local").toLowerCase(),
     workspacePath: root,
     generatedAt,
-    version: INIT_BUNDLE_VERSION,
-    releaseVersion: RELEASE_VERSION,
     initMode: "plugin",
     connectionMode: "local"
   };
@@ -833,10 +824,8 @@ function initBundlePayload(root, workspaceName = "") {
   }
   return {
     schema: INIT_BUNDLE_SCHEMA,
-    releaseVersion: RELEASE_VERSION,
     status: "ready",
     bundleId: "init-bundle-v1",
-    version: INIT_BUNDLE_VERSION,
     initMode: "plugin",
     connectionMode: "local",
     generatedAt,
@@ -1185,7 +1174,6 @@ function briefContract(root) {
   const schema = contractJson("schemas/brief-v1.schema.json");
   return {
     schema: "nogra.brief.contract.v1",
-    releaseVersion: RELEASE_VERSION,
     briefSchema: BRIEF_SCHEMA,
     serverMode: "plugin-local",
     hostedMcpUsed: false,
@@ -1294,7 +1282,6 @@ function normalizeBrief(input, config = {}, existing = {}) {
   const targetRole = cleanInline(input.targetRole || input.target_role || existing.targetRole || "executor");
   const brief = {
     schema: cleanInline(input.schema || existing.schema || BRIEF_SCHEMA),
-    releaseVersion: cleanInline(input.releaseVersion || existing.releaseVersion || RELEASE_VERSION),
     briefId: safeBriefId(input.briefId || input.brief_id || input.id || existing.briefId || newBriefId(title)),
     workspaceId: cleanInline(input.workspaceId || input.workspace_id || existing.workspaceId || workspaceId(config)),
     title,
@@ -1335,11 +1322,10 @@ function normalizeBrief(input, config = {}, existing = {}) {
 
 function validateBrief(brief) {
   const errors = [];
-  for (const key of ["schema", "releaseVersion", "briefId", "workspaceId", "title", "createdAt", "owner", "nextOwner", "intent", "contextHandoff", "scope", "successCriteria", "stopCriteria", "maxOutput"]) {
+  for (const key of ["schema", "briefId", "workspaceId", "title", "createdAt", "owner", "nextOwner", "intent", "contextHandoff", "scope", "successCriteria", "stopCriteria", "maxOutput"]) {
     if (brief[key] == null || brief[key] === "") errors.push(`brief missing ${key}`);
   }
   if (brief.schema !== BRIEF_SCHEMA) errors.push(`brief schema mismatch: ${brief.schema}`);
-  if (!/^v[1-9][0-9]*\.[0-9]+\.[0-9]+$/.test(cleanInline(brief.releaseVersion))) errors.push("brief releaseVersion is invalid");
   try {
     safeBriefId(brief.briefId);
   } catch (error) {
@@ -1504,7 +1490,6 @@ function renderBriefMarkdown(brief) {
   if (errors.length) throw new Error(errors.join("; "));
   const fields = [
     ["schema", brief.schema],
-    ["releaseVersion", brief.releaseVersion],
     ["briefId", brief.briefId],
     ["workspaceId", brief.workspaceId],
     ["title", brief.title],
@@ -1757,13 +1742,13 @@ function continuityState(root, config = {}) {
 }
 
 function appendLedgerEvent(root, type, extra = {}) {
+  const { releaseVersion: _ignoredReleaseVersion, ...safeExtra } = extra;
   const config = readWorkspaceConfig(root) || {};
   const session = readSessionAnchor(root);
   const ledgerWatermark = currentLedgerWatermark(root) + 1;
   const at = now();
   const event = {
     schema: "nogra.ledger.event.v1",
-    releaseVersion: RELEASE_VERSION,
     eventId: `ledger-event-${timestamp()}-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
     ledgerWatermark,
     generatedAt: at,
@@ -1772,7 +1757,7 @@ function appendLedgerEvent(root, type, extra = {}) {
     sessionId: session.sessionId,
     transcriptId: session.transcriptId,
     type,
-    ...extra
+    ...safeExtra
   };
   appendJsonlIfMissing(ledgerEventsPath(root), event);
   return event;
@@ -1824,16 +1809,16 @@ function transportArtifactPath(root, runId, name) {
 }
 
 function transportEvent(runId, type, extra = {}) {
+  const { releaseVersion: _ignoredReleaseVersion, ...safeExtra } = extra;
   const at = now();
   return {
     schema: "nogra.transport.event.v1",
-    releaseVersion: RELEASE_VERSION,
     eventId: `transport-event-${timestamp()}-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
     generatedAt: at,
     createdAt: at,
     runId,
     type,
-    ...extra
+    ...safeExtra
   };
 }
 
@@ -2128,7 +2113,6 @@ function dispatch(root, options) {
   });
   const run = {
     schema: "nogra.transport.run.v1",
-    releaseVersion: RELEASE_VERSION,
     runId,
     createdAt: at,
     updatedAt: at,
@@ -2275,7 +2259,6 @@ function handoffContract(root, kind, options = {}) {
   if (!file) {
     return {
       schema: "nogra.handoff.contract.v1",
-      releaseVersion: RELEASE_VERSION,
       status: "invalid",
       kind: wanted,
       availableKinds: ["executor", "verifier"],
@@ -2310,7 +2293,6 @@ function handoffContract(root, kind, options = {}) {
         : "none";
   return {
     schema: "nogra.handoff.contract.v1",
-    releaseVersion: RELEASE_VERSION,
     status: "ready",
     kind: wanted,
     title: wanted === "executor" ? "Executor role contract" : "Verifier role contract",
@@ -2537,7 +2519,7 @@ function printText(payload) {
   if (payload.schema === "nogra.local.status.v1") {
     console.log("Nogra local status");
     console.log(`- Plugin: ${payload.plugin.name} ${payload.plugin.version}`);
-    console.log(`- Workspace contract: ${payload.workspace.contractVersion || "not initialized"}`);
+    console.log(`- Workspace: ${payload.workspace.initialized ? payload.workspace.workspaceId || "local" : "not initialized"}`);
     console.log(`- Control plane: ${payload.hostedMcpUsed ? "connected" : "local"}`);
     for (const warning of payload.plugin.diagnostics?.warnings || []) {
       console.log(`- Warning: ${warning.message}`);

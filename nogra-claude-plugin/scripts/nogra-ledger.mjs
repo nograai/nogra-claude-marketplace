@@ -402,8 +402,9 @@ function readSessionAnchor(root) {
 }
 
 function appendLedgerEvent(root, type, extra = {}) {
+  const { releaseVersion: _ignoredReleaseVersion, ...safeExtra } = extra;
   const session = readSessionAnchor(root);
-  const eventId = cleanInline(extra.eventId) || `ledger-event-${cleanInline(extra.runId || "local")}-${type}`;
+  const eventId = cleanInline(safeExtra.eventId) || `ledger-event-${cleanInline(safeExtra.runId || "local")}-${type}`;
   const existing = eventId && fs.existsSync(ledgerEventsFile(root))
     ? parseJsonl(ledgerEventsFile(root)).find((item) => String(item?.eventId ?? "") === eventId)
     : null;
@@ -412,16 +413,15 @@ function appendLedgerEvent(root, type, extra = {}) {
   const at = now();
   const event = {
     schema: "nogra.ledger.event.v1",
-    releaseVersion: cleanInline(extra.releaseVersion) || "v1.0.0",
     eventId,
     ledgerWatermark,
     generatedAt: at,
     createdAt: at,
-    workspaceId: cleanInline(extra.workspaceId) || "local",
+    workspaceId: cleanInline(safeExtra.workspaceId) || "local",
     sessionId: session.sessionId,
     transcriptId: session.transcriptId,
     type,
-    ...extra
+    ...safeExtra
   };
   appendJsonlIfMissing(ledgerEventsFile(root), JSON.stringify(event), "eventId", event.eventId);
   return event;
@@ -486,7 +486,6 @@ function finalizeRun(root, input, options = {}) {
   const executionPair = roleRuntimePair(record, status);
   const verificationPair = verificationRoleRuntimePair(record, input);
   const ledgerEvent = appendLedgerEvent(root, status === "cancelled" ? "transport_run_cancelled" : "transport_run_returned", {
-    releaseVersion: String(record.releaseVersion || "v1.0.0"),
     eventId: `ledger-event-${runId}-terminal-${status}`,
     workspaceId: cleanInline(input.workspaceId) || "local",
     runId,
@@ -552,7 +551,6 @@ function finalizeRun(root, input, options = {}) {
   writeIfChanged(file, `${JSON.stringify(updated, null, 2)}\n`);
   const event = {
     schema: "nogra.transport.event.v1",
-    releaseVersion: String(record.releaseVersion || "v1.0.0"),
     eventId: cleanInline(input.eventId) || terminalEventId(runId, status),
     generatedAt: cleanInline(input.eventAt) || completedAt,
     createdAt: cleanInline(input.eventAt) || completedAt,

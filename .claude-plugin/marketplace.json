@@ -10,7 +10,7 @@
     {
       "name": "nogra",
       "displayName": "Nogra workflow",
-      "version": "0.6.3",
+      "version": "0.6.4",
       "source": "./nogra-claude-plugin",
       "description": "Approve, run, verify in Claude Code - the work is checked against the plan before it is marked done.",
       "author": {

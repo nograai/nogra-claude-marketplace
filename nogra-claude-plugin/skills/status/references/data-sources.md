@@ -6,13 +6,12 @@ compact and human-readable; this reference is for data collection only.
 ## Version Data
 
 - Current plugin session context for installed plugin id/ref.
-- `.nogra/config.json` for workspace `releaseVersion`.
 - Local runtime status payload when available.
 
 ## Runtime State
 
 - Workspace id from the local runtime.
-- `.nogra/config.json` for automatic offers, sensitivity and workspace
+- `.nogra/config.json` for pull-first routing posture and workspace
   language.
 - Do not show mode fields while local is the only shipped mode. The runtime may
   expose them for tools, but the human status surface should stay

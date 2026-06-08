@@ -1,6 +1,6 @@
 ---
 name: status
-description: Show compact Nogra status, installed plugin ref, workspace contract version, routing state, and recent local records. Use when the user asks for Nogra status, version, installed version, plugin version, current state, recent briefs, runs or events.
+description: Show compact Nogra status, installed plugin ref, workspace id, language/runtime state, and recent local records. Use when the user asks for Nogra status, version, installed version, plugin version, current state, recent briefs, runs or events.
 ---
 
 # Nogra Status
@@ -13,12 +13,10 @@ Always include a small version block near the top:
 
 ```text
 Nogra plugin: <id> <ref>
-Workspace contract: <contractVersion/releaseVersion or not initialized>
+Workspace: <workspaceId or not initialized>
 ```
 
 Use the current plugin session context and local runtime status when available.
-Read workspace `releaseVersion` from `.nogra/config.json` or the runtime status
-payload, but label it as the workspace contract version, not the plugin version.
 Detailed data-source mechanics live in
 `skills/status/references/data-sources.md`; runtime-policy meaning lives in
 `skills/help/references/runtime.md`.
@@ -42,8 +40,8 @@ normal work:
 After versions, show:
 
 - Workspace id from the local runtime.
-- Local `.nogra/config.json` state when present: automatic offers, sensitivity,
-  and workspace language.
+- Local `.nogra/config.json` state when present: pull-first routing posture and
+  workspace language.
 - Local transport run state when present:
   - Use `skills/status/references/data-sources.md` for collection details.
   - Show only structured facts: run id, status, phase, target/runtime,
@@ -82,10 +80,10 @@ Nogra status
 
 Versions:
 - Nogra plugin: <plugin-id>@<marketplace> <version>
-- Workspace contract: <contractVersion/releaseVersion>
 
 Workspace:
-- Auto: ON, sensitivity 50%
+- Id: <workspaceId or not initialized>
+- Routing: pull-first, language en
 
 Transport:
 - Active: transport-... running 3m, executor anthropic:sonnet

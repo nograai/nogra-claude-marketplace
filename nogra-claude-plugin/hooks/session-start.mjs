@@ -104,64 +104,6 @@ function readConfigJson(filePath) {
   }
 }
 
-const DEFAULT_SENSITIVITY_PERCENT = 50;
-const DEFAULT_SENSITIVITY_STEP_PERCENT = 5;
-
-function numericSetting(value, fallback) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function boundedPercent(value, fallback = DEFAULT_SENSITIVITY_PERCENT, step = 1) {
-  const number = numericSetting(value, fallback);
-  const bounded = Math.max(0, Math.min(100, number));
-  const safeStep = Math.max(1, Math.min(100, Math.round(numericSetting(step, 1))));
-  return Math.max(0, Math.min(100, Math.round(bounded / safeStep) * safeStep));
-}
-
-function sensitivityStep(policy) {
-  return Math.max(1, Math.min(100, Math.round(numericSetting(policy.sensitivityStepPercent, DEFAULT_SENSITIVITY_STEP_PERCENT))));
-}
-
-function thresholdsFromSensitivity(value, step = DEFAULT_SENSITIVITY_STEP_PERCENT) {
-  const sensitivityPercent = boundedPercent(value, DEFAULT_SENSITIVITY_PERCENT, step);
-  const autoOfferThreshold = Math.round(95 - sensitivityPercent * 0.7);
-  return {
-    sensitivityPercent,
-    autoOfferThreshold,
-    strongOfferThreshold: Math.min(100, autoOfferThreshold + 20)
-  };
-}
-
-function sensitivityFromAutoThreshold(value, step = DEFAULT_SENSITIVITY_STEP_PERCENT) {
-  return boundedPercent((95 - numericSetting(value, 60)) / 0.7, DEFAULT_SENSITIVITY_PERCENT, step);
-}
-
-function routingThresholds(policy) {
-  const step = sensitivityStep(policy);
-  if (Number.isFinite(policy.sensitivityPercent)) {
-    return { ...thresholdsFromSensitivity(policy.sensitivityPercent, step), sensitivityStepPercent: step };
-  }
-
-  const autoOfferThreshold = numericSetting(policy.autoOfferThreshold, 60);
-  const strongOfferThreshold = Math.max(
-    autoOfferThreshold,
-    numericSetting(policy.strongOfferThreshold, 80)
-  );
-
-  return {
-    sensitivityPercent: sensitivityFromAutoThreshold(autoOfferThreshold, step),
-    sensitivityStepPercent: step,
-    autoOfferThreshold,
-    strongOfferThreshold
-  };
-}
-
-function sensitivityPosture(sensitivityPercent = DEFAULT_SENSITIVITY_PERCENT) {
-  if (sensitivityPercent <= 35) return "conservative";
-  if (sensitivityPercent >= 70) return "eager";
-  return "balanced";
-}
-
 function cleanLabel(value, fallback = "") {
   return typeof value === "string" && value.trim() !== "" ? value.trim().replace(/\s+/g, " ") : fallback;
 }
@@ -263,10 +205,6 @@ When the user asks for Nogra status or version, include this plugin ref and say 
 
 const policy = config.routingPolicy || {};
 captureSessionAnchor(root, input, "SessionStart");
-const autoOfferEnabled = policy.autoOfferEnabled !== false && policy.enabled !== false;
-const { sensitivityPercent, sensitivityStepPercent, autoOfferThreshold, strongOfferThreshold } = routingThresholds(policy);
-const routingPosture = sensitivityPosture(sensitivityPercent);
-const topicGate = policy.topicGate !== false;
 const defaultLanguage = nonEmptyString(policy.defaultLanguage) || "en";
 const translationFallback = nonEmptyString(policy.translationFallback) || "claude-current-prompt";
 const runtime = runtimeSummary(config);
@@ -274,30 +212,25 @@ const plugin = pluginInstallInfo();
 
 emitContext(`<!-- nogra-plugin:session-policy -->
 <NOGRA_ROUTING_POLICY>
-This workspace has .nogra/config.json. Nogra automatic routing is ${autoOfferEnabled ? "on" : "off"}.
+This workspace has .nogra/config.json. Nogra is pull-first.
 
 Use Nogra skills as the first move for Nogra decisions:
 - For explicit /nogra:* commands or direct Nogra requests, use the matching Nogra skill.
-- When automatic routing is on, Nogra stays pull-first. Normal workspace work stays direct unless the user asks for Nogra or a narrow executable-boundary tripwire fires in PreToolUse.
-- The tripwire class is intentionally small and command/file based: production deploy commands, data migration/loss commands, auth/security/secret/env writes, payment/billing commands, destructive bulk commands, or external customer-impacting send commands.
-- When automatic routing is off, do not proactively offer Nogra. Explicit /nogra:* commands still work.
-- If the user chooses direct work after a tripwire, proceed directly for that task while Nogra stays on. If "direct", skip/no brief, no Nogra, without Nogra, Claude native, or local-language no-Nogra equivalents appear inside the initial task, treat it as a task preference, not workspace disable; still surface the tripwire only for executable irreversible boundaries.
-- Use /nogra:off only when the user wants workspace-level automatic routing disabled.
-- Simple edits, blog/content work, refactors, UI work, normal scoped implementation and pure Q&A stay direct unless the user pulls Nogra.
+- Normal workspace work stays direct unless the user asks for Nogra.
+- Simple edits, blog/content work, refactors, UI work, normal scoped implementation and pure Q&A stay direct.
+- If work crosses an irreversible, production, billing, data, permissions or secrets boundary, use Claude Code's native permission model and your own judgment; Nogra core does not intercept tool calls.
 - Nogra extension plugins own their own /nogra-* commands and hooks. If a prompt is for an installed /nogra-* extension, let that extension append its behavior; do not turn it into Nogra ceremony.
 - If the user asks which Nogra projects/workspaces exist, use the boot context workspace index/candidates to show a compact project list and ask what they want to do next. Do not load every project checkpoint unless they choose one.
-
-Current local routingPolicy: autoOfferEnabled=${autoOfferEnabled}, legacyRoutingPosture=${routingPosture}, legacySensitivityPercent=${sensitivityPercent}, sensitivityStepPercent=${sensitivityStepPercent}, legacyAutoOfferThreshold=${autoOfferThreshold}, legacyStrongOfferThreshold=${strongOfferThreshold}, topicGate=${topicGate}. The legacy thresholds and posture are compatibility/telemetry only; do not use them as a broad routing decision.
 
 Language routing is English-first. defaultLanguage=${defaultLanguage}, translationFallback=${translationFallback}. translationFallback=claude-current-prompt is Claude's own current-prompt understanding, not an external translation call or transcript/history read.
 
 Current local runtimePolicy: profile=${runtime.profile}, rawProfile=${runtime.rawProfile}, ${runtime.manager}, ${runtime.executor}, ${runtime.verifier}. Default runtime uses the release default executor/verifier preferences without writing those concrete choices into default config.
 
-Current installed Nogra plugin: ${plugin.id} ref=${plugin.ref}. When the user asks for Nogra status, include this plugin ref and workspace releaseVersion from .nogra/config.json. Use the local runtime for status.
+Current installed Nogra plugin: ${plugin.id} ref=${plugin.ref}. When the user asks for Nogra status, include this plugin ref plus workspace id and local runtime state. Use the local runtime for status.
 
 runtimePolicy is a user-facing Nogra preference. Default/custom is the Nogra-level state. Concrete executor/verifier model and effort belong in config only when profile=custom, and should be included in dispatch handoffs and run-agent instructions when the client/runtime can honor them. Claude Code's native /model, /effort and subagent UI remain the source of truth for the actual running model/effort shown by Claude Code.
 
-Hooks are routing guardrails when Nogra automatic routing is on. They read local .nogra/config.json and may write only bounded local routing telemetry under .nogra/runtime/last-routing-score.json plus the current local session anchor under .nogra/runtime/session-anchor.json. They do not write config, dispatch, verify, spawn agents, run extension plugins, draft briefs, read full transcripts, or promote checkpoints. Nogra actions use the local runtime and local .nogra/ records. UserPromptSubmit does not regex-route natural-language intent. If PreToolUse catches an executable irreversible boundary, stop and wait for the user to choose direct work or Nogra brief flow for this task. /nogra:off is only for workspace-level disable.
+Hooks are context guardrails only. They read local .nogra/config.json and may write the current local session anchor under .nogra/runtime/session-anchor.json. They do not inspect tool calls, score prompts, write routing telemetry, change config, dispatch, verify, spawn agents, run extension plugins, draft briefs, read full transcripts, or promote checkpoints. Nogra actions use the local runtime and local .nogra/ records. UserPromptSubmit does not regex-route natural-language intent; it only adds project-focus context when the user clearly selects a project from the workspace hub.
 
 Session continuity rule: ledger state is the truth source and checkpoint state is a human-readable projection. If checkpointStatus=stale, the ledger has newer facts than .nogra/state/SESSION-CHECKPOINT.md. Treat the checkpoint as stale; when the user asks to continue, wrap up, or save progress, refresh/propose the checkpoint from ledger facts rather than inventing memory from chat.
 </NOGRA_ROUTING_POLICY>

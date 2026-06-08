@@ -15,7 +15,6 @@ const localRuntime = path.join(pluginRoot, "scripts", "nogra-local.mjs");
 const ledgerRuntime = path.join(pluginRoot, "scripts", "nogra-ledger.mjs");
 const sessionStartHook = path.join(pluginRoot, "hooks", "session-start.mjs");
 const userPromptSubmitHook = path.join(pluginRoot, "hooks", "user-prompt-submit.mjs");
-const preToolUseHook = path.join(pluginRoot, "hooks", "pre-tool-use.mjs");
 
 function parseFrontmatter(text) {
   const lines = text.split(/\r?\n/);
@@ -200,20 +199,21 @@ function main() {
   }
   const freshConfig = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "config.json"), "utf8"));
   assert(freshConfig.connectionMode === "local", "fresh config should declare local mode");
-  assert(freshConfig.releaseVersion === "v1.0.0", "fresh config should declare releaseVersion");
+  assert(!Object.hasOwn(freshConfig, "releaseVersion"), "fresh config should not write releaseVersion");
   assert(!Object.hasOwn(freshConfig, "version"), "fresh config should not write root version");
   assert(!Object.hasOwn(freshConfig, ["play", "book", "Version"].join("")), "fresh config should not write legacy workspace field");
   assert(freshConfig.runtimePolicy?.profile === "default", "fresh config should use runtimePolicy profile default");
   assert(Object.keys(freshConfig.runtimePolicy?.roles || {}).length === 0, "fresh default config should not write concrete role runtime choices");
   assert(freshConfig.runtimePolicy?.budget?.mode === "default", "fresh default config should use default budget mode");
   assert(freshConfig.routingPolicy?.defaultLanguage === "en", "fresh config should be English-first");
-  assert(Array.isArray(freshConfig.routingPolicy?.dictionary?.createIntent), "fresh config should include dictionary arrays");
-  assert(freshConfig.routingPolicy.dictionary.createIntent.length === 0, "fresh routing phrase arrays should be empty");
+  assert(!Object.hasOwn(freshConfig.routingPolicy || {}, "autoOfferEnabled"), "fresh config should not write automatic offer controls");
+  assert(!Object.hasOwn(freshConfig.routingPolicy || {}, "sensitivityPercent"), "fresh config should not write sensitivity controls");
+  assert(!Object.hasOwn(freshConfig.routingPolicy || {}, "scoring"), "fresh config should not write scoring controls");
 
   const status = run(["status", "--root", temp]);
   assert(status.workspace.mode === "local", "fresh workspace should be local");
-  assert(status.workspace.releaseVersion === "v1.0.0", "fresh status should expose workspace releaseVersion");
-  assert(status.workspace.contractVersion === "v1.0.0", "fresh status should expose workspace contractVersion");
+  assert(!Object.hasOwn(status.workspace, "releaseVersion"), "fresh status should not expose workspace releaseVersion");
+  assert(!Object.hasOwn(status.workspace, "contractVersion"), "fresh status should not expose workspace contractVersion");
   assert(status.hostedMcpUsed === false, "fresh status should remain local");
   assert(status.runtimePolicy?.profile === "default", "status should expose normalized runtimePolicy profile default");
   assert(status.routingPolicy?.configured === true, "fresh status should mark routingPolicy configured");
@@ -247,32 +247,9 @@ function main() {
     prompt: "Build and verify a multi-file dashboard with tests and screenshots."
   });
   const submitPreferenceContext = submitPreference.hookSpecificOutput?.additionalContext || "";
-  assert(!submitPreferenceContext.includes("NOGRA_IRREVERSIBLE_TRIPWIRE"), "UserPromptSubmit should not tripwire normal scoped work");
-  assert(fs.existsSync(rootRoutingScorePath), "UserPromptSubmit should write routing score under workspace root .nogra");
-  const rootRoutingScoreAfterSubmit = JSON.parse(fs.readFileSync(rootRoutingScorePath, "utf8"));
-  assert(rootRoutingScoreAfterSubmit.tripwire?.active === false, "UserPromptSubmit should persist no tripwire for normal scoped work");
+  assert(!submitPreferenceContext, "UserPromptSubmit should stay silent for normal scoped work");
+  assert(!fs.existsSync(rootRoutingScorePath), "UserPromptSubmit should not write routing score under workspace root .nogra");
   assert(!fs.existsSync(nestedRoutingScorePath), "UserPromptSubmit should not write routing score under nested manager .nogra");
-  const preToolSafe = runHook(preToolUseHook, {
-    cwd: nestedManagerRoot,
-    workspace_roots: [temp],
-    session_id: "session-root-pretool-safe-001",
-    transcript_path: "/tmp/transcript-root-pretool-safe-001.jsonl",
-    tool_name: "Bash",
-    tool_input: { command: "npm test" }
-  });
-  assert(preToolSafe.hookSpecificOutput?.permissionDecision !== "ask", "PreToolUse should not ask for safe promptless commands");
-  const preToolPreference = runHook(preToolUseHook, {
-    cwd: nestedManagerRoot,
-    workspace_roots: [temp],
-    session_id: "session-root-pretool-001",
-    transcript_path: "/tmp/transcript-root-pretool-001.jsonl",
-    tool_name: "Bash",
-    tool_input: { command: "vercel --prod" }
-  });
-  assert(preToolPreference.hookSpecificOutput?.permissionDecision === "ask", "PreToolUse should ask on executable production boundary");
-  const rootRoutingScoreAfterPreTool = JSON.parse(fs.readFileSync(rootRoutingScorePath, "utf8"));
-  assert(rootRoutingScoreAfterPreTool.preToolPermissionDecision === "ask", "PreToolUse should update routing score under workspace root .nogra");
-  assert(!fs.existsSync(nestedRoutingScorePath), "PreToolUse should not create routing score under nested manager .nogra");
 
   const capturedAnchor = captureSessionAnchor(temp, {
     session_id: "session-smoke-001",
@@ -597,7 +574,6 @@ function main() {
         "manager/nogra-claude-plugin/skills/help/references/usage.md",
         "manager/nogra-claude-plugin/contracts/schemas/run-v1.schema.json",
         "manager/nogra-claude-plugin/hooks/session-start.mjs",
-        "manager/nogra-claude-plugin/hooks/pre-tool-use.mjs",
         "manager/nogra-claude-plugin/agents/executor.md",
         "manager/nogra-claude-plugin/agents/verifier.md",
         "active/example/app/schema.prisma",
@@ -712,7 +688,7 @@ function main() {
     session_id: "session-ledger-smoke-001",
     transcript_path: "/tmp/transcript-ledger-smoke-001.jsonl",
     cwd: ledgerSmokeWorkspace
-  }, "PreToolUse");
+  }, "SessionStart");
   const ledgerSmoke = run(["ledger-smoke", "--root", ledgerSmokeWorkspace, "--label", "smoke diagnostic"]);
   assert(ledgerSmoke.status === "ok", "ledger-smoke should return ok");
   assert(ledgerSmoke.event?.type === "diagnostic_ledger_smoke", "ledger-smoke should write diagnostic event type");
@@ -866,9 +842,9 @@ function main() {
           "manager workspace normalizes to local",
           "fresh init creates local workspace",
           "legacy mode aliases normalize to local",
-          "fresh init writes releaseVersion without legacy root version fields",
+          "fresh init avoids product-version fields",
           "fresh init writes runtimePolicy default without concrete role choices",
-          "fresh init is English-first with empty routing phrase arrays",
+          "fresh init is English-first without automatic routing controls",
           "fresh init and status expose ledger/checkpoint freshness",
           "hooks prefer workspace root .nogra over nested cwd .nogra",
           "legacy workspaces resolve defaults and migrate continuity layout",

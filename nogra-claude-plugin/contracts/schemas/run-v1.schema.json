@@ -5,7 +5,6 @@
   "type": "object",
   "required": [
     "schema",
-    "releaseVersion",
     "runId",
     "workspaceId",
     "briefId",
@@ -16,10 +15,6 @@
   "properties": {
     "schema": {
       "const": "nogra.run.v1"
-    },
-    "releaseVersion": {
-      "type": "string",
-      "pattern": "^v[1-9][0-9]*\\.[0-9]+\\.[0-9]+$"
     },
     "runId": {
       "type": "string",

@@ -5,7 +5,6 @@
   "type": "object",
   "required": [
     "schema",
-    "releaseVersion",
     "generatedAt",
     "target",
     "briefId",
@@ -14,10 +13,6 @@
   "properties": {
     "schema": {
       "const": "nogra.dispatch.handoff.v1"
-    },
-    "releaseVersion": {
-      "type": "string",
-      "pattern": "^v[1-9][0-9]*\\.[0-9]+\\.[0-9]+$"
     },
     "generatedAt": {
       "type": "string",
@@ -35,16 +30,12 @@
       "type": "object",
       "required": [
         "schema",
-        "releaseVersion",
         "briefId",
         "title",
         "intent"
       ],
       "properties": {
         "schema": {
-          "type": "string"
-        },
-        "releaseVersion": {
           "type": "string"
         },
         "briefId": {
