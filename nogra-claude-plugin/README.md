@@ -80,7 +80,7 @@ Expected behavior: Nogra shapes a brief first, waits for user approval,
 dispatches only after GO, then verifies the result against the brief and
 available evidence before calling it done.
 
-### Work directly when you mean direct
+### Build directly
 
 Ask Claude:
 
