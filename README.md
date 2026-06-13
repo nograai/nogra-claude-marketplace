@@ -55,10 +55,42 @@ For a workspace that manages several projects:
 - Lifecycle continuity: lightweight hooks for session boot, compaction resume,
   session end and workspace-project focus.
 
-The hooks are state surfaces, not policy gates. They do not score prompts,
-inspect tool calls, maintain a separate safety layer, draft briefs, dispatch
+The hooks are state surfaces, not policy gates. Pull-first does not mean no
+hooks ever run: in an initialized workspace, Nogra may run local lifecycle and
+convergence hooks so it can keep continuity state and ask at permanent-risk
+boundaries. Those hooks stay local, should stay silent for ordinary work, and
+do not score prompts, maintain a separate safety layer, draft briefs, dispatch
 work or mark verification green. Skills own the Nogra workflow, and Claude
 Code's native permission model remains responsible for tool permissions.
+
+## Turn Off or Uninstall
+
+Nogra has two separate off switches.
+
+For one workspace, remove or rename that folder's `.nogra/` directory. That
+turns off Nogra's workspace state, ledger, routing and convergence checks for
+that project, but it does not uninstall the Claude Code plugin from your
+machine.
+
+For the plugin itself, use Claude Code's plugin manager:
+
+```text
+/plugin
+```
+
+Open the Installed tab, choose Nogra, then Disable or Uninstall. You can also
+use the CLI with the exact plugin id shown by `/plugin` or
+`claude plugin list`:
+
+```bash
+claude plugin disable nogra@nogra-claude
+claude plugin uninstall nogra@nogra-claude
+```
+
+If you disable or uninstall during an active Claude Code session, run
+`/reload-plugins` or restart Claude Code before trusting the loaded plugin
+state. Do not edit `settings.json` by hand unless Claude Code explicitly tells
+you to; plugin scope can be user, project or local.
 
 ## Commands
 
