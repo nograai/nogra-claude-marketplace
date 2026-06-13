@@ -242,12 +242,12 @@
 
 ## 0.3.2 - 2026-05-26
 
-- Removed internal-experimental vocabulary from public skill docs: "Kasper"
-  persona-reference and "contamination/design-DNA hypothesis" research-vocab in
-  `skills/verify/SKILL.md` replaced with neutral equivalents.
+- Removed internal-experimental vocabulary from public skill docs: persona and
+  research references in `skills/verify/SKILL.md` replaced with neutral
+  equivalents.
 - Swept skill, contract, agent, and hook docs for other persona-names,
-  research-terms, dogfood-vocab, and project-codename leaks; applied fixes
-  where found.
+  research terms, private evaluation vocabulary, and project-codename leaks;
+  applied fixes where found.
 - Extended preflight checks to enforce no-internal-experimental-vocab in public
   docs mechanically, excluding CHANGELOG, LICENSE and NOTICE historical
   exemptions.
