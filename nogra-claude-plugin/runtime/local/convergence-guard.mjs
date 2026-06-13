@@ -150,6 +150,9 @@ function listTransportRuns(root) {
         phase: cleanInline(payload.phase || ""),
         owner: cleanInline(payload.owner || payload.metadata?.owner || ""),
         nextOwner: cleanInline(payload.nextOwner || payload.metadata?.nextOwner || ""),
+        stopReason: cleanInline(payload.stopReason || payload.metadata?.stopReason || ""),
+        returnReason: cleanInline(payload.returnReason || payload.reason || payload.metadata?.returnReason || payload.metadata?.reason || ""),
+        pendingState: cleanInline(payload.pendingState || payload.metadata?.pendingState || ""),
         createdAt: cleanInline(payload.createdAt || ""),
         updatedAt: cleanInline(payload.updatedAt || payload.createdAt || ""),
         topLevelRequiresManagerDecision: Boolean(payload.requiresManagerDecision),
@@ -887,6 +890,72 @@ function reasonLine(review) {
   return review.reason;
 }
 
+function readableIssue(issue) {
+  const cleaned = cleanInline(issue);
+  if (!cleaned) return "not a valid match";
+  if (cleaned === "requiresManagerDecision=true") return "needs Manager decision first";
+  if (cleaned.startsWith("pending nextOwner=")) {
+    return `waiting on ${cleaned.slice("pending nextOwner=".length) || "another owner"}`;
+  }
+  if (cleaned.startsWith("status ")) {
+    return `status ${cleaned.slice("status ".length)}`;
+  }
+  if (cleaned === "missing brief scope") return "has no brief scope";
+  if (cleaned === "terminal receipt has no report/output/validation artifact") {
+    return "has no returned evidence";
+  }
+  if (cleaned.startsWith("superseded by ")) return `superseded by ${shortReceiptId(cleaned.slice("superseded by ".length))}`;
+  return cleaned;
+}
+
+function receiptReturnReason(review) {
+  return cleanInline(review.returnReason || review.currentActionReturnReason || review.candidateActionReturnReason || "");
+}
+
+function statusCoverageLine(review, action) {
+  const status = cleanInline(review.currentActionStatus || review.candidateActionStatus || "").toLowerCase();
+  if (status === "partial") {
+    const reason = receiptReturnReason(review) || "work stopped before completion";
+    return `Why: recent Nogra run ${shortReceiptId(review.currentActionReceipt || review.candidateActionReceipt)} is partial (${reason}), so it cannot approve ${action}`;
+  }
+  if (status === "blocked" || status === "failed" || status === "cancelled") {
+    return `Why: recent Nogra run ${shortReceiptId(review.currentActionReceipt || review.candidateActionReceipt)} is ${status}, so it cannot approve ${action}`;
+  }
+  return "";
+}
+
+function readableCoverageLine(review, action) {
+  const statusLine = statusCoverageLine(review, action);
+  if (statusLine) return statusLine;
+  if (review.currentActionReceipt) {
+    return `Why: recent Nogra run ${shortReceiptId(review.currentActionReceipt)} exists, but it does not cover ${action}`;
+  }
+  if (review.candidateActionReceipt) {
+    return `Why: recent Nogra run ${shortReceiptId(review.candidateActionReceipt)} cannot approve this (${readableIssue(review.candidateActionIssue)})`;
+  }
+  return `Why: no active Nogra run covers ${action}`;
+}
+
+function auditReceipt(review) {
+  if (review.currentActionReceipt) {
+    return `receipt=${shortReceiptId(review.currentActionReceipt)} status=${review.currentActionStatus || "unknown"}`;
+  }
+  if (review.candidateActionReceipt) {
+    return `candidate=${shortReceiptId(review.candidateActionReceipt)} status=${review.candidateActionStatus || "unknown"}`;
+  }
+  return "receipt=none";
+}
+
+function auditCoverage(review) {
+  if (review.state === "approved") return "covered";
+  if (review.authorization === "missing") return "missing";
+  return "not-covered";
+}
+
+function readableAuditLine(review, action) {
+  return `Audit: action=${action}; coverage=${auditCoverage(review)}; ${auditReceipt(review)}`;
+}
+
 function visibleCandidateReceipt(candidate) {
   if (!candidate) return null;
   if (candidate.ageMs > AUTHORIZATION_RECEIPT_TTL_MS) return null;
@@ -898,22 +967,21 @@ function actionReviewMessage(review) {
   const action = review.actionType || "this action";
   const parts = review.state === "needs confirmation"
     ? [
-        `Nogra needs your call before ${action}`,
-        "Decision: approve only if this command is inside the current user GO",
+        `Nogra check: ${action}`,
+        "Approve only if you intended this now",
         `Impact: ${actionImpact(action)}`,
-        `Coverage: ${coverageLine(review)}`,
-        `Reason: ${reasonLine(review)}`,
-        "Next: approve once, or stop and create/dispatch a Nogra brief for new scope; a promoted brief alone is not GO",
-        `Audit: ${auditFields(review)}`
+        readableCoverageLine(review, action),
+        "Next: approve once to continue, or stop and brief this action first",
+        readableAuditLine(review, action)
       ]
     : [
-        review.authorization === "inherited" ? `Nogra matched ${action} to current receipt` : `Nogra matched ${action}`,
+        review.authorization === "inherited" ? `Nogra check: ${action} matched current Nogra run` : `Nogra check: ${action}`,
         `Impact: ${actionImpact(action)}`,
         `Coverage: ${coverageLine(review)}`,
         `Reason: ${reasonLine(review)}`,
-        `Audit: ${auditFields(review)}`
+        readableAuditLine(review, action)
       ];
-  let message = parts.join(". ");
+  let message = parts.join("\n");
   if (review.state === "approved") {
     message = `${message}. Claude Code permission rules still apply`;
   }
@@ -984,6 +1052,7 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
       currentActionAge: receipt.age,
       currentActionBrief: receipt.briefId,
       currentActionNextOwner: receipt.nextOwner,
+      currentActionReturnReason: receipt.returnReason,
       reason: `${risk} is matched to a valid class-scoped dispatch receipt`
     };
   } else {
@@ -999,10 +1068,12 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
       currentActionAge: receipt?.age || "",
       currentActionBrief: receipt?.briefId || "",
       currentActionNextOwner: receipt?.nextOwner || "",
+      currentActionReturnReason: receipt?.returnReason || "",
       candidateActionReceipt: candidate?.runId || "",
       candidateActionStatus: candidate?.status || "",
       candidateActionAge: candidate?.age || "",
       candidateActionIssue: candidate?.authorizationIssue || "",
+      candidateActionReturnReason: candidate?.returnReason || "",
       reason: receipt
         ? `${risk} reaches a high/critical boundary without class-scoped receipt authorization`
         : candidate

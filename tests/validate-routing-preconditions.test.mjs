@@ -93,6 +93,28 @@ function additionalContext(result) {
   return parseHookOutput(result).hookSpecificOutput?.additionalContext || "";
 }
 
+function permissionReview(result) {
+  const parsed = parseHookOutput(result);
+  return String(parsed.hookSpecificOutput?.permissionDecisionReason || parsed.systemMessage || "");
+}
+
+function assertReadableReview(result, action, label) {
+  const message = permissionReview(result);
+  assert(message.includes(`Nogra check: ${action}`), `${label} uses readable Nogra check header`);
+  assert(message.includes("Approve only if you intended this now"), `${label} gives a plain approval rule`);
+  assert(!message.includes("Nogra needs your call"), `${label} does not use old overloaded guard phrasing`);
+  for (const rawField of [
+    "Coverage:",
+    "currentActionReceipt=",
+    "candidateActionReceipt=",
+    "candidateActionIssue=",
+    "requiresManagerDecision=true",
+    "class-scoped"
+  ]) {
+    assert(!message.includes(rawField), `${label} does not expose raw guard field ${rawField}`);
+  }
+}
+
 console.log("Lifecycle hook wiring:");
 {
   const hooksConfig = JSON.parse(fs.readFileSync(hooksConfigPath, "utf8"));
@@ -210,7 +232,7 @@ console.log("PreToolUse convergence gate:");
   const remoteExecutionOutput = parseHookOutput(remoteExecutionPipe).hookSpecificOutput || {};
   assert(remoteExecutionPipe.status === 0, "curl shell pipe exits cleanly");
   assert(remoteExecutionOutput.permissionDecision === "ask", "curl piped to a shell asks without current receipt");
-  assert(String(remoteExecutionOutput.permissionDecisionReason || "").includes("remote execution pipe"), "curl shell pipe reason classifies remote execution");
+  assertReadableReview(remoteExecutionPipe, "remote execution pipe", "curl shell pipe review");
 
   const localCommit = runHook(preToolUseHook, {
     cwd: root,
@@ -252,8 +274,8 @@ console.log("PreToolUse convergence gate:");
   assert(psqlUpdate.status === 0, "psql mutation risk exits cleanly");
   assert(psqlUpdateOutput.hookEventName === "PreToolUse", "psql mutation risk reports PreToolUse");
   assert(psqlUpdateOutput.permissionDecision === "ask", "psql mutation asks without current receipt");
-  assert(String(parseHookOutput(psqlUpdate).systemMessage || "").includes("Nogra needs your call"), "psql mutation emits visible confirmation review");
-  assert(String(psqlUpdateOutput.permissionDecisionReason || "").includes("database mutation"), "psql mutation reason classifies database mutation");
+  assertReadableReview(psqlUpdate, "database mutation", "psql mutation review");
+  assert(permissionReview(psqlUpdate).includes("Why: no active Nogra run covers database mutation"), "psql mutation explains missing coverage plainly");
 
   const stripeCustomerCreate = runHook(preToolUseHook, {
     cwd: root,
@@ -268,7 +290,7 @@ console.log("PreToolUse convergence gate:");
   const stripeCustomerCreateOutput = parseHookOutput(stripeCustomerCreate).hookSpecificOutput || {};
   assert(stripeCustomerCreate.status === 0, "stripe customer create risk exits cleanly");
   assert(stripeCustomerCreateOutput.permissionDecision === "ask", "real billing/customer mutation still asks");
-  assert(String(stripeCustomerCreateOutput.permissionDecisionReason || "").includes("customer/billing action"), "real billing/customer mutation keeps its risk class");
+  assertReadableReview(stripeCustomerCreate, "customer/billing action", "billing/customer mutation review");
 
   const findDelete = runHook(preToolUseHook, {
     cwd: root,
@@ -283,7 +305,7 @@ console.log("PreToolUse convergence gate:");
   const findDeleteOutput = parseHookOutput(findDelete).hookSpecificOutput || {};
   assert(findDelete.status === 0, "find action risk exits cleanly");
   assert(findDeleteOutput.permissionDecision === "ask", "find delete asks before destructive action");
-  assert(String(findDeleteOutput.permissionDecisionReason || "").includes("find action"), "find delete reason classifies find action");
+  assertReadableReview(findDelete, "find action", "find delete review");
 
   const vercelProd = runHook(preToolUseHook, {
     cwd: root,
@@ -298,7 +320,7 @@ console.log("PreToolUse convergence gate:");
   const vercelProdOutput = parseHookOutput(vercelProd).hookSpecificOutput || {};
   assert(vercelProd.status === 0, "vercel --prod risk exits cleanly");
   assert(vercelProdOutput.permissionDecision === "ask", "vercel --prod asks without current receipt");
-  assert(String(vercelProdOutput.permissionDecisionReason || "").includes("production deploy"), "vercel --prod reason classifies production deploy");
+  assertReadableReview(vercelProd, "production deploy", "vercel --prod review");
 
   fs.mkdirSync(path.join(root, ".nogra", "transport", "runs"), { recursive: true });
   fs.writeFileSync(

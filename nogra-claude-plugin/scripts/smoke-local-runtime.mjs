@@ -131,6 +131,27 @@ function assert(condition, message) {
   }
 }
 
+function permissionReview(output) {
+  return String(output.hookSpecificOutput?.permissionDecisionReason || output.systemMessage || "");
+}
+
+function assertReadableReview(output, action, label) {
+  const message = permissionReview(output);
+  assert(message.includes(`Nogra check: ${action}`), `${label} should start with a readable Nogra check header`);
+  assert(message.includes("Approve only if you intended this now"), `${label} should give a plain approval rule`);
+  assert(!message.includes("Nogra needs your call"), `${label} should not use the old overloaded guard phrasing`);
+  for (const rawField of [
+    "Coverage:",
+    "currentActionReceipt=",
+    "candidateActionReceipt=",
+    "candidateActionIssue=",
+    "requiresManagerDecision=true",
+    "class-scoped"
+  ]) {
+    assert(!message.includes(rawField), `${label} should not expose raw guard field ${rawField}`);
+  }
+}
+
 function assertRunFails(args, message) {
   try {
     run(args);
@@ -371,7 +392,8 @@ function main() {
     transcript_path: "/tmp/transcript-pretool-curl-exec-pipe-001.jsonl"
   });
   assert(remoteExecutionPipe.hookSpecificOutput?.permissionDecision === "ask", "curl piped to a shell should ask without a current receipt");
-  assert(String(remoteExecutionPipe.hookSpecificOutput?.permissionDecisionReason || "").includes("remote execution pipe"), "curl shell pipe reason should classify remote execution");
+  assertReadableReview(remoteExecutionPipe, "remote execution pipe", "curl shell pipe review");
+  assert(permissionReview(remoteExecutionPipe).includes("Impact: executes code fetched from a public URL in a local shell/runtime"), "curl shell pipe review should explain impact plainly");
 
   const stripeCustomerCreate = runPreToolUseHook({
     cwd: temp,
@@ -384,7 +406,7 @@ function main() {
     transcript_path: "/tmp/transcript-pretool-stripe-customer-create-001.jsonl"
   });
   assert(stripeCustomerCreate.hookSpecificOutput?.permissionDecision === "ask", "real billing/customer mutation should still ask");
-  assert(String(stripeCustomerCreate.hookSpecificOutput?.permissionDecisionReason || "").includes("customer/billing action"), "real billing/customer mutation should keep its risk class");
+  assertReadableReview(stripeCustomerCreate, "customer/billing action", "billing/customer mutation review");
 
   const findDelete = runPreToolUseHook({
     cwd: temp,
@@ -397,7 +419,7 @@ function main() {
     transcript_path: "/tmp/transcript-pretool-find-delete-001.jsonl"
   });
   assert(findDelete.hookSpecificOutput?.permissionDecision === "ask", "find delete should ask before destructive action");
-  assert(String(findDelete.hookSpecificOutput?.permissionDecisionReason || "").includes("find action"), "find delete should classify find action");
+  assertReadableReview(findDelete, "find action", "find delete review");
 
   const localCommitWithoutReceipt = runPreToolUseHook({
     cwd: temp,
@@ -444,7 +466,8 @@ function main() {
     transcript_path: "/tmp/transcript-pretool-vercel-prod-001.jsonl"
   });
   assert(vercelProdWithoutReceipt.hookSpecificOutput?.permissionDecision === "ask", "PreToolUse should ask before vercel --prod without a current receipt");
-  assert(String(vercelProdWithoutReceipt.hookSpecificOutput?.permissionDecisionReason || "").includes("production deploy"), "vercel --prod reason should classify production deploy");
+  assertReadableReview(vercelProdWithoutReceipt, "production deploy", "vercel --prod review without receipt");
+  assert(permissionReview(vercelProdWithoutReceipt).includes("Why: no active Nogra run covers production deploy"), "vercel --prod review should explain missing coverage plainly");
 
   const receiptBaseMs = Date.now();
   writeJson(path.join(temp, ".nogra", "transport", "runs", "transport-convergence-smoke.json"), {
@@ -480,8 +503,9 @@ function main() {
     transcript_path: "/tmp/transcript-pretool-generic-receipt-deploy-001.jsonl"
   });
   assert(deployWithGenericReceipt.hookSpecificOutput?.permissionDecision === "ask", "generic current receipt should not authorize high boundary before class-scoped receipts exist");
-  assert(String(deployWithGenericReceipt.systemMessage || "").includes("Coverage: no class-scoped receipt match"), "generic current receipt should surface missing class-scoped coverage");
-  assert(String(deployWithGenericReceipt.systemMessage || "").includes("currentActionReceipt=transport-convergence-smoke"), "generic current receipt should stay visible in audit");
+  assertReadableReview(deployWithGenericReceipt, "production deploy", "generic receipt deploy review");
+  assert(permissionReview(deployWithGenericReceipt).includes("Why: recent Nogra run transport-convergence-smoke exists, but it does not cover production deploy"), "generic current receipt should surface missing coverage plainly");
+  assert(permissionReview(deployWithGenericReceipt).includes("Audit: action=production deploy; coverage=not-covered; receipt=transport-convergence-smoke status=queued"), "generic current receipt should stay visible in readable audit");
 
   writeJson(path.join(temp, ".nogra", "transport", "runs", "transport-convergence-manager-decision.json"), {
     runId: "transport-convergence-manager-decision",
@@ -520,8 +544,9 @@ function main() {
     transcript_path: "/tmp/transcript-pretool-manager-decision-receipt-deploy-001.jsonl"
   });
   assert(managerDecisionReceiptDeploy.hookSpecificOutput?.permissionDecision === "ask", "queued receipt requiring Manager decision should not authorize high boundary");
-  assert(String(managerDecisionReceiptDeploy.systemMessage || "").includes("candidateActionReceipt=transport-convergence-manager-decision"), "invalid receipt review should name the candidate receipt on high boundary");
-  assert(String(managerDecisionReceiptDeploy.systemMessage || "").includes("candidateActionIssue=requiresManagerDecision=true"), "invalid receipt review should expose Manager-decision issue on high boundary");
+  assertReadableReview(managerDecisionReceiptDeploy, "production deploy", "Manager-decision receipt review");
+  assert(permissionReview(managerDecisionReceiptDeploy).includes("Why: recent Nogra run transport-convergence-manager-decision cannot approve this (needs Manager decision first)"), "invalid receipt review should explain Manager-decision issue plainly");
+  assert(permissionReview(managerDecisionReceiptDeploy).includes("Audit: action=production deploy; coverage=not-covered; candidate=transport-convergence-manager-decision status=queued"), "invalid receipt review should name the candidate in readable audit");
 
   const staleReceiptWorkspace = path.join(temp, "stale-receipt-workspace");
   run(["init", "--apply", "--root", staleReceiptWorkspace, "--workspace-name", "Stale Receipt"]);
@@ -558,7 +583,8 @@ function main() {
     transcript_path: "/tmp/transcript-pretool-stale-receipt-deploy-001.jsonl"
   });
   assert(staleReceiptDeploy.hookSpecificOutput?.permissionDecision === "ask", "stale queued receipt should not authorize high boundary");
-  assert(!String(staleReceiptDeploy.systemMessage || "").includes("candidateActionIssue=stale"), "stale receipt debris should not be surfaced as a normal action candidate");
+  assertReadableReview(staleReceiptDeploy, "production deploy", "stale receipt deploy review");
+  assert(permissionReview(staleReceiptDeploy).includes("Why: no active Nogra run covers production deploy"), "stale receipt debris should not be surfaced as a normal action candidate");
 
   const supersededReceiptWorkspace = path.join(temp, "superseded-receipt-workspace");
   run(["init", "--apply", "--root", supersededReceiptWorkspace, "--workspace-name", "Superseded Receipt"]);
@@ -614,7 +640,47 @@ function main() {
     transcript_path: "/tmp/transcript-superseded-receipt-deploy-001.jsonl"
   });
   assert(supersededReceiptDeploy.hookSpecificOutput?.permissionDecision === "ask", "terminal generic receipt should not authorize high boundary before class-scoped receipts exist");
-  assert(String(supersededReceiptDeploy.systemMessage || "").includes("currentActionReceipt=transport-superseding-ok"), "terminal superseding receipt should stay visible in high-boundary audit");
+  assertReadableReview(supersededReceiptDeploy, "production deploy", "terminal superseding receipt deploy review");
+  assert(permissionReview(supersededReceiptDeploy).includes("Why: recent Nogra run transport-superseding-ok exists, but it does not cover production deploy"), "terminal superseding receipt should explain missing high-boundary coverage plainly");
+  assert(permissionReview(supersededReceiptDeploy).includes("Audit: action=production deploy; coverage=not-covered; receipt=transport-superseding-ok status=ok"), "terminal superseding receipt should stay visible in readable audit");
+
+  const partialReceiptWorkspace = path.join(temp, "partial-receipt-workspace");
+  run(["init", "--apply", "--root", partialReceiptWorkspace, "--workspace-name", "Partial Receipt"]);
+  writeJson(path.join(partialReceiptWorkspace, ".nogra", "transport", "runs", "transport-partial-maxturns.json"), {
+    runId: "transport-partial-maxturns",
+    briefId: "brief-partial",
+    status: "partial",
+    phase: "returned",
+    owner: "Manager",
+    nextOwner: "Manager",
+    target: "executor",
+    stopReason: "maxTurns_exhausted",
+    returnReason: "Work stopped before completion while tool work was still pending.",
+    paths: {
+      validation: ".nogra/transport/artifacts/transport-partial-maxturns/validation.json"
+    },
+    artifacts: {
+      validationExists: true
+    },
+    updatedAt: new Date(receiptBaseMs - 2 * 60 * 1000).toISOString()
+  });
+  writeJson(path.join(partialReceiptWorkspace, ".nogra", "transport", "artifacts", "transport-partial-maxturns", "validation.json"), {
+    verdict: "partial"
+  });
+  const partialReceiptDeploy = runPreToolUseHook({
+    cwd: partialReceiptWorkspace,
+    workspace_roots: [partialReceiptWorkspace],
+    tool_name: "Bash",
+    tool_input: {
+      command: "vercel --prod"
+    },
+    session_id: "session-pretool-partial-receipt-deploy-001",
+    transcript_path: "/tmp/transcript-partial-receipt-deploy-001.jsonl"
+  });
+  assert(partialReceiptDeploy.hookSpecificOutput?.permissionDecision === "ask", "partial receipt should not authorize high boundary before class-scoped receipts exist");
+  assertReadableReview(partialReceiptDeploy, "production deploy", "partial receipt deploy review");
+  assert(permissionReview(partialReceiptDeploy).includes("Why: recent Nogra run transport-partial-maxturns is partial (Work stopped before completion while tool work was still pending.), so it cannot approve production deploy"), "partial receipt should surface the plain return reason");
+  assert(!permissionReview(partialReceiptDeploy).includes("maxTurns_exhausted"), "partial receipt review should not expose internal maxTurns stop reason");
 
   const rootRoutingScorePath = path.join(temp, ".nogra", "runtime", "last-routing-score.json");
   const nestedRoutingScorePath = path.join(nestedManagerRoot, ".nogra", "runtime", "last-routing-score.json");
