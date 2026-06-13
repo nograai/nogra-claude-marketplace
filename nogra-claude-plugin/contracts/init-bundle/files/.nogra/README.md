@@ -13,6 +13,8 @@ live in domain folders:
 - `reports/` - final reports.
 - `checkpoints/` - dated checkpoint snapshots.
 - `ledger/` - append-only state facts used for checkpoint freshness.
+- `index/` - workspace index, risk intake, behavior score, risk registry and
+  expansion guidance.
 - `memory/local/` - local continuity notes.
 - `memory/sync/` - sync metadata only when sync is enabled.
 - `transport/` - dispatch artifacts.

@@ -39,11 +39,19 @@ for Nogra, Claude may give one short non-blocking nudge before the run starts:
 first?" Do not repeat it after the user continues direct. Do not convert this
 into prompt scoring or keyword scoring.
 
-Irreversible, production, billing, data, permissions or secrets work still
-requires judgment and Claude Code's native permission model. Nogra core does
-not intercept tool calls or replace provider permissions.
+Irreversible, production, billing, data, permissions, secrets or git-history
+work still requires judgment and Claude Code's native permission model. The
+local runtime includes a narrow deterministic `PreToolUse` convergence
+gate for those risk boundaries: it asks when a permanent-risk tool call has no
+current dispatch receipt. It may also emit a visible Nogra match review for
+read-only public fetches or risk-boundary actions already matched to the current
+dispatch receipt. Match reviews add context only; they do not send
+`permissionDecision: allow`, score prompts, start Nogra flows or replace
+provider permissions.
 
-Full route details live in `references/router.md`.
+Full route details live in `references/router.md`. The five-anchor local index
+for risk intake, behavior score, connections/risk registry, decision shape and
+expansion guidance lives in `references/index.md`.
 
 ## Hooks
 
@@ -60,9 +68,12 @@ metadata is available.
 `UserPromptSubmit` may add project-focus context when the user clearly selects
 an indexed project from a workspace hub.
 
-Nogra core hooks do not score prompts, emit proactive brief prompts, inspect tool
-calls, change config, draft briefs, dispatch, verify, spawn agents, or read
-full transcripts.
+`PreToolUse` asks only at deterministic git/action risk boundaries when there is
+no current dispatch receipt. It can emit non-blocking match-review context for
+conservative read-only public fetches and receipt-matched risk actions.
+
+Nogra core hooks do not score prompts, emit proactive brief prompts, change
+config, draft briefs, dispatch, verify, spawn agents, or read full transcripts.
 
 ## Language
 

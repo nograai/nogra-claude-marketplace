@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveBootContext } from "../runtime/local/boot-context.mjs";
+import { renderConvergenceGuardContext } from "../runtime/local/convergence-guard.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
 function readStdin() {
@@ -150,11 +151,14 @@ function sessionBootContext(root, config, source) {
 Nogra plugin: ${plugin.id} ref=${plugin.ref}.
 Nogra is pull-first. Explicit /nogra:* commands and direct Nogra requests start Nogra flows; ordinary workspace work stays direct.
 Use the thin Nogra intent router from workspace guidance/skills to choose a flow; if no Nogra route matches, stay direct.
-Hooks are lifecycle state surfaces only. They keep local workspace/project/session context visible; they do not score prompts, inspect tool calls, write routing telemetry, dispatch, verify, spawn agents, draft briefs or promote checkpoints.
+Hooks keep local workspace/project/session context visible. They do not score prompts, write routing telemetry, dispatch, verify, spawn agents, draft briefs or promote checkpoints.
+PreToolUse is a narrow deterministic convergence gate for git/action risk only. It does not score prompts or start Nogra flows; it asks when a permanent-risk tool call has no current dispatch receipt.
 Session state lives in local .nogra/ records. Ledger state is the truth source; checkpoint state is a human-readable projection.
 </NOGRA_SESSION_BOOT>
 
-${bootContextBlock(root)}`;
+${bootContextBlock(root)}
+
+${renderConvergenceGuardContext({ root, eventName: "SessionStart" })}`;
 }
 
 function resumePointerContext(root, config, source) {
@@ -171,7 +175,9 @@ checkpointStatus=${boot.checkpointStatus || "fresh"}
 status=${boot.status || ""}
 
 This is a continuity pointer after a resumed session. Do not treat compacted or resumed chat summaries as project truth. If current-state claims matter, read the project-local .nogra/state files before acting.
-</NOGRA_SESSION_RESUME>`;
+</NOGRA_SESSION_RESUME>
+
+${renderConvergenceGuardContext({ root, eventName: "SessionStart" })}`;
 }
 
 const input = parseInput(readStdin());
@@ -185,7 +191,7 @@ if (!config) {
 Current installed Nogra plugin: ${plugin.id} ref=${plugin.ref}.
 This folder is not Nogra-initialized yet because .nogra/config.json was not found.
 
-When the user asks for Nogra status or version, include this plugin ref and say the folder is not initialized. If the user asks what to do next, suggest /nogra:setup.
+When the user asks for Nogra ledger/state or version, include this plugin ref and say the folder is not initialized. If the user asks what to do next, suggest /nogra:setup.
 </NOGRA_PLUGIN_STATUS>`);
   process.exit(0);
 }

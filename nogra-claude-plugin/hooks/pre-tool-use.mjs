@@ -2,8 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { resolveBootContext } from "../runtime/local/boot-context.mjs";
-import { renderConvergenceGuardContext } from "../runtime/local/convergence-guard.mjs";
+import { evaluateToolConvergenceRisk } from "../runtime/local/convergence-guard.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
 function readStdin() {
@@ -63,20 +62,22 @@ function projectRoot(input) {
   );
 }
 
-function emitContext(context) {
+function emitReview(result) {
+  if (!result.reviewMessage) return;
+  const hookSpecificOutput = {
+    hookEventName: "PreToolUse",
+    additionalContext: result.reviewMessage
+  };
+  if (result.shouldAsk) {
+    hookSpecificOutput.permissionDecision = "ask";
+    hookSpecificOutput.permissionDecisionReason = result.reviewMessage;
+  }
   process.stdout.write(
     JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "PostCompact",
-        additionalContext: context
-      }
+      systemMessage: result.reviewMessage,
+      hookSpecificOutput
     })
   );
-}
-
-function compactSource(input) {
-  const source = cleanInline(input.source || input.trigger || input.compactSource).toLowerCase();
-  return ["manual", "auto"].includes(source) ? source : "unknown";
 }
 
 const input = parseInput(readStdin());
@@ -86,20 +87,11 @@ if (!hasNograConfig(root)) {
   process.exit(0);
 }
 
-captureSessionAnchor(root, input, "PostCompact");
-const boot = resolveBootContext({ cwd: root });
-const source = compactSource(input);
+captureSessionAnchor(root, input, "PreToolUse");
 
-emitContext(`<!-- nogra-plugin:post-compact source=${source} -->
-<NOGRA_COMPACT_POINTER>
-workspaceId=${boot.workspaceId || ""}
-workspaceRoot=${boot.workspaceRoot || root}
-status=${boot.status || ""}
-ledgerWatermark=${boot.ledgerWatermark ?? 0}
-checkpointSourceWatermark=${boot.checkpointSourceWatermark ?? 0}
-checkpointStatus=${boot.checkpointStatus || "fresh"}
+const result = evaluateToolConvergenceRisk({ root, input });
+if (!result.reviewMessage) {
+  process.exit(0);
+}
 
-This is a thin continuity pointer after context compaction. It is not workflow policy. Do not relitigate Nogra routing after compaction. If current-state claims matter, read project-local .nogra/state files and current git state before acting.
-</NOGRA_COMPACT_POINTER>
-
-${renderConvergenceGuardContext({ root, eventName: "PostCompact" })}`);
+emitReview(result);

@@ -56,30 +56,21 @@ lightweight; config schema lives in `.nogra/config.json`, not here.
 
 ## Local State
 
-`.nogra/` is the local trust source.
+`.nogra/` is the local trust source. Key records:
 
-After setup, `.nogra/config.json` stays in the `.nogra` root. Workflow records
-live in domain folders:
-
-- `.nogra/state/SESSION-CHECKPOINT.md`: current resume point.
-- `.nogra/state/CURRENT-TASKS.md`: active and parked work.
-- `.nogra/state/DECISIONS.md`: choices that should survive sessions.
-- `.nogra/state/PROJECT-STRUCTURE.md`: project-specific paths and boundaries.
-- `.nogra/briefs/`: saved briefs.
-- `.nogra/runs/`: run status records.
-- `.nogra/evidence/`: evidence files and references.
-- `.nogra/receipts/`: operation receipts.
-- `.nogra/reports/`: final reports and summaries.
-- `.nogra/checkpoints/`: dated checkpoint snapshots.
-- `.nogra/memory/local/`: local continuity notes.
-- `.nogra/memory/sync/`: sync metadata only when enabled.
-- `.nogra/transport/`: run receipts, logs, outputs, reports, and events.
+- `.nogra/state/`: checkpoint, tasks, decisions and project structure.
+- `.nogra/index/`: risk intake, behavior score, risk registry, workspace index
+  and expansion guidance.
+- `.nogra/briefs/`, `.nogra/transport/`, `.nogra/evidence/` and
+  `.nogra/reports/`: brief, run and verification artifacts.
+- `.nogra/memory/local/`: advisory continuity, not project truth.
 
 Use `/nogra:adapt` after setup when the user wants Nogra to read an existing
 project and create project-specific state from that evidence. Brief, dispatch
 and verification records are created lazily by their commands.
 
-Keep these files compact and factual. Do not turn them into a transcript.
+Keep these files compact and factual. Do not turn them into a transcript. Do not
+treat file presence as success; behavior is verified against evidence.
 
 ## Workspace Root Discipline
 

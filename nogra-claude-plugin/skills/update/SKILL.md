@@ -1,5 +1,5 @@
 ---
-name: update
+name: nogra-update
 description: Check the installed Nogra plugin-local contract and guidance on demand. Use when the user runs /nogra:update, asks whether Nogra has changed, sees a contract mismatch, or wants Claude to refresh Nogra guidance without starting work.
 ---
 
@@ -33,7 +33,7 @@ Do not use this skill for:
 - ordinary chat;
 - every new session;
 - every brief draft when a fresh contract was already fetched in this flow;
-- workspace setup. Use `setup` for first setup.
+- workspace setup. Use `nogra-setup` for first setup.
 
 ## Flow
 

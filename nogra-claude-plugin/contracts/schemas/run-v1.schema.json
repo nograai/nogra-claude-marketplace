@@ -80,6 +80,19 @@
     "summary": {
       "type": "string"
     },
+    "stopReason": {
+      "type": "string",
+      "description": "Internal adapter/runtime stop reason when a role return is not a normal completion; not operator-facing copy."
+    },
+    "returnReason": {
+      "type": "string",
+      "description": "Plain-language reason Manager can use to continue or explain a non-normal return without exposing internal runtime labels."
+    },
+    "pendingState": {
+      "type": "object",
+      "description": "Continuation state such as pending tool requests when a role loop stops before normal completion.",
+      "additionalProperties": true
+    },
     "artifactUris": {
       "type": "array",
       "items": {

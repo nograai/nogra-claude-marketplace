@@ -21,7 +21,7 @@ Natural language is also fine:
 Can you help me set up Nogra in this folder?
 ```
 
-When setting up a folder, use the `setup` skill.
+When setting up a folder, use the `nogra-setup` skill.
 
 If the user asks whether Nogra can be installed without overwriting existing
 files, say yes and offer to walk through the exact file plan before writing.
@@ -45,14 +45,20 @@ hub folder, then use `/nogra:create <name>` to create
 - The workspace owns `.nogra/` records as its local trust source.
 - Nogra is pull-first. Ordinary direct work stays direct unless the user asks
   for the Nogra workflow.
-- A thin intent router maps explicit user intent to setup, adapt, brief,
-  dispatch, verify, status, settings, update or help. If no Nogra route matches,
-  stay direct.
+- Pull-first does not mean no plugin code ever runs. In initialized
+  workspaces, local lifecycle and convergence hooks may run at session or
+  permanent-risk boundaries. They should stay silent for ordinary work, keep
+  their records local under `.nogra/`, and never score prompts or replace
+  Claude Code permissions.
+- A thin intent router maps explicit user intent to the matching `nogra-*`
+  skill. If no Nogra route matches, stay direct.
 - Nogra calls are authority gates, not ambient polling. Do not call Nogra just
   because a session started or ordinary chat is happening.
 - For irreversible or externally expensive work, use Claude Code's native
-  permission model and current-task judgment. Nogra core does not inspect tool
-  calls or replace provider permissions.
+  permission model and current-task judgment. The local runtime has a
+  narrow deterministic git/action convergence gate: it asks when a
+  permanent-risk tool call has no current dispatch receipt. It does not score
+  prompts or replace provider permissions.
 - Language handling is English-first. `defaultLanguage` defaults to `en`.
   `translationFallback: claude-current-prompt` means Claude may use its own
   current-prompt understanding directly.
@@ -62,6 +68,33 @@ hub folder, then use `/nogra:create <name>` to create
 Detailed router behavior lives in `references/router.md`. Detailed routing
 configuration lives in `references/routing.md`. Detailed runtime and
 status/version configuration lives in `references/runtime.md`.
+The local five-anchor truth surfaces are described in `references/index.md`.
+
+## Off and Uninstall
+
+If the user asks how to turn Nogra off, separate workspace state from the
+installed Claude Code plugin.
+
+Workspace off: remove or rename the folder-local `.nogra/` directory. That
+turns off Nogra's workspace state, ledger, routing and convergence checks for
+that project, but it does not uninstall the plugin from the machine.
+
+Plugin off: use Claude Code's plugin manager. Tell the user to run `/plugin`,
+open the Installed tab, choose Nogra, then Disable or Uninstall. CLI is also
+valid when the user wants it:
+
+```bash
+claude plugin disable <plugin-id>
+claude plugin uninstall <plugin-id>
+```
+
+Use the exact plugin id shown by `/plugin` or `claude plugin list`. After
+disabling or uninstalling during an active session, run `/reload-plugins` or
+restart Claude Code before trusting the loaded plugin state.
+
+Do not direct users to edit `settings.json` by hand as the primary path.
+Plugin scope can be user, project or local, and Claude Code's plugin manager
+owns that state.
 
 ## Routing Policy
 
@@ -74,9 +107,17 @@ The router is:
 - brief intent -> `/nogra:brief`;
 - approved GO after a reviewed brief -> `/nogra:dispatch`;
 - "is this done?", evidence or verification intent -> `/nogra:verify`;
-- project/state/checkpoint/version intent -> `/nogra:status`;
-- setup/adapt/create/settings/update/help intent -> the matching Nogra skill;
+- Nogra ledger/state/checkpoint/version intent -> `/nogra:status`;
+- setup/adapt/create/settings/update/help intent -> the matching `nogra-*` skill;
 - no matching Nogra intent -> direct work.
+
+The companion index is:
+
+- risk intake -> `.nogra/index/risk-intake.md`;
+- behavior score -> `.nogra/index/behavior-score.md`;
+- connections/risk registry -> `.nogra/index/risk-registry.md`;
+- decision shape -> `.nogra/state/DECISIONS.md`;
+- expansion guidance -> `.nogra/index/EXPANSIONS.md`.
 
 For unusually large autonomous work, Claude may give one short non-blocking
 brief nudge before the run starts. Do not repeat it, do not block on it, and do
@@ -100,7 +141,7 @@ intent.
 - `/nogra:settings`: show or update Nogra profile, role models, effort,
   and language.
 - `/nogra:status`: show installed plugin ref, workspace release version,
-  language/runtime state and recent local records.
+  local ledger/state, language/runtime state and recent local records.
 - `/nogra:help`: explain Nogra and choose the right flow.
 
 ## Normal Workflow
@@ -121,7 +162,7 @@ intent.
    independent verification or larger multi-agent flows.
 
 If the user asks whether work is actually done, use `/nogra:verify` or the
-`verify` skill. Verification can check a Nogra-dispatched run or ordinary Claude
+`nogra-verify` skill. Verification can check a Nogra-dispatched run or ordinary Claude
 work after the fact, as long as there is a claim, scope and evidence to compare.
 
 Use `/nogra:update` only when the user asks to inspect installed Nogra guidance,
@@ -159,7 +200,7 @@ Those records belong in `.nogra/`.
 
 ## Dispatch Boundary
 
-When the user gives explicit GO on an approved brief, use the `dispatch` skill.
+When the user gives explicit GO on an approved brief, use the `nogra-dispatch` skill.
 Do not implement the approved scope in the main chat.
 
 The clean crossing is:
@@ -171,8 +212,11 @@ The clean crossing is:
    approval. When it requires a Manager decision, split, override with operator
    approval or ask before spawning.
 4. Fetch the local `handoff-contract --kind executor --run-id <runId>`.
-5. Spawn the plugin-provided `executor` subagent with the executor role
-   contract, full brief, run id, scope, stop criteria and required evidence.
+5. Spawn with the Claude Code `Agent` primitive into the plugin-provided
+   `executor` subagent role with the executor role contract, full brief, run id,
+   scope, stop criteria and required evidence. Include prior findings directly,
+   with attribution and verification status, when they matter; spawned agents do
+   not inherit parent chat context.
    The local runtime resolves executor model/effort from runtime policy or the
    release default and carries dispatch-derived `maxTurns` from the run receipt
    instead of relying on role frontmatter.
@@ -180,11 +224,11 @@ The clean crossing is:
 7. Use the plugin-provided `verifier` only when independent verification
    is explicitly needed or the evidence surface is noisy.
 
-If the dispatch receipt, handoff contract, `executor` primitive, or required
-`verifier` primitive is unavailable, stop and say what is missing. Do not
-offer inline Manager execution, synchronous fallback or a generic bypass. The
-user may explicitly override outside Nogra, but Manager must not propose the
-bypass.
+If the dispatch receipt, handoff contract, Claude Code `Agent` primitive,
+`executor` role primitive, or required `verifier` primitive is unavailable, stop
+and say what is missing. Do not offer inline Manager execution, synchronous
+fallback or a generic bypass. The user may explicitly override outside Nogra,
+but Manager must not propose the bypass.
 
 Never claim the Manager chat is the agent. The plugin workflow provides Nogra
 behavior while Manager and Executor remain separate roles. The final report

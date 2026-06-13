@@ -699,6 +699,7 @@ function statusPayload(root) {
   const briefs = listBriefs(root, 1);
   const runs = listTransportRuns(root, 1);
   const checkpoint = checkpointFreshness(root, config);
+  const index = indexReadiness(root, config);
   return {
     schema: "nogra.local.status.v1",
     generatedAt: now(),
@@ -740,12 +741,48 @@ function statusPayload(root) {
       checkpointSourceWatermark: checkpoint.checkpointSourceWatermark,
       checkpointStatus: checkpoint.status
     },
+    index,
     continuity: continuityState(root, config),
     recent: {
       briefs,
       transportRuns: runs
     },
     next: mode.initialized ? ["/nogra:brief", "/nogra:status"] : ["/nogra:setup"]
+  };
+}
+
+function firstFilledLine(file, label) {
+  if (!fs.existsSync(file)) return "";
+  const line = readText(file)
+    .split(/\r?\n/u)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.toLowerCase().startsWith(label.toLowerCase()) && entry.replace(label, "").trim());
+  return cleanInline(line || "");
+}
+
+function indexFileState(root, key, rel) {
+  const file = path.join(root, rel);
+  return {
+    key,
+    path: rel,
+    exists: fs.existsSync(file)
+  };
+}
+
+function indexReadiness(root, config = {}) {
+  const paths = config.paths && typeof config.paths === "object" ? config.paths : {};
+  const files = [
+    indexFileState(root, "riskIntake", cleanInline(paths.riskIntake) || ".nogra/index/risk-intake.md"),
+    indexFileState(root, "behaviorScore", cleanInline(paths.behaviorScore) || ".nogra/index/behavior-score.md"),
+    indexFileState(root, "riskRegistry", cleanInline(paths.riskRegistry) || ".nogra/index/risk-registry.md"),
+    indexFileState(root, "decisions", cleanInline(paths.decisions) || ".nogra/state/DECISIONS.md"),
+    indexFileState(root, "expansions", cleanInline(paths.expansions) || ".nogra/index/EXPANSIONS.md")
+  ];
+  const behaviorPath = files.find((file) => file.key === "behaviorScore")?.path || ".nogra/index/behavior-score.md";
+  return {
+    files,
+    ready: files.every((file) => file.exists),
+    latestBehaviorScore: firstFilledLine(path.join(root, behaviorPath), "- Score:")
   };
 }
 
@@ -1937,6 +1974,73 @@ function summarizeExecutionSizing({ maxTurns, rawTurns, fileCount, evidenceRequi
   return `maxTurns ${maxTurns}: ${factors.join(", ")}.`;
 }
 
+function agenticLoopContract(maxTurns) {
+  return {
+    continueOnStopReason: "tool_use",
+    terminalStopReason: "end_turn",
+    maxTurns,
+    maxTurnsStopReason: "maxTurns_exhausted",
+    operatorFacingStatus: "partial",
+    operatorFacingReason: "Work stopped before completion while tool work was still pending.",
+    rule: "Continue the agentic loop on stop_reason=tool_use. Treat stop_reason=end_turn with the role report as the normal terminal return.",
+    ifMaxTurnsHit: "Record internal stopReason=maxTurns_exhausted for ledger continuity, but face the operator with partial/blocked plus a plain returnReason. Include runId, summary, pending tool/request state when available, and a safe continuation. Do not mark the run ok just because the wrapper returned."
+  };
+}
+
+function commaList(value) {
+  return cleanInline(value).split(",").map((item) => cleanInline(item)).filter(Boolean);
+}
+
+function hasClaudeTool(tools, name) {
+  return tools.some((tool) => tool === name || tool.startsWith(`${name}(`));
+}
+
+function publicAgentProfile(wanted, frontmatter) {
+  const tools = commaList(frontmatter.tools);
+  const disallowedTools = commaList(frontmatter.disallowedTools);
+  const hasAllowlist = tools.length > 0;
+  const nestedSpawnAllowed = hasAllowlist
+    ? hasClaudeTool(tools, "Agent")
+    : !hasClaudeTool(disallowedTools, "Agent");
+  return {
+    tier: "public",
+    profile: "scoped-worker-no-nested-spawn",
+    role: wanted,
+    spawnPrimitive: "Agent",
+    roleToolField: hasAllowlist ? "tools" : disallowedTools.length ? "disallowedTools" : "inherited",
+    tools,
+    disallowedTools,
+    nestedSpawnAllowed,
+    wall: "Public executor/verifier role frontmatter must explicitly constrain tools and must not include Agent.",
+    ifNestedSpawnNeeded: "Stop and return to Manager for a separately approved orchestration profile. Do not widen the public role in place."
+  };
+}
+
+function contextBundleContract(wanted) {
+  const include = wanted === "verifier"
+    ? ["approvedBrief", "runId", "briefId", "executorReport", "claimedFilesChanged", "successCriteria", "stopCriteria", "evidenceRequirement", "verificationQuestion"]
+    : ["approvedBrief", "runId", "briefId", "scopeFiles", "stopCriteria", "successCriteria", "requiredEvidenceLevel"];
+  return {
+    required: true,
+    inheritedContextPolicy: "Spawned agents start with isolated context. Do not rely on parent conversation, shared memory or files already read elsewhere.",
+    include,
+    priorFindings: {
+      requiredWhenAvailable: true,
+      rule: "Pass complete prior findings directly in the Agent prompt or context bundle; never pass only a pointer to earlier chat.",
+      fields: ["claim", "evidence", "sourceUrl", "documentName", "page", "file", "line", "verificationStatus", "confidence", "agentId"]
+    }
+  };
+}
+
+function findingContract() {
+  return {
+    structure: "structured-findings-with-attribution",
+    fields: ["claim", "evidence", "sourceUrl", "documentName", "page", "file", "line", "verificationStatus", "confidence", "agentId"],
+    verificationStatuses: ["verified", "unverified", "claimed"],
+    synthesisRule: "Do not upgrade evidence level during synthesis. Claimed or unverified findings stay non-verified until independently checked."
+  };
+}
+
 function deriveExecutionSizing(brief, runtimeRole, options = {}) {
   const explicitMaxTurns = parseDispatchMaxTurns(options.maxTurns);
   const explicitReason = cleanInline(options.maxTurnsReason);
@@ -2276,6 +2380,11 @@ function dispatch(root, options) {
       owner: "Manager",
       nextOwner,
       role: executionPair.executionRole,
+      spawnPrimitive: "Agent",
+      profile: "public-scoped-worker",
+      nestedSpawnAllowed: false,
+      contextBundleRequired: true,
+      priorFindingsRequiredWhenAvailable: true,
       runtime: executionPair.executionRuntime,
       effort: targetRuntimeRole.effort,
       context: targetRuntimeRole.context,
@@ -2285,6 +2394,7 @@ function dispatch(root, options) {
       maxTurnsReason: executionSizing.reason,
       sizingDecisionRequired: executionSizing.requiresManagerDecision,
       sizingManagerAction: executionSizing.managerAction,
+      agenticLoop: agenticLoopContract(executionSizing.maxTurns),
       runtimePolicyProfile: runtime.profile,
       runtimeSource: `${runtimeSource}; Claude Code may resolve this to a concrete model id at spawn time`,
       label: executionPair.executionLabel,
@@ -2335,6 +2445,7 @@ function handoffContract(root, kind, options = {}) {
       : frontmatterMaxTurns
         ? "role frontmatter fallback"
         : "none";
+  const agentProfile = publicAgentProfile(wanted, frontmatter);
   return {
     schema: "nogra.handoff.contract.v1",
     status: "ready",
@@ -2346,6 +2457,7 @@ function handoffContract(root, kind, options = {}) {
     targetSubagent: {
       type: wanted,
       scopedRole,
+      spawnPrimitive: "Agent",
       background: true,
       modelHint,
       effortHint,
@@ -2353,6 +2465,10 @@ function handoffContract(root, kind, options = {}) {
       maxTurnsHint,
       maxTurnsHintSource
     },
+    publicProfile: agentProfile,
+    contextBundle: contextBundleContract(wanted),
+    findingContract: findingContract(),
+    agenticLoop: agenticLoopContract(maxTurnsHint || null),
     dispatchContext: run ? {
       runId: run.runId || runId,
       briefId: run.briefId || "",
@@ -2372,11 +2488,16 @@ function handoffContract(root, kind, options = {}) {
     prompt,
     managerInstructions: [
       "Use this contract at dispatch or verification boundaries only.",
-      `Spawn a subagent in the plugin-provided ${scopedRole} role with the full brief, run id, scope, stop criteria and evidence contract.`,
+      `Spawn with the Claude Code Agent primitive into the plugin-provided ${scopedRole} role.`,
+      "Include the complete context bundle in the Agent prompt; spawned agents do not inherit parent conversation, shared memory or files read by Manager.",
+      "Pass complete prior findings with attribution when they matter. Use structured fields such as claim, evidence, source URL/document/page or file/line, verificationStatus, confidence and agent id.",
+      "Public executor/verifier roles intentionally omit Agent from their frontmatter tools. They must not spawn nested subagents; stop and return fan-out needs to Manager for a separately approved orchestration profile.",
       "Manager is not the role-runtime. If the role primitive is unavailable, stop and surface the missing primitive.",
       "Keep Nogra bookkeeping in Manager. The spawned role-runtime receives the brief, scope and evidence contract and returns a report.",
       "If runtimePolicy is custom and the client supports per-invocation model/effort overrides, request the configured model and effort; otherwise rely on the release default resolved by the local runtime and report the limitation plainly.",
       "If targetSubagent.maxTurnsHint is present and the client supports per-invocation turn limits, pass that value to the spawn primitive. Prefer dispatch receipt sizing when a run id is available; role frontmatter is only a generic fallback.",
+      "For agentic loop control, continue when stop_reason=tool_use and terminate only when stop_reason=end_turn returns the role report.",
+      "If maxTurns or the client turn limit stops the role before a normal report, record internal stopReason=maxTurns_exhausted, but face the operator with partial/blocked plus a plain reason such as work stopped before completion with pending tool work. Carry the run id, pending tool/request state and safe continuation back to Manager. Do not treat that wrapper return as completion.",
       "If dispatchContext.requiresManagerDecision is true, do not spawn blindly. Manager must split the work, use an explicit bounded override with operator approval, or ask for a decision first.",
       "Surface role and runtime honestly: user-facing labels should be role plus runtime, such as Executor · Sonnet.",
       "Tier labels appear only when the approved role graph explicitly supplies them; executor is not Tier 1."

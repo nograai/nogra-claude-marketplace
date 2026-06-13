@@ -17,6 +17,8 @@ Generated: {{generatedAt}}
 - `.nogra/receipts/` - operation receipts.
 - `.nogra/reports/` - final reports.
 - `.nogra/checkpoints/` - dated checkpoint snapshots.
+- `.nogra/index/` - workspace/project index, risk intake, behavior score,
+  connections/risk registry and expansion guidance.
 - `.nogra/memory/local/` - local continuity notes.
 - `.nogra/memory/sync/` - sync metadata only when sync is enabled.
 - `.nogra/transport/` - dispatch artifacts.

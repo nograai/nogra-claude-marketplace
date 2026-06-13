@@ -1,5 +1,5 @@
 ---
-name: dispatch
+name: nogra-dispatch
 description: Dispatch an approved Nogra brief through the plugin workflow. Use when the user gives GO after reviewing a Nogra brief and expects scoped execution, evidence and a verification.
 ---
 
@@ -183,19 +183,37 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
 
 8. If any local runtime write fails, stop and surface the failure. Local runtime
    helpers own transport record writes.
-9. Spawn a subagent in the plugin-provided `nogra:executor` role when
-   available. It is the preferred execution role contract because the plugin
-   role file defines the responsibility while the local runtime resolves
-   runtime metadata. Include:
+9. Spawn with the Claude Code `Agent` primitive into the plugin-provided
+   `nogra:executor` role when available. It is the preferred execution role
+   contract because the plugin role file defines the responsibility while the
+   local runtime resolves runtime metadata. Include:
    - the executor handoff contract prompt from the local runtime
    - the full approved brief, not a loose summary
    - run id and brief id
    - scope files, stop criteria and required evidence
+   - complete prior findings when relevant, with attribution such as source URL,
+     document/page or file/line, `verificationStatus`, confidence and agent id
    Runtime/model facts stay in the dispatch receipt and handoff metadata.
+   Spawned agents start with isolated context. Do not rely on parent chat
+   history, shared memory or files Manager already read; put the needed context
+   directly into the Agent prompt or context bundle.
+   The public executor/verifier roles intentionally omit `Agent` from their
+   frontmatter `tools` allowlist. They must not spawn nested subagents. If
+   fan-out is required, stop and return it to Manager for a separately approved
+   orchestration path rather than widening the public plugin role.
    If the client supports per-invocation turn limits, pass
    `targetSubagent.maxTurnsHint` from the handoff contract to the spawn
    primitive. With a concrete run id, that value comes from the dispatch receipt,
    not role frontmatter.
+   Treat the spawned role as an agentic loop: continue when the client reports
+   `stop_reason=tool_use`, execute the requested tools, feed results back, and
+   stop normally only when `stop_reason=end_turn` returns the role report. If the
+   client turn limit or `maxTurns` is hit before a normal report, return control
+   to Manager. Record `stopReason=maxTurns_exhausted` only as internal
+   ledger/continuation state; face the operator with `partial` or `blocked` plus
+   a plain reason such as "work stopped before completion with pending tool
+   work". Carry the run id, any pending tool/request state available, and the
+   known safe continuation. Do not treat a max-turn wrapper return as completion.
    Long-running commands should set Bash timeout directly for the scaffold,
    build or test step. Progress monitoring uses `run_in_background` rather than
    sleep-poll command chains.
@@ -234,6 +252,9 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
    - `summary`;
    - `reportText`;
    - optional `outputText`.
+   - optional `stopReason`, `returnReason` and `pendingState` when the role
+     returns without a normal report because the client loop hit a turn/runtime
+     limit.
    - if an independent verifier-role pass actually ran, also include:
      `verificationRole: "nogra:verifier"`, `verificationRuntime`,
      `verificationRuntimeSource`, and `verificationStatus`.
@@ -281,8 +302,14 @@ If any required crossing piece is missing, stop cleanly:
 
 - no dispatch receipt or run id: stop
 - no executor handoff contract: stop
-- no `nogra:executor` role primitive: stop
-- required `nogra:verifier` role primitive missing: stop
+- no Claude Code `Agent` primitive or no `nogra:executor` role primitive: stop
+- required Claude Code `Agent` primitive or `nogra:verifier` role primitive
+  missing: stop
+- client loop hits `maxTurns` before a normal role report: stop, return
+  internal `stopReason=maxTurns_exhausted`, preserve pending state when
+  available, and leave continuation with Manager instead of marking the run
+  complete. The chat-facing reason should say the work stopped before completion,
+  not expose the internal turn-limit label.
 - executor-role subagent reports a stop criterion: stop and return the stop
   reason; if its report includes `Safe Continuation`, include that path and
   whether it needs a fresh Manager/user decision

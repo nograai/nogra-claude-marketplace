@@ -72,6 +72,41 @@
       "purpose": "Workspace index used by boot and project focus."
     },
     {
+      "source": "init-bundle/files/.nogra/index/README.md",
+      "path": ".nogra/index/README.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Explains Nogra's local five-anchor index."
+    },
+    {
+      "source": "init-bundle/files/.nogra/index/risk-intake.md",
+      "path": ".nogra/index/risk-intake.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Workspace intent, GO, risk and evidence intake."
+    },
+    {
+      "source": "init-bundle/files/.nogra/index/behavior-score.md",
+      "path": ".nogra/index/behavior-score.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Behavior scenario grading record."
+    },
+    {
+      "source": "init-bundle/files/.nogra/index/risk-registry.md",
+      "path": ".nogra/index/risk-registry.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Connections and action-risk registry."
+    },
+    {
+      "source": "init-bundle/files/.nogra/index/EXPANSIONS.md",
+      "path": ".nogra/index/EXPANSIONS.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Guidance for adding Nogra surfaces only when needed."
+    },
+    {
       "source": "init-bundle/files/.nogra/briefs/.gitkeep",
       "path": ".nogra/briefs/.gitkeep",
       "mimeType": "text/plain",

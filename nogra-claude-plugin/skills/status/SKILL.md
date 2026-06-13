@@ -1,11 +1,12 @@
 ---
-name: status
-description: Show compact Nogra status, installed plugin ref, workspace id, language/runtime state, and recent local records. Use when the user asks for Nogra status, version, installed version, plugin version, current state, recent briefs, runs or events.
+name: nogra-status
+description: Show compact Nogra ledger/state, installed plugin ref, workspace id, language/runtime state, and recent local records. Use only when the user runs /nogra:status or explicitly asks for Nogra ledger, Nogra state, Nogra version, installed plugin version, current Nogra records, recent briefs, runs or events. Do not use for generic project, task, session, git or release status.
 ---
 
-# Nogra Status
+# Nogra Ledger State
 
-Show a compact, human-readable status view. Do not dump raw runtime payloads.
+Show a compact, human-readable Nogra ledger/state view. Do not dump raw runtime
+payloads, and do not present this as Claude's session `/status` view.
 
 ## Required Version Lines
 
@@ -52,6 +53,10 @@ After versions, show:
   Nogra owns run state.
 - Local ledger/checkpoint freshness when present: show `ledgerWatermark`,
   `checkpointSourceWatermark` and whether the checkpoint is `fresh` or `stale`.
+- Local index readiness when present: show whether risk intake, behavior score,
+  risk registry, decisions and expansions files exist. If
+  `.nogra/index/behavior-score.md` has a filled latest score line, summarize it
+  in one short line.
 - Local continuity migration status when present: show `ready` or
   `migration-needed`. If migration is needed, say `/nogra:setup` will merge the
   missing local continuity layout without replacing app files or user-set config.
@@ -62,9 +67,9 @@ Use provider-native truth. Show local Nogra heartbeat/ledger state only when
 `.nogra/ledger/` or `.nogra/runtime/` records exist. Do not poll continuously.
 This status command is an explicit on-demand read.
 
-Do not build a parallel task UI. Claude Code's native `/ps` and task
-notifications remain the live task surfaces. `/nogra:status` is the compact
-inspection surface for local Nogra ledger truth.
+Do not build a parallel task UI. Claude Code's native `/status`, `/ps` and task
+notifications remain the live session/task surfaces. `/nogra:status` is only
+the compact inspection surface for local Nogra ledger truth.
 
 ## Missing Workspace Config
 
@@ -76,7 +81,7 @@ Still show plugin version if available, then suggest `/nogra:setup`.
 Keep it short:
 
 ```text
-Nogra status
+Nogra ledger
 
 Versions:
 - Nogra plugin: <plugin-id>@<marketplace> <version>

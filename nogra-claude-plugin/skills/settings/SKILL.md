@@ -1,5 +1,5 @@
 ---
-name: settings
+name: nogra-settings
 description: Show or update local Nogra settings for executor/verifier runtime profile, effort and language. Use when the user runs /nogra:settings or asks to configure Nogra executor/verifier model, effort, profile or language.
 ---
 

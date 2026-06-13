@@ -23,7 +23,7 @@ function usage() {
     "  node scripts/nogra-ledger.mjs check-run [--root <dir>] --run-id <runId> [--json]",
     "",
     "Input for apply-local-writes is either an array of localWrites or an object with localWrites.",
-    "Input for finalize-run is a JSON object with runId, status, optional phase, summary, reportText, outputText."
+    "Input for finalize-run is a JSON object with runId, status, optional phase, summary, reportText, outputText, stopReason, returnReason and pendingState."
   ].join("\n");
 }
 
@@ -108,6 +108,26 @@ function verificationRoleRuntimePair(record, input = {}) {
     return null;
   }
   return { verificationRole, verificationRuntime, verificationRuntimeSource, verificationStatus, verificationLabel };
+}
+
+function defaultReturnReason(stopReason) {
+  if (stopReason === "maxTurns_exhausted") {
+    return "Work stopped before completion while tool work was still pending.";
+  }
+  return "";
+}
+
+function continuationFields(input = {}) {
+  const stopReason = cleanInline(input.stopReason || "");
+  const returnReason = cleanInline(input.returnReason || input.reason || defaultReturnReason(stopReason));
+  const pendingState = input.pendingState && typeof input.pendingState === "object" && !Array.isArray(input.pendingState)
+    ? input.pendingState
+    : null;
+  const out = {};
+  if (stopReason) out.stopReason = stopReason;
+  if (returnReason) out.returnReason = returnReason;
+  if (pendingState) out.pendingState = pendingState;
+  return out;
 }
 
 function safeRunId(runId) {
@@ -486,6 +506,7 @@ function finalizeRun(root, input, options = {}) {
   const completedAt = record.completedAt || cleanInline(input.completedAt) || now();
   const executionPair = roleRuntimePair(record, status);
   const verificationPair = verificationRoleRuntimePair(record, input);
+  const continuation = continuationFields(input);
   const ledgerEvent = appendLedgerEvent(root, status === "cancelled" ? "transport_run_cancelled" : "transport_run_returned", {
     eventId: `ledger-event-${runId}-terminal-${status}`,
     workspaceId: cleanInline(input.workspaceId) || "local",
@@ -493,7 +514,8 @@ function finalizeRun(root, input, options = {}) {
     status,
     phase,
     briefId: cleanInline(record.briefId || input.briefId || ""),
-    summary: cleanInline(input.summary || "")
+    summary: cleanInline(input.summary || ""),
+    ...continuation
   });
   const verificationFields = verificationPair
     ? {
@@ -520,6 +542,7 @@ function finalizeRun(root, input, options = {}) {
     executionRuntimeSource: executionPair.executionRuntimeSource || record.executionRuntimeSource || "",
     executionLabel: executionPair.executionLabel || record.executionLabel || "",
     ...verificationFields,
+    ...continuation,
     completedAt,
     durationSeconds: record.createdAt ? durationSeconds(record.createdAt, completedAt) : record.durationSeconds ?? null,
     summary: input.summary != null ? cleanInline(input.summary) : record.summary ?? "",
@@ -535,6 +558,7 @@ function finalizeRun(root, input, options = {}) {
           sessionId: ledgerEvent.sessionId || record.metadata.sessionId || "",
           transcriptId: ledgerEvent.transcriptId || record.metadata.transcriptId || "",
           ...verificationFields,
+          ...continuation,
           nextOwner: input.nextOwner || "Manager"
         }
       : {
@@ -546,6 +570,7 @@ function finalizeRun(root, input, options = {}) {
           sessionId: ledgerEvent.sessionId,
           transcriptId: ledgerEvent.transcriptId,
           ...verificationFields,
+          ...continuation,
           nextOwner: input.nextOwner || "Manager"
         }
   };
@@ -568,6 +593,7 @@ function finalizeRun(root, input, options = {}) {
     sessionId: ledgerEvent.sessionId,
     transcriptId: ledgerEvent.transcriptId,
     ...verificationFields,
+    ...continuation,
     briefId: cleanInline(record.briefId || input.briefId || ""),
     summary: cleanInline(input.summary || ""),
     nextOwner: input.nextOwner || "Manager"

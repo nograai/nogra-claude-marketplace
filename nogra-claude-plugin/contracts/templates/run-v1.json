@@ -13,6 +13,9 @@
   "startedAt": null,
   "endedAt": null,
   "summary": "",
+  "stopReason": "",
+  "returnReason": "",
+  "pendingState": {},
   "artifactUris": [],
   "evidenceLevel": "reported",
   "metadata": {}

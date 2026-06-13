@@ -45,8 +45,10 @@ Use `/nogra:settings` to view or change runtimePolicy.
 ## Executor And Verifier Agents
 
 The Nogra plugin registers `executor` and `verifier` from its own
-`agents/` directory with default Sonnet/medium frontmatter. The bundled agents
-stay inside the plugin and are not copied into this workspace's
+`agents/` directory with default Sonnet/medium frontmatter and explicit public
+tool allowlists. The public roles are not granted the Claude Code `Agent` tool,
+so they cannot spawn nested subagents. The bundled agents stay inside the plugin
+and are not copied into this workspace's
 `.claude/agents/`.
 
 When `profile: custom`, `roles.executor` and `roles.verifier` describe desired
@@ -58,9 +60,13 @@ If the runtime cannot honor custom values, report the limitation plainly.
 Claude Code's own model and effort display remains the source of truth for live
 model/effort state.
 
+Spawned public roles start with isolated context. Manager must put the approved
+brief, run id, scope, evidence contract and any prior findings directly in the
+handoff prompt.
+
 ## Status And Versions
 
-When the user asks for Nogra status or version, include:
+When the user asks for Nogra ledger/state or version, include:
 
 - installed Nogra plugin id/ref from the plugin session context when available;
 - local runtime status;

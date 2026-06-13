@@ -1,5 +1,5 @@
 ---
-name: create
+name: nogra-create
 description: Create a project under a workspace hub. Use when the user runs /nogra:create, asks to create a new Nogra project folder, or wants a hub workspace to manage a new project under projects/<workspaceId>/.
 ---
 

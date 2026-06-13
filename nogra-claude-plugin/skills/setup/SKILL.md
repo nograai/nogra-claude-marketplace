@@ -1,5 +1,5 @@
 ---
-name: setup
+name: nogra-setup
 description: Set this folder up for Nogra. Use when the user runs /nogra:setup, asks to set up Nogra in this folder, enable this project for Nogra, or prepare a workspace after installing the Nogra plugin.
 ---
 
@@ -16,12 +16,13 @@ their files, use wording like:
 
 ```text
 Yes. We can go through exactly what Nogra will write before I change anything.
-Setup writes `.nogra/config.json` plus the standard `.nogra/` domain folders
-and preserves app files, `.claude/`, package files, git config, hooks, presets
-and templates. It may create a minimal root `CLAUDE.md` only when the workspace
-does not already have one, so Claude has a visible local Nogra orientation on
-future sessions. Project-specific facts are refined later by `/nogra:adapt`,
-after Nogra has actually read this workspace.
+Setup writes `.nogra/config.json`, the standard `.nogra/` domain folders and
+the local `.nogra/index/` five-anchor files. It preserves app files,
+`.claude/`, package files, git config, hooks, presets and templates. It may
+create a minimal root `CLAUDE.md` only when the workspace does not already have
+one, so Claude has a visible local Nogra orientation on future sessions.
+Project-specific facts are refined later by `/nogra:adapt`, after Nogra has
+actually read this workspace.
 ```
 
 If the user just installed or updated the plugin inside an already-running
@@ -70,8 +71,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init-bundle --root "$PWD" -
    - the folder being initialized;
    - the number of files to create, merge, preserve or skip;
    - the fact that plugin-mode setup creates `.nogra/config.json`, standard
-     `.nogra/` domain folders and state files, plus root `CLAUDE.md` when
-     missing;
+     `.nogra/` domain folders, state files and `.nogra/index/` five-anchor
+     files, plus root `CLAUDE.md` when missing;
    - any existing files that will be preserved or merged.
 9. For `.nogra/config.json`, use merge-preserve behavior:
    - If the file does not exist, create it from the returned content.

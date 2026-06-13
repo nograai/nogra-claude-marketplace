@@ -1,5 +1,5 @@
 ---
-name: verify
+name: nogra-verify
 description: Verify a Nogra run or ordinary Claude work against a brief, scope, claims and evidence. Use when the user runs /nogra:verify, asks whether work is really done, wants Nogra to check evidence, or asks for verification.
 ---
 
@@ -36,7 +36,7 @@ Do not use this skill for:
 - ordinary status updates;
 - tiny direct edits where the user did not ask for verification;
 - brainstorming or demo idea selection;
-- dispatching new work. Use `dispatch` for approved execution.
+- dispatching new work. Use `nogra-dispatch` for approved execution.
 
 ## Flow
 
@@ -96,6 +96,11 @@ Do not use this skill for:
    Manager as `nextOwner`. Do not auto-fix, force-correct, or parse Manager's
    prose for keywords.
 7. Compare local runtime verification support with Manager's own evidence read.
+   If the user is explicitly grading Nogra behavior or scenario probes, compare
+   evidence against `.nogra/index/behavior-score.md`'s expected shape when it
+   exists: scenario id, mode, drift cluster, expected guard, observed behavior,
+   evidence path and verdict. Do not treat structural file presence as behavior
+   success.
 8. Return a concise verification:
    - `ship`: evidence satisfies the brief/request;
    - `deviation`: useful result, but it materially differs from the approved

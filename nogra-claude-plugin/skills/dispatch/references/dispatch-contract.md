@@ -20,6 +20,30 @@ Never instruct the executor-role subagent to spawn a verifier. The executor-role
 subagent returns evidence to the Manager phase. Verification starts there; spawn
 a verifier-role subagent only when an independent pass is required.
 
+## Public Agent Boundary
+
+The public plugin ships a scoped-worker profile:
+
+- spawn primitive: Claude Code `Agent`;
+- public `executor` and `verifier` frontmatter must use an explicit `tools`
+  allowlist;
+- public `executor` and `verifier` must omit `Agent` from that allowlist, so
+  they cannot spawn nested subagents;
+- do not use `permissionMode` as the spawn wall for plugin agents;
+- if fan-out, fork synthesis or nested delegation is required, stop and return
+  to Manager for a separately approved orchestration profile instead of widening
+  the public worker role.
+
+Spawned agents start with isolated context. Manager must pass a complete context
+bundle directly in the Agent prompt: approved brief, run id, scope, stop
+criteria, success criteria, evidence contract and complete prior findings when
+they matter. Prior findings should be structured as data, not prose-only
+pointers: `claim`, `evidence`, `sourceUrl`, `documentName`, `page`, `file`,
+`line`, `verificationStatus`, `confidence` and `agentId` when available.
+Allowed verification statuses are `verified`, `unverified` and `claimed`.
+Synthesis must preserve those statuses; confidence text does not upgrade
+evidence level.
+
 ## Execution Shape
 
 Before dispatch, choose the execution shape for the approved brief. Common
@@ -82,6 +106,22 @@ When dispatch sizing is clamped, the receipt marks
 `executionSizing.summary`. Manager must handle that before executor spawn by
 splitting into phases, using an explicit bounded override with operator approval,
 or asking for a decision.
+
+## Agentic Loop Return
+
+`maxTurns` is a runtime loop boundary, not proof of completion. At the spawn
+adapter level, continue the loop on `stop_reason=tool_use`: execute the requested
+tools, return tool results, and call the role again. The normal terminal condition
+is `stop_reason=end_turn` with the executor or verifier report.
+
+If the client reaches `maxTurns` or another turn-limit before the normal report,
+return the stop as an orchestration result to Manager. Preserve `runId`, internal
+`stopReason=maxTurns_exhausted`, a short plain-language `returnReason`, pending
+tool/request state when available, and the known safe continuation. The
+operator-facing chat surface should say the work stopped before completion with
+pending work, not expose the internal turn-limit label. Manager may then continue
+the same run with more budget/context, split the remaining work, or return a
+blocked/partial result. Do not collapse turn-limit exhaustion into `ok`.
 
 ## Tool Shape
 

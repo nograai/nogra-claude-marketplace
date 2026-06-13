@@ -31,9 +31,11 @@ Can you help me set up Nogra in this folder?
 ```
 
 The plugin provides three primitives - brief, dispatch, verify - plus a thin
-intent router and the local `.nogra/` ledger they write to. The router maps
-explicit Nogra intent to the right skill. If no Nogra route matches, ordinary
-work stays direct.
+intent router, a local five-anchor index and the local `.nogra/` ledger they
+write to. The router maps explicit Nogra intent to the right skill. The index
+keeps risk intake, behavior score, connections/risk registry, decisions and
+expansion guidance visible. If no Nogra route matches, ordinary work stays
+direct.
 Folder-local state is created only when `/nogra:setup` runs.
 
 By default, setup, brief contracts, brief validation, local dispatch receipts and
@@ -46,7 +48,42 @@ to the workspace.
 Nogra runs locally. It collects no data, requires no account, and makes no
 network calls. There is nothing to collect, store, or share.
 
+Pull-first does not mean no hooks ever run. When the plugin is enabled in an
+initialized workspace, Claude Code may run Nogra's local lifecycle and
+convergence hooks at session or permanent-risk boundaries. Those hooks read and
+write local `.nogra/` state, stay silent for ordinary work, and do not replace
+Claude Code's permission model.
+
 For support, contact `support@nogra.ai`.
+
+## Turn Off or Uninstall
+
+Nogra has two separate off switches.
+
+For one workspace, remove or rename that folder's `.nogra/` directory. That
+turns off Nogra's workspace state, ledger, routing and convergence checks for
+that project, but it does not uninstall the Claude Code plugin from your
+machine.
+
+For the plugin itself, use Claude Code's plugin manager:
+
+```text
+/plugin
+```
+
+Open the Installed tab, choose Nogra, then Disable or Uninstall. You can also
+use the CLI with the exact plugin id shown by `/plugin` or
+`claude plugin list`, for example:
+
+```bash
+claude plugin disable <plugin-id>
+claude plugin uninstall <plugin-id>
+```
+
+If you disable or uninstall during an active Claude Code session, run
+`/reload-plugins` or restart Claude Code before trusting the loaded plugin
+state. Do not edit `settings.json` by hand unless Claude Code explicitly tells
+you to; plugin scope can be user, project or local.
 
 ## Working Examples
 
@@ -89,7 +126,10 @@ Build a small local task tracker directly. Do not use Nogra.
 ```
 
 Expected behavior: Claude works directly. Nogra stays silent: no prompt scoring,
-no proactive brief prompt and no workflow just because the task has scope.
+no proactive brief prompt and no workflow just because the task has scope. If a
+direct run reaches git history or another permanent-risk action without a
+current dispatch receipt, Nogra asks for intent confirmation before that tool
+call continues.
 
 ### Save a checkpoint
 
@@ -108,7 +148,7 @@ account or service is required.
 Ask Claude:
 
 ```text
-Show Nogra status for this workspace.
+Show Nogra ledger state for this workspace.
 ```
 
 Expected behavior: Nogra reports the installed plugin version, the workspace
@@ -159,9 +199,26 @@ preserves or merges existing Nogra files according to the bundled write policy.
 - `/nogra:settings`: show or update local Nogra profile, runtime role models,
   effort and language.
 - `/nogra:status`: show installed plugin ref, workspace id,
-  language/runtime state and recent local records.
+  language/runtime state and recent local ledger records.
 - `/nogra:update`: pull current Nogra contract/guidance on demand.
 - `/nogra:help`: explain Nogra and choose the right Nogra flow.
+
+## Five-Anchor Index
+
+Fresh setup creates a compact `.nogra/index/` surface:
+
+- `risk-intake.md` - intent, GO shape, irreversible actions, evidence,
+  allowed systems and recurring drift risks.
+- `behavior-score.md` - scenario grading by drift cluster and mode.
+- `risk-registry.md` - what can be read, written, deployed, sent, migrated,
+  billed or must not be touched.
+- `.nogra/state/DECISIONS.md` - durable decisions with why, alternatives,
+  owner and linked artifacts.
+- `EXPANSIONS.md` - when to add project hubs, scenario packs, evidence
+  adapters, verifier flows or other Nogra surfaces.
+
+This index is not a structural audit score. Nogra behavior is graded by
+evidence from scenarios, runs and verification.
 
 ## Thin Intent Router
 
@@ -174,7 +231,7 @@ intent to the matching skill:
 - brief or Nogra workflow -> `/nogra:brief`
 - GO after a reviewed brief -> `/nogra:dispatch`
 - evidence, "is this done?", or verification -> `/nogra:verify`
-- state, checkpoint, version or recent records -> `/nogra:status`
+- Nogra ledger/state, checkpoint, version or recent records -> `/nogra:status`
 - runtime/language configuration -> `/nogra:settings`
 - guidance refresh -> `/nogra:update`
 - help choosing a flow -> `/nogra:help`
@@ -185,16 +242,21 @@ must not repeat it, block on it or turn it into prompt scoring.
 
 The plugin includes lightweight lifecycle hooks for boot, compact continuity and
 project focus. `SessionStart` adds a small boot or resume pointer when
-`.nogra/config.json` exists. `PostCompact` rehydrates only a thin continuity
-pointer after context compaction. `SessionEnd` updates the local session anchor
-without adding chat context. `UserPromptSubmit` may add project-focus context
-when the user clearly selects an indexed project from a workspace hub. Hooks do
-not score prompts, emit proactive brief prompts, inspect tool calls, change
-config, draft briefs, dispatch, verify or spawn agents. Skills own all `.nogra/`
-writes, brief drafting, dispatch, verification and agent spawning. Claude
-transcript and history stay outside Nogra's routing input. Claude must still use
-Nogra skills for the workflow and wait for the user's choice before entering
-brief flow.
+`.nogra/config.json` exists and includes a small convergence guard. `PostCompact`
+rehydrates a thin continuity pointer plus that same convergence guard after
+context compaction. `SessionEnd` updates the local session anchor without adding
+chat context. `UserPromptSubmit` may add project-focus context when the user
+clearly selects an indexed project from a workspace hub. `PreToolUse` is a
+narrow deterministic git/action convergence gate: it asks when a permanent-risk
+tool call has no current dispatch receipt, and it may add a visible Nogra
+match review for receipt-matched actions or conservative read-only public
+fetches. Match reviews add context only; they do not send
+`permissionDecision: allow` or replace Claude Code permissions. Hooks do not
+score prompts, emit proactive brief prompts, change config, draft briefs,
+dispatch, verify or spawn agents. Skills own all `.nogra/` writes, brief
+drafting, dispatch, verification and agent spawning. Claude transcript and
+history stay outside Nogra's routing input. Claude must still use Nogra skills
+for the workflow and wait for the user's choice before entering brief flow.
 
 Session continuity is local and explicit. Session-start and prompt hooks may
 write a bounded session anchor under `.nogra/runtime/session-anchor.json`, and
@@ -206,9 +268,13 @@ checkpoint as stale so Claude can ask whether to refresh it.
 
 Routing is pull-first. Normal scoped work stays direct unless the user pulls
 Nogra. Natural-language intent belongs to Claude's judgment. Irreversible,
-production, billing, data, permissions or secrets work still uses Claude Code's
-native permission model and current-task judgment. Nogra dispatch starts only
-after the user accepts the workflow.
+production, billing, data, permissions, secrets and git-history work still use
+Claude Code's native permission model and current-task judgment. Nogra's
+convergence gate adds one extra ask when those boundaries are reached without a
+current dispatch receipt. When a current dispatch receipt exists, Nogra can
+surface the receipt in an approval review while leaving the underlying Claude
+Code permission decision untouched. Nogra dispatch starts only after the user
+accepts the workflow.
 
 Extension plugins own their own `/nogra-*` commands and hooks. If an installed
 Nogra extension handles a prompt or command, that request stays with the
@@ -266,6 +332,8 @@ workspace state:
 
 - `.nogra/config.json` (the workspace config)
 - `.nogra/state/` current checkpoint, tasks, decisions and structure files
+- `.nogra/index/` workspace index, risk intake, behavior score, risk registry
+  and expansion guidance
 - `.nogra/briefs/`, `.nogra/runs/`, `.nogra/evidence/`, `.nogra/receipts/`,
   `.nogra/reports/`, `.nogra/checkpoints/`, `.nogra/memory/`, `.nogra/index/`
   and `.nogra/transport/` lanes

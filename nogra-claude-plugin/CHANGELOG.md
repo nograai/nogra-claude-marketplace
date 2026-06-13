@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+## 0.6.6 - 2026-06-13
+
+- Added Nogra match reviews at deterministic `PreToolUse` action boundaries
+  without replacing Claude Code permission decisions.
+- Added `psql` mutation detection, read-only inspection softening, conservative
+  public fetch handling and production deploy detection to the local
+  convergence gate.
+- Added Nogra's five-anchor local index and status metadata for risk intake,
+  behavior score, connections/risk registry, decision shape and expansion
+  guidance.
+- Added dispatch sizing, agentic loop return handling and plain
+  partial/blocked continuation language when a runtime turn limit stops work
+  before a normal executor or verifier report.
+- Hardened public executor/verifier Agent contracts with explicit tool
+  allowlists that omit nested subagent spawn, context-bundle/prior-finding
+  handoff guidance and smoke assertions for the public no-nested-spawn wall.
+- Added explicit off/uninstall guidance and clarified privacy/help copy so users
+  get workspace-vs-plugin answers and pull-first behavior stays clear.
+- Gave user-invocable skills lowercase `nogra-*` display labels while
+  preserving `/nogra:<skill>` command paths from their skill directories.
+- Aligned `/nogra:status`, `/nogra:adapt`, setup files and continuity docs with
+  the current `.nogra/state/*` and five-anchor local layout.
+
 ## 0.6.5 - 2026-06-08
 
 - Added a thin intent-router contract to help/reference docs, the bundled

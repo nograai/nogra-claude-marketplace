@@ -44,6 +44,11 @@
     "memorySync": ".nogra/memory/sync",
     "transport": ".nogra/transport",
     "workspaceIndex": ".nogra/index/workspaces.jsonl",
+    "operatingIndex": ".nogra/index/README.md",
+    "riskIntake": ".nogra/index/risk-intake.md",
+    "behaviorScore": ".nogra/index/behavior-score.md",
+    "riskRegistry": ".nogra/index/risk-registry.md",
+    "expansions": ".nogra/index/EXPANSIONS.md",
     "memoryIndex": ".nogra/memory/local/MEMORY.md",
     "memorySummaries": ".nogra/memory/local/summaries",
     "runtimeMetadata": ".nogra/memory/runtime"

@@ -1,5 +1,5 @@
 ---
-name: adapt
+name: nogra-adapt
 description: Teach Nogra an existing workspace after setup. Use when the user runs /nogra:adapt, asks Nogra to adapt to this project, or wants Claude to map the current workspace without changing app files.
 ---
 
@@ -13,9 +13,10 @@ verification.
 
 ## Boundary
 
-Adapt may read project files and write only local `.nogra/` notes. It must not
-edit app files, `CLAUDE.md`, `.claude/`, package files, git config, hooks,
-presets or templates.
+Adapt may read project files and write only local `.nogra/` notes, including
+the Nogra index files for risk intake and risk registry. It must not edit app
+files, `CLAUDE.md`, `.claude/`, package files, git config, hooks, presets or
+templates.
 
 Drafting a brief or spawning agents belongs to separate explicit user asks.
 
@@ -42,8 +43,10 @@ Read enough context to identify structure without crawling the whole repo:
 - package/build manifests such as `package.json`, `pyproject.toml`,
   `Cargo.toml`, `go.mod`, `requirements.txt`, `pnpm-lock.yaml` only as needed;
 - app/source directories and obvious entrypoints;
-- existing `.nogra/PROJECT-STRUCTURE.md`, `.nogra/SESSION-CHECKPOINT.md` and
-  `.nogra/DECISIONS.md`.
+- existing `.nogra/state/PROJECT-STRUCTURE.md`,
+  `.nogra/state/SESSION-CHECKPOINT.md` and `.nogra/state/DECISIONS.md`;
+- existing `.nogra/index/risk-intake.md` and
+  `.nogra/index/risk-registry.md`, if present.
 
 Do not read secrets or bulky generated directories. Skip `.git`, `node_modules`,
 `.next`, `dist`, `build`, `coverage`, `.venv`, caches, logs and binary assets
@@ -55,7 +58,7 @@ Before writing, show a compact preview:
 
 - project type and likely entrypoints;
 - important paths Nogra will record;
-- boundaries or no-go areas Nogra should remember;
+- boundaries, risk surfaces or no-go areas Nogra should remember;
 - exact `.nogra/` files to update;
 - statement that no app files will be changed.
 
@@ -65,9 +68,11 @@ Ask for explicit GO before writing.
 
 After GO, write only these files:
 
-- `.nogra/PROJECT-STRUCTURE.md`
-- `.nogra/SESSION-CHECKPOINT.md`
-- `.nogra/DECISIONS.md`
+- `.nogra/state/PROJECT-STRUCTURE.md`
+- `.nogra/state/SESSION-CHECKPOINT.md`
+- `.nogra/state/DECISIONS.md`
+- `.nogra/index/risk-intake.md`
+- `.nogra/index/risk-registry.md`
 
 Use managed sections so user notes are preserved:
 
@@ -80,8 +85,8 @@ Use managed sections so user notes are preserved:
 If a managed section already exists, replace only that section. If it does not
 exist, append one. Preserve all text outside the managed section.
 
-Do not update `.nogra/CURRENT-TASKS.md` unless the user explicitly states active
-tasks to record. Do not invent active work from repository structure.
+Do not update `.nogra/state/CURRENT-TASKS.md` unless the user explicitly states
+active tasks to record. Do not invent active work from repository structure.
 
 ## Content Shape
 
@@ -102,6 +107,15 @@ tasks to record. Do not invent active work from repository structure.
 `DECISIONS.md` managed section should contain only factual workspace decisions
 already evident from files or explicitly confirmed by the user. If none are
 known, write that no project decisions were recorded by adapt.
+
+`risk-intake.md` managed section should contain only workspace-specific facts
+that bound future action: explicit GO shape if known, irreversible actions,
+acceptable evidence, allowed/forbidden systems and recurring drift risks. If a
+fact is not known, mark it unknown instead of inventing it.
+
+`risk-registry.md` managed section should contain systems or local surfaces
+Nogra may read/write, their mechanism, risk boundary, evidence source and last
+checked date. Never write secrets, credentials, tokens or private keys.
 
 ## Output
 

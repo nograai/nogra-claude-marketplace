@@ -1,6 +1,6 @@
 # Status Data Sources
 
-Use these sources when building `/nogra:status`. Keep the visible status output
+Use these sources when building `/nogra:status`. Keep the visible ledger/state output
 compact and human-readable; this reference is for data collection only.
 
 ## Version Data

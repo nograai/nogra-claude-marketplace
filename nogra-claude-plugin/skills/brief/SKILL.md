@@ -1,5 +1,5 @@
 ---
-name: brief
+name: nogra-brief
 description: Shape scoped, risky, or ambiguous work into a validated Nogra brief (an approved plan) before execution. Use after /nogra:brief or when the user explicitly asks for a Nogra brief/workflow — not for casual mentions or ordinary direct work.
 ---
 
@@ -61,7 +61,7 @@ Do not use this skill for:
 - tiny typo fixes or obvious one-line edits
 - pure explanation or codebase Q&A
 - direct work where the user clearly rejects Nogra flow
-- already-approved execution; use `dispatch` after a brief exists and GO is
+- already-approved execution; use `nogra-dispatch` after a brief exists and GO is
   explicit
 
 ## Boundary
@@ -87,14 +87,19 @@ call dispatch from this skill. A brief is not GO.
 2. Apply workspace root discipline before calling the runtime. If the target
    workspace is ambiguous, ask one location question before saving a brief.
 3. Inspect enough project context to avoid guessing. Prefer existing docs,
-   relevant files, recent decisions and current structure over assumptions.
+   relevant files, recent decisions, current structure,
+   `.nogra/index/risk-intake.md` and `.nogra/index/risk-registry.md` over
+   assumptions when those files exist.
    Use `skills/help/references/runtime.md` for runtime-policy meaning. Capture
    only the default/custom profile and any custom executor/verifier values that
    materially affect the brief. If brief shape and runtime capacity look
    mismatched, name the mismatch as a fact instead of inventing a new tier or
    runtime rule.
 4. If a missing decision would materially change scope, ask one concrete
-   question. Ask one question at a time.
+   question. Ask one question at a time. Use the local risk intake shape to keep
+   questions bounded: outcome, GO, irreversible actions, evidence, allowed
+   systems or recurring drift. Do not run a generic open-ended interview inside
+   the brief flow.
 5. If there are multiple viable routes, present 2-3 approaches with trade-offs
    and a recommendation. Keep it short enough for the user to choose.
 6. Phrase environment-dependent stop criteria as pre-flight checks, not
@@ -207,7 +212,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "$PWD"
     artifacts after a runtime error. Stop and surface the failure instead.
 17. Present the brief to the user in a compact summary plus the saved brief id.
 18. Ask for explicit GO before execution. If the user approves, use the
-    `dispatch` skill. Do not continue into implementation inside this skill.
+    `nogra-dispatch` skill. Do not continue into implementation inside this skill.
 
 ## Brief Writing Rules
 

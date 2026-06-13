@@ -7,6 +7,11 @@ The router is not a hook gate, prompt scorer, safety classifier or permission
 layer. It does not inspect tool calls, block actions, create records, spawn
 agents or decide that a normal task deserves a brief.
 
+Use `index.md` as the companion truth map for Nogra's five local anchors:
+risk intake, behavior score, connections/risk registry, decision shape and
+expansion guidance. The router chooses the skill; the index explains which
+local record carries the fact and why.
+
 ## Route Map
 
 Use the first matching route:
@@ -23,9 +28,9 @@ Use the first matching route:
   reviewing it, use `/nogra:dispatch`.
 - Verification intent: if the user asks whether work is really done, asks for
   evidence checking, or invokes Nogra verification, use `/nogra:verify`.
-- Workspace-state intent: if the user asks for Nogra status, project state,
-  recent briefs/runs, checkpoint freshness, runtime preferences or version,
-  use `/nogra:status`.
+- Workspace-state intent: if the user asks for Nogra ledger/state, project
+  state, recent briefs/runs, checkpoint freshness, runtime preferences or
+  version, use `/nogra:status`.
 - Settings intent: if the user asks to configure Nogra language, runtime
   profile, executor model, verifier model or effort, use `/nogra:settings`.
 - Guidance-refresh intent: if the user asks whether Nogra guidance changed, or
@@ -34,6 +39,20 @@ Use the first matching route:
   use `/nogra:help`.
 
 If no route matches, stay direct.
+
+## Five-Anchor Binding
+
+- Risk intake facts belong in `.nogra/index/risk-intake.md`; use `/nogra:adapt`
+  for workspace discovery and `/nogra:brief` for action contracts.
+- Behavior grading belongs in `.nogra/index/behavior-score.md`; use
+  `/nogra:verify` for evidence checks and `/nogra:status` for ledger summaries.
+- Connections and action-risk facts belong in
+  `.nogra/index/risk-registry.md`; use `/nogra:adapt` to discover and
+  `/nogra:brief` to convert them into scope and stop criteria.
+- Durable decisions belong in `.nogra/state/DECISIONS.md`; link material
+  decisions to briefs, runs or evidence.
+- Expansion guidance belongs in `.nogra/index/EXPANSIONS.md`; use `/nogra:help`
+  or `/nogra:create` when a repeated need deserves a new Nogra surface.
 
 ## Direct By Default
 
@@ -63,6 +82,10 @@ Rules:
 - Never turn it into prompt scoring, keyword scoring or a safety classifier.
 - Claude Code's native permission model remains responsible for tool
   permissions.
+- The separate convergence guard may ask at deterministic git/action risk
+  boundaries, or add a match-review note for read-only public fetches and
+  receipt-matched actions. That is not router behavior, must not send
+  `permissionDecision: allow`, and must not be rebuilt as prompt scoring.
 
 ## Placement
 
