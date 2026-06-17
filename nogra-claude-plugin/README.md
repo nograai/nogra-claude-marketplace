@@ -235,6 +235,7 @@ intent to the matching skill:
 - GO after a reviewed brief -> `/nogra:dispatch`
 - evidence, "is this done?", or verification -> `/nogra:verify`
 - Nogra ledger/state, checkpoint, version or recent records -> `/nogra:status`
+- live hook or transcript activity visibility -> `/nogra:watch`
 - runtime/language configuration -> `/nogra:settings`
 - guidance refresh -> `/nogra:update`
 - help choosing a flow -> `/nogra:help`

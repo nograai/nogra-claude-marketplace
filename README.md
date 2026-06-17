@@ -103,6 +103,7 @@ you to; plugin scope can be user, project or local.
 - `/nogra:status`: show plugin, workspace, ledger and recent run state.
 - `/nogra:settings`: inspect or update runtime/language settings.
 - `/nogra:update`: refresh local Nogra guidance.
+- `/nogra:watch`: inspect recent local hook events when you need visibility.
 - `/nogra:help`: choose the right Nogra flow.
 
 ## Workspace Shape

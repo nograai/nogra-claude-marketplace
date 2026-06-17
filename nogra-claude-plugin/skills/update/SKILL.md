@@ -59,7 +59,8 @@ with the confirmed absolute path of the workspace.
    - local runtime status;
    - current brief schema name;
    - key command surface: `/nogra:brief`, `/nogra:dispatch`,
-     `/nogra:verify`, `/nogra:update`, `/nogra:help`;
+     `/nogra:verify`, `/nogra:status`, `/nogra:watch`, `/nogra:update`,
+     `/nogra:help`;
    - whether the response suggests a local workspace action is needed.
 4. If the user asks to refresh local workspace skeleton files, ask for explicit
    GO before running the local init bundle/apply path. Do not do this as part

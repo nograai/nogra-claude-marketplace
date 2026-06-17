@@ -30,6 +30,7 @@ quietly merge Manager and Executor.
 Route only accepted user intent:
 
 - setup/adapt/create/status/settings/update/help intent -> matching `/nogra:*`;
+- live hook or transcript activity visibility intent -> `/nogra:watch`;
 - brief or Nogra workflow intent -> `/nogra:brief`;
 - GO after a reviewed approved brief -> `/nogra:dispatch`;
 - "is this done?", evidence or verification intent -> `/nogra:verify`.
@@ -99,6 +100,7 @@ Wait for intent:
   ask Claude to write a Nogra brief for the work.
 - If the user asks whether work is actually done, use `/nogra:verify`.
 - If the user asks whether Nogra changed, use `/nogra:update`.
+- If the user asks to inspect Nogra hook activity, use `/nogra:watch`.
 - If the user asks for setup help, use `/nogra:setup` or ask Claude to help set
   up Nogra.
 
