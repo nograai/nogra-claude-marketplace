@@ -2,28 +2,56 @@
 
 ## Unreleased
 
-## 0.6.6 - 2026-06-13
+## 0.6.6 - 2026-06-17
 
+- Added a thin intent-router contract to help/reference docs, the bundled
+  workspace `CLAUDE.md` and reviewer README: explicit Nogra intent maps to the
+  matching skill, while ordinary work stays direct.
 - Added Nogra match reviews at deterministic `PreToolUse` action boundaries
   without replacing Claude Code permission decisions.
-- Added `psql` mutation detection, read-only inspection softening, conservative
-  public fetch handling and production deploy detection to the local
-  convergence gate.
+- Added local live hook/event observability under `.nogra/runtime/` and
+  `/nogra:watch` so operators can inspect recent Claude Code hook events without
+  storing prompt bodies, tool output, file contents or full shell commands.
+- Added a read-only statusline projector that reuses the local `/nogra:status`
+  payload and fails open instead of maintaining separate state.
+- Added deterministic review for instruction-surface writes such as `CLAUDE.md`,
+  `.claude` instruction subpaths, `SKILL.md`, plugin manifests and Nogra plugin
+  hooks.
 - Added Nogra's five-anchor local index and status metadata for risk intake,
   behavior score, connections/risk registry, decision shape and expansion
   guidance.
 - Added dispatch sizing, agentic loop return handling and plain
   partial/blocked continuation language when a runtime turn limit stops work
   before a normal executor or verifier report.
+- Added skill quality gates, gotcha references and Bash-safe absolute-path
+  command recipes across setup, brief, dispatch, verify, create, update and
+  status flows.
 - Hardened public executor/verifier Agent contracts with explicit tool
   allowlists that omit nested subagent spawn, context-bundle/prior-finding
   handoff guidance and smoke assertions for the public no-nested-spawn wall.
+- Added `psql` mutation detection, read-only inspection softening, conservative
+  public fetch handling and production deploy detection to the local
+  convergence gate.
 - Added explicit off/uninstall guidance and clarified privacy/help copy so users
   get workspace-vs-plugin answers and pull-first behavior stays clear.
 - Gave user-invocable skills lowercase `nogra-*` display labels while
   preserving `/nogra:<skill>` command paths from their skill directories.
 - Aligned `/nogra:status`, `/nogra:adapt`, setup files and continuity docs with
   the current `.nogra/state/*` and five-anchor local layout.
+- Removed core automatic-offer scoring, sensitivity controls and the PreToolUse
+  command tripwire. Nogra core is now pull-first: explicit `/nogra:*` requests
+  start Nogra flows, ordinary work stays direct, and Claude Code's native
+  permission model remains responsible for tool permissions.
+- Simplified core hooks to session boot context and workspace-hub project
+  focus only.
+- Split lifecycle state across event-aware hooks: `SessionStart` no longer
+  matches compact, `PostCompact` emits only a thin continuity pointer, and
+  `SessionEnd` silently updates the local session anchor.
+- Added init migration cleanup for obsolete automatic-offer routing controls in
+  existing `.nogra/config.json` files while preserving language/runtime values.
+- Removed separate brief/workspace release-version fields from fresh records,
+  schemas, init config and status output. The plugin version is now the product
+  release identity; schema ids remain the artifact-format contracts.
 
 ## 0.6.5 - 2026-06-08
 

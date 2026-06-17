@@ -26,6 +26,11 @@ state.
 
 ## Flow
 
+Claude Code Bash-safe command style: use one simple command per Bash tool call
+with absolute paths. Do not use `$PWD`, `&&`, heredocs or root assignments in
+Bash tool calls. Replace `<absolute-hub-root>` below with
+the confirmed absolute path of the current workspace hub.
+
 1. Confirm the current working directory in one short sentence.
 2. Verify `.nogra/config.json` exists in the current folder.
    - If missing, stop and tell the user to run `/nogra:setup` first.
@@ -36,7 +41,7 @@ state.
 4. Generate the read-only preview:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" create-project "<name>" --root "$PWD" --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" create-project "<name>" --root "<absolute-hub-root>" --json
 ```
 
 5. Present a compact preview:
@@ -51,11 +56,17 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" create-project "<name>" --r
 7. After GO, apply:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" create-project "<name>" --root "$PWD" --apply --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" create-project "<name>" --root "<absolute-hub-root>" --apply --json
 ```
 
 8. Report the created project path, hub-index update and project self-index.
-9. Tell the user they can stay in the hub and name the project to focus it, or
+9. Before calling the setup clean or healthy, verify the returned
+   `configContract` status from the local runtime.
+   - If `configContract.status` is not `ok`, stop and report
+     `CONFIG_CONTRACT_DRIFT` with the mismatch. Do not say the setup is healthy.
+   - Same `schema` requires the same persisted release identity unless a
+     formal schema contract says otherwise.
+10. Tell the user they can stay in the hub and name the project to focus it, or
    `cd` into the project if they want project-local boot.
 
 ## Boundaries

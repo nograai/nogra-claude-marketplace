@@ -16,6 +16,10 @@ Nogra calls are authority gates, not ambient polling. This skill may call Nogra
 only after the user explicitly asks for `/nogra:brief`, a Nogra brief, or the
 Nogra workflow.
 
+Read `references/gotchas.md` when intent is ambiguous, another provider or
+plugin is named, the target workspace is unclear, or the user is deciding
+between direct work and Nogra-managed work.
+
 ## Entry Condition
 
 Continue in this skill only if one of these is true:
@@ -83,6 +87,14 @@ call dispatch from this skill. A brief is not GO.
 
 ## Flow
 
+Claude Code Bash-safe command style: use one simple command per Bash tool call
+with absolute paths. Do not use `$PWD`, `&&`, heredocs or root assignments in
+Bash tool calls. When passing a structured brief payload,
+write it with `Write` to a workspace-local temp file under `.nogra/` first,
+then pass `--input <path>`. Remove that temp file after the runtime call if it
+was only a transient input. Replace `<absolute-workspace-root>` below with the
+confirmed absolute path of the workspace.
+
 1. Confirm the user's intended outcome in plain language.
 2. Apply workspace root discipline before calling the runtime. If the target
    workspace is ambiguous, ask one location question before saving a brief.
@@ -117,7 +129,7 @@ call dispatch from this skill. A brief is not GO.
 7. Read the plugin-local registry/status once for this brief flow:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" registry --root "$PWD" --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" registry --root "<absolute-workspace-root>" --json
 ```
 
    Use the local runtime path below for the default brief flow.
@@ -125,7 +137,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" registry --root "$PWD" --js
    already fetched in this same brief flow:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-contract --root "$PWD" --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-contract --root "<absolute-workspace-root>" --json
 ```
 
    Do not discover the schema by repeated validation failures.
@@ -158,7 +170,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-contract --root "$PWD
    saving/promoting the approval artifact:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-sizing-preview --root "$PWD" --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-sizing-preview --root "<absolute-workspace-root>" --input ".nogra/tmp-brief-input.json" --json
 ```
 
    Pass the complete structured brief payload on stdin or with `--input`. This
@@ -184,7 +196,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-sizing-preview --root
    artifact:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-validate --root "$PWD" --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-validate --root "<absolute-workspace-root>" --input ".nogra/tmp-brief-input.json" --json
 ```
 
    Pass the structured brief payload on stdin or with `--input`.
@@ -193,7 +205,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-validate --root "$PWD
 14. Save the brief with the local runtime:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-save --root "$PWD" --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-save --root "<absolute-workspace-root>" --input ".nogra/tmp-brief-input.json" --json
 ```
 
     Pass the structured brief payload on stdin or with `--input`. The local
@@ -203,7 +215,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-save --root "$PWD" --
 15. Promote it only when it is ready for user approval:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "$PWD" --brief-id "<briefId>" --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "<absolute-workspace-root>" --brief-id "<briefId>" --json
 ```
 
     The local runtime writes only under `.nogra/briefs/` and uses bundled

@@ -37,17 +37,22 @@ Do not use this skill for:
 
 ## Flow
 
+Claude Code Bash-safe command style: use one simple command per Bash tool call
+with absolute paths. Do not use `$PWD`, `&&`, heredocs or root assignments in
+Bash tool calls. Replace `<absolute-workspace-root>` below
+with the confirmed absolute path of the workspace.
+
 1. Run the plugin-local registry:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" registry --root "$PWD" --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" registry --root "<absolute-workspace-root>" --json
    ```
 
    This checks the installed plugin contracts locally.
 2. Run the plugin-local brief contract check:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-contract --root "$PWD" --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-contract --root "<absolute-workspace-root>" --json
    ```
 
 3. Summarize only what matters:

@@ -53,6 +53,25 @@ const SAFE_GIT_INSPECTION_SUBCOMMANDS = new Set([
   "show",
   "status"
 ]);
+const INSTRUCTION_SURFACE_BASENAMES = new Set([
+  "CLAUDE.md",
+  "CLAUDE.local.md",
+  "AGENTS.md",
+  "SKILL.md",
+  "plugin.json",
+  "hooks.json"
+]);
+const CLAUDE_INSTRUCTION_SURFACE_DIRS = new Set([
+  "agents",
+  "commands",
+  "hooks",
+  "rules",
+  "skills"
+]);
+const CLAUDE_INSTRUCTION_SURFACE_FILES = new Set([
+  "settings.json",
+  "settings.local.json"
+]);
 
 const DRIFT_GUARDS = [
   "A:speed-before-intent",
@@ -824,6 +843,9 @@ function actionImpact(actionType) {
   if (action === "shell write sink") {
     return "writes fetched output into the local filesystem";
   }
+  if (action === "instruction-surface write") {
+    return "changes instructions, hooks, skills, or plugin metadata that can affect agent behavior";
+  }
   if (action === "git metadata write") {
     return "writes inside Git metadata; repository integrity or history can be affected";
   }
@@ -992,12 +1014,33 @@ function pathRisk(toolName, toolInput = {}) {
   const filePath = cleanInline(toolInput.file_path || toolInput.path || "");
   if (!filePath) return "";
   const normalized = filePath.replaceAll("\\", "/");
+  const segments = normalized.split("/").filter(Boolean);
+  const basename = segments[segments.length - 1] || normalized;
   if (normalized.includes("/.git/") || normalized.endsWith("/.git") || normalized === ".git") return "git metadata write";
   if (/\/?\.env(?:\.|$)/u.test(normalized)) return "secrets/env write";
+  if (
+    INSTRUCTION_SURFACE_BASENAMES.has(basename) ||
+    isClaudeInstructionSurfacePath(segments) ||
+    normalized.includes("/.claude-plugin/hooks/") ||
+    normalized.startsWith(".claude-plugin/hooks/") ||
+    normalized.includes("/nogra-claude-plugin/hooks/") ||
+    normalized.startsWith("hooks/")
+  ) {
+    return "instruction-surface write";
+  }
   if (/\b(?:migration|migrations|schema|billing|payments|stripe|auth|permissions|roles)\b/iu.test(normalized)) {
     return `${toolName} risk file`;
   }
   return "";
+}
+
+function isClaudeInstructionSurfacePath(segments = []) {
+  for (let index = 0; index < segments.length; index += 1) {
+    if (segments[index] !== ".claude") continue;
+    const next = segments[index + 1] || "";
+    return CLAUDE_INSTRUCTION_SURFACE_DIRS.has(next) || CLAUDE_INSTRUCTION_SURFACE_FILES.has(next);
+  }
+  return false;
 }
 
 function toolName(input = {}) {

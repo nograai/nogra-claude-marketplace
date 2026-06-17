@@ -30,9 +30,9 @@ The public plugin ships a scoped-worker profile:
 - public `executor` and `verifier` must omit `Agent` from that allowlist, so
   they cannot spawn nested subagents;
 - do not use `permissionMode` as the spawn wall for plugin agents;
-- if fan-out, fork synthesis or nested delegation is required, stop and return
-  to Manager for a separately approved orchestration profile instead of widening
-  the public worker role.
+- if fan-out, fork synthesis or nested delegation is required, route to an
+  internal or enterprise orchestration profile instead of widening the public
+  worker role.
 
 Spawned agents start with isolated context. Manager must pass a complete context
 bundle directly in the Agent prompt: approved brief, run id, scope, stop

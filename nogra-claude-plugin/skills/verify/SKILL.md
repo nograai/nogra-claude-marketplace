@@ -20,6 +20,10 @@ The Manager phase owns the final user-facing verification. The local runtime
 records verification support under `.nogra/`; Manager judgment remains the
 authority.
 
+Read `references/evidence-gotchas.md` before returning a verdict when evidence
+is missing, self-reported, visual-only, stale, out of scope or produced by the
+same agent that did the work.
+
 ## Trigger
 
 Use this skill when the user:
@@ -39,6 +43,13 @@ Do not use this skill for:
 - dispatching new work. Use `nogra-dispatch` for approved execution.
 
 ## Flow
+
+Claude Code Bash-safe command style: use one simple command per Bash tool call
+with absolute paths. Do not use `$PWD`, `&&`, heredocs or root assignments in
+Bash tool calls. When passing a completion evidence object,
+write it with `Write` to a workspace-local temp file under `.nogra/transport/`
+first, then pass `--input <path>`. Replace `<absolute-workspace-root>` below
+with the confirmed absolute path of the workspace.
 
 1. Identify the verification target:
    - existing Nogra run id, if present;
@@ -75,8 +86,7 @@ Do not use this skill for:
    support with:
 
    ```bash
-   NOGRA_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" verify --root "$NOGRA_ROOT" --run-id "<runId>" --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" verify --root "<absolute-workspace-root>" --run-id "<runId>" --input ".nogra/transport/tmp-verification-input.json" --json
    ```
 
    Pass the evidence object on stdin or with `--input`. The local runtime writes
@@ -89,7 +99,7 @@ Do not use this skill for:
    consistency with:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-ledger.mjs" check-run --root "$NOGRA_ROOT" --run-id "<runId>" --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-ledger.mjs" check-run --root "<absolute-workspace-root>" --run-id "<runId>" --json
    ```
 
    If the helper returns `inconsistent`, surface the differences and keep

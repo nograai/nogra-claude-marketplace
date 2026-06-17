@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveBootContext } from "../runtime/local/boot-context.mjs";
 import { renderConvergenceGuardContext } from "../runtime/local/convergence-guard.mjs";
+import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
 function readStdin() {
@@ -89,6 +90,7 @@ if (!hasNograConfig(root)) {
 captureSessionAnchor(root, input, "PostCompact");
 const boot = resolveBootContext({ cwd: root });
 const source = compactSource(input);
+captureLiveHookEvent(root, input, { eventName: "PostCompact", decision: "context", reason: source });
 
 emitContext(`<!-- nogra-plugin:post-compact source=${source} -->
 <NOGRA_COMPACT_POINTER>

@@ -2,6 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { resolveProjectFocus } from "../runtime/local/project-focus.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
@@ -111,15 +112,22 @@ captureSessionAnchor(root, input, "UserPromptSubmit");
 
 const prompt = promptText(input);
 if (!prompt || isGeneratedWrapperPrompt(prompt)) {
+  captureLiveHookEvent(root, input, { eventName: "UserPromptSubmit", decision: "silent" });
   process.exit(0);
 }
 
 const userPrompt = userAuthoredText(prompt);
 if (!userPrompt || /^\s*\/nogra[:\s]/u.test(userPrompt) || isNograExtensionCommand(userPrompt)) {
+  captureLiveHookEvent(root, input, { eventName: "UserPromptSubmit", decision: "silent" });
   process.exit(0);
 }
 
 const focus = resolveProjectFocus({ cwd: root, prompt: userPrompt });
+captureLiveHookEvent(root, input, {
+  eventName: "UserPromptSubmit",
+  decision: focus.additionalContext ? "context" : "silent",
+  reason: focus.additionalContext ? "project-focus" : ""
+});
 if (focus.additionalContext) {
   emitContext(focus.additionalContext);
 }

@@ -31,6 +31,8 @@ Use the first matching route:
 - Workspace-state intent: if the user asks for Nogra ledger/state, project
   state, recent briefs/runs, checkpoint freshness, runtime preferences or
   version, use `/nogra:status`.
+- Live-hook visibility intent: if the user asks to watch Nogra hook events,
+  transcript activity or the live runtime log, use `/nogra:watch`.
 - Settings intent: if the user asks to configure Nogra language, runtime
   profile, executor model, verifier model or effort, use `/nogra:settings`.
 - Guidance-refresh intent: if the user asks whether Nogra guidance changed, or
@@ -90,8 +92,8 @@ Rules:
 ## Placement
 
 - Hooks keep lifecycle and workspace state visible.
-- Skills own setup, adaptation, brief, dispatch, verification, settings, status
-  and update flows.
+- Skills own setup, adaptation, brief, dispatch, verification, settings,
+  status, watch and update flows.
 - Runtime code owns deterministic local records, validation, receipts and
   handoff payloads.
 - The router only chooses the relevant skill/context from accepted user intent.

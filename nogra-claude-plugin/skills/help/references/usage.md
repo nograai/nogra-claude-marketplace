@@ -50,13 +50,18 @@ hub folder, then use `/nogra:create <name>` to create
   permanent-risk boundaries. They should stay silent for ordinary work, keep
   their records local under `.nogra/`, and never score prompts or replace
   Claude Code permissions.
+- Hook/event observability is local and inspectable. Nogra appends compact
+  event metadata to `.nogra/runtime/live-hooks.log` and structured records to
+  `.nogra/runtime/live-hooks.jsonl` so the operator can see which Claude Code
+  events fired for a transcript. These records must not store prompt bodies,
+  tool output, file contents or full shell commands.
 - A thin intent router maps explicit user intent to the matching `nogra-*`
   skill. If no Nogra route matches, stay direct.
 - Nogra calls are authority gates, not ambient polling. Do not call Nogra just
   because a session started or ordinary chat is happening.
 - For irreversible or externally expensive work, use Claude Code's native
-  permission model and current-task judgment. The local runtime has a
-  narrow deterministic git/action convergence gate: it asks when a
+  permission model and current-task judgment. The local runtime has a narrow
+  deterministic git/action convergence gate: it asks when a
   permanent-risk tool call has no current dispatch receipt. It does not score
   prompts or replace provider permissions.
 - Language handling is English-first. `defaultLanguage` defaults to `en`.
@@ -88,9 +93,10 @@ claude plugin disable <plugin-id>
 claude plugin uninstall <plugin-id>
 ```
 
-Use the exact plugin id shown by `/plugin` or `claude plugin list`. After
-disabling or uninstalling during an active session, run `/reload-plugins` or
-restart Claude Code before trusting the loaded plugin state.
+Use the exact plugin id shown by `/plugin` or `claude plugin list`, such as
+`nogra@nogra-claude` for the public marketplace install. After disabling or
+uninstalling during an active session, run `/reload-plugins` or restart Claude
+Code before trusting the loaded plugin state.
 
 Do not direct users to edit `settings.json` by hand as the primary path.
 Plugin scope can be user, project or local, and Claude Code's plugin manager
@@ -108,6 +114,7 @@ The router is:
 - approved GO after a reviewed brief -> `/nogra:dispatch`;
 - "is this done?", evidence or verification intent -> `/nogra:verify`;
 - Nogra ledger/state/checkpoint/version intent -> `/nogra:status`;
+- Nogra live hook/event visibility intent -> `/nogra:watch`;
 - setup/adapt/create/settings/update/help intent -> the matching `nogra-*` skill;
 - no matching Nogra intent -> direct work.
 
@@ -142,6 +149,9 @@ intent.
   and language.
 - `/nogra:status`: show installed plugin ref, workspace release version,
   local ledger/state, language/runtime state and recent local records.
+- `/nogra:watch`: show a bounded snapshot of `.nogra/runtime/live-hooks.log`
+  and, on explicit request, use Claude Code Monitor or `tail -F` for live
+  follow.
 - `/nogra:help`: explain Nogra and choose the right flow.
 
 ## Normal Workflow

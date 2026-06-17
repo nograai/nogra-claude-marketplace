@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { evaluateToolConvergenceRisk } from "../runtime/local/convergence-guard.mjs";
+import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
 function readStdin() {
@@ -90,6 +91,12 @@ if (!hasNograConfig(root)) {
 captureSessionAnchor(root, input, "PreToolUse");
 
 const result = evaluateToolConvergenceRisk({ root, input });
+captureLiveHookEvent(root, input, {
+  eventName: "PreToolUse",
+  decision: result.shouldAsk ? "ask" : result.reviewMessage ? "review" : "silent",
+  action: result.action || "",
+  reason: result.reason || ""
+});
 if (!result.reviewMessage) {
   process.exit(0);
 }

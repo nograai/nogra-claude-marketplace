@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const BRIEF_SCHEMA = "nogra.brief.v1";
 const INIT_BUNDLE_SCHEMA = "nogra.init.bundle.v1";
+const WORKSPACE_CONFIG_RELEASE_VERSION = "v1.0.0";
 const TRANSPORT_STATUSES = new Set(["queued", "running", "returning", "returned", "ok", "partial", "blocked", "failed", "cancelled", "acknowledged"]);
 const BRIEF_STATUSES = new Set(["draft", "ready", "approved", "in_progress", "returned", "accepted", "archived"]);
 const EVIDENCE_LEVELS = new Set(["reported", "edited", "tested", "verified"]);
@@ -23,6 +25,7 @@ function usage() {
   return [
     "Usage:",
     "  node scripts/nogra-local.mjs status [--root <dir>] [--json]",
+    "  node scripts/nogra-local.mjs watch [--root <dir>] [--lines <n>] [--json]",
     "  node scripts/nogra-local.mjs registry [--root <dir>] [--json]",
     "  node scripts/nogra-local.mjs init-bundle [--root <dir>] [--workspace-name <name>] [--json]",
     "  node scripts/nogra-local.mjs init --apply [--root <dir>] [--workspace-name <name>] [--json]",
@@ -259,6 +262,37 @@ function readWorkspaceConfig(root) {
   } catch (error) {
     return { __invalid: true, error: error.message };
   }
+}
+
+function workspaceConfigContractView(config = {}) {
+  return {
+    schema: cleanInline(config?.schema),
+    releaseVersion: cleanInline(config?.releaseVersion),
+    bootPolicyMode: cleanInline(config?.bootPolicy?.mode),
+    hasDefaultTargetModel: Object.hasOwn(config || {}, "defaultTargetModel")
+  };
+}
+
+function workspaceConfigContractCheck(hubConfig = {}, projectConfig = {}) {
+  const hub = workspaceConfigContractView(hubConfig);
+  const project = workspaceConfigContractView(projectConfig);
+  const mismatches = [];
+  if (!hub.schema) mismatches.push("hub schema is missing");
+  if (!project.schema) mismatches.push("project schema is missing");
+  if (hub.schema && project.schema && hub.schema !== project.schema) {
+    mismatches.push(`schema mismatch: hub=${hub.schema} project=${project.schema}`);
+  }
+  if (!hub.releaseVersion) mismatches.push("hub releaseVersion is missing");
+  if (!project.releaseVersion) mismatches.push("project releaseVersion is missing");
+  if (hub.releaseVersion && project.releaseVersion && hub.releaseVersion !== project.releaseVersion) {
+    mismatches.push(`releaseVersion mismatch: hub=${hub.releaseVersion} project=${project.releaseVersion}`);
+  }
+  return {
+    status: mismatches.length ? "CONFIG_CONTRACT_DRIFT" : "ok",
+    hub,
+    project,
+    mismatches
+  };
 }
 
 function pluginJson() {
@@ -672,6 +706,7 @@ function registryPayload(root) {
     },
     tools: [
       "local_status",
+      "local_watch",
       "local_init_bundle",
       "local_brief_contract",
       "local_brief_validate",
@@ -689,6 +724,195 @@ function registryPayload(root) {
   };
 }
 
+function readOnlyCommand(args, options = {}) {
+  try {
+    return {
+      status: "ok",
+      output: execFileSync(args[0], args.slice(1), {
+        cwd: options.cwd || process.cwd(),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...(options.env || {}) },
+        timeout: options.timeoutMs || 1200
+      }).trim()
+    };
+  } catch {
+    return { status: "unknown", output: "" };
+  }
+}
+
+function gitProjection(root) {
+  const source = "git --no-optional-locks status --porcelain=v2 --branch";
+  const status = readOnlyCommand(["git", "--no-optional-locks", "-C", root, "status", "--porcelain=v2", "--branch"], {
+    env: { GIT_OPTIONAL_LOCKS: "0" },
+    timeoutMs: 1200
+  });
+  if (status.status !== "ok") {
+    return {
+      schema: "nogra.local.git_projection.v1",
+      status: "unknown",
+      source,
+      dirtyCount: null,
+      branch: "",
+      head: ""
+    };
+  }
+  const lines = status.output.split(/\r?\n/u).filter(Boolean);
+  const metadata = Object.fromEntries(lines
+    .filter((line) => line.startsWith("# branch."))
+    .map((line) => {
+      const match = line.match(/^# branch\.([A-Za-z]+)\s+(.+)$/u);
+      return match ? [match[1], cleanInline(match[2])] : null;
+    })
+    .filter(Boolean));
+  const dirtyCount = lines.filter((line) => !line.startsWith("#")).length;
+  const branch = metadata.upstream ? `${metadata.head || ""}...${metadata.upstream}` : metadata.head || "";
+  return {
+    schema: "nogra.local.git_projection.v1",
+    status: dirtyCount > 0 ? "dirty" : "clean",
+    source,
+    dirtyCount,
+    branch: cleanInline(branch),
+    head: cleanInline(metadata.oid).slice(0, 12)
+  };
+}
+
+function parseTomlVersion(text) {
+  return cleanInline((text.match(/^version\s*=\s*"([^"]+)"/mu) || [])[1]);
+}
+
+function parsePythonVersion(text) {
+  return cleanInline((text.match(/^__version__\s*=\s*"([^"]+)"/mu) || [])[1]);
+}
+
+function latestBridgeGate(root) {
+  const gateDir = path.join(nograDir(root), "dispatch", "gates");
+  const missing = {
+    exists: false,
+    path: localPath(root, gateDir),
+    status: "missing",
+    deliveryScope: "unknown",
+    requireCoworkSession: "unknown",
+    exitStatus: "unknown"
+  };
+  if (!directoryExists(gateDir)) return missing;
+  const reports = fs.readdirSync(gateDir)
+    .filter((name) => /^y26-internal-bridge-fresh-gate-.*\.md$/u.test(name))
+    .map((name) => path.join(gateDir, name))
+    .filter((file) => fs.statSync(file).isFile())
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  if (!reports.length) return missing;
+  const file = reports[0];
+  const text = readText(file);
+  const field = (name) => cleanInline((text.match(new RegExp(`^- ${name}:\\s*(.+?)\\s*$`, "mu")) || [])[1]) || "unknown";
+  const exitStatus = field("exitStatus");
+  const deliveryScope = field("deliveryScope");
+  const requireCoworkSession = field("requireCoworkSession");
+  return {
+    exists: true,
+    path: localPath(root, file),
+    status: exitStatus === "0" ? "green" : "not-green",
+    deliveryScope,
+    requireCoworkSession,
+    exitStatus,
+    mtime: fs.statSync(file).mtime.toISOString()
+  };
+}
+
+function bridgeProjection(root) {
+  const bridgeRoot = path.join(root, "manager", "y26-internal-bridge");
+  const gate = latestBridgeGate(root);
+  if (!directoryExists(bridgeRoot)) {
+    return {
+      schema: "nogra.local.bridge_projection.v1",
+      status: "unknown",
+      source: "manager/y26-internal-bridge",
+      name: "",
+      version: "unknown",
+      latestGate: gate
+    };
+  }
+  const plugin = readJsonIfValid(path.join(bridgeRoot, ".claude-plugin", "plugin.json")) || {};
+  const pyprojectVersion = fs.existsSync(path.join(bridgeRoot, "pyproject.toml"))
+    ? parseTomlVersion(readText(path.join(bridgeRoot, "pyproject.toml")))
+    : "";
+  const runtimeVersion = fs.existsSync(path.join(bridgeRoot, "src", "y26_internal_bridge", "__init__.py"))
+    ? parsePythonVersion(readText(path.join(bridgeRoot, "src", "y26_internal_bridge", "__init__.py")))
+    : "";
+  const pluginVersion = cleanInline(plugin.version);
+  const versions = [pyprojectVersion, runtimeVersion, pluginVersion].filter(Boolean);
+  const version = versions.length && new Set(versions).size === 1 ? versions[0] : "unknown";
+  let status = "source-present";
+  if (gate.exists && gate.exitStatus !== "0") {
+    status = "gate-failed";
+  } else if (gate.exists && gate.deliveryScope === "ceo-live-cowork" && gate.requireCoworkSession === "1") {
+    status = "live-ready";
+  } else if (gate.exists && gate.exitStatus === "0") {
+    status = "local-preflight";
+  }
+  return {
+    schema: "nogra.local.bridge_projection.v1",
+    status,
+    source: "manager/y26-internal-bridge + .nogra/dispatch/gates",
+    name: cleanInline(plugin.name) || "y26-internal-bridge",
+    version,
+    versions: {
+      pyproject: pyprojectVersion,
+      runtime: runtimeVersion,
+      plugin: pluginVersion
+    },
+    latestGate: gate,
+    claimBoundary: status === "local-preflight"
+      ? "Local preflight only; not CEO/live Co-work acceptance."
+      : ""
+  };
+}
+
+function workspaceIndexEntries(root) {
+  const file = path.join(nograDir(root), "index", "workspaces.jsonl");
+  if (!fs.existsSync(file)) return [];
+  return readText(file)
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function promotionProjection(root, config = {}, bridge = {}, git = {}) {
+  const entries = workspaceIndexEntries(root);
+  const devHub = entries.find((entry) => cleanInline(entry.workspaceId) === "y26dev");
+  if (!devHub) {
+    return {
+      schema: "nogra.local.promotion_projection.v1",
+      status: "unknown",
+      source: ".nogra/index/workspaces.jsonl",
+      lane: "unknown",
+      blockedBy: []
+    };
+  }
+  const blockedBy = [];
+  if (bridge.status !== "live-ready") blockedBy.push("bridge-live-gate");
+  if (git.status === "dirty") blockedBy.push("dirty-worktree");
+  if (git.status === "unknown") blockedBy.push("git-unknown");
+  const rootWorkspace = cleanInline(config.workspaceId);
+  return {
+    schema: "nogra.local.promotion_projection.v1",
+    status: blockedBy.length ? "gate-required" : "ready-for-review",
+    source: ".nogra/index/workspaces.jsonl + status projections",
+    lane: rootWorkspace === "y26" ? "y26dev-to-y26-public" : "dev-to-public",
+    devWorkspaceId: cleanInline(devHub.workspaceId),
+    devWorkspacePath: cleanInline(devHub.path, 240),
+    blockedBy,
+    summary: cleanInline(devHub.lastCheckpointSummary, 240)
+  };
+}
+
 function statusPayload(root) {
   const plugin = pluginJson();
   const diagnostics = pluginDiagnostics(plugin);
@@ -700,6 +924,9 @@ function statusPayload(root) {
   const runs = listTransportRuns(root, 1);
   const checkpoint = checkpointFreshness(root, config);
   const index = indexReadiness(root, config);
+  const git = gitProjection(root);
+  const bridge = bridgeProjection(root);
+  const promotion = promotionProjection(root, config, bridge, git);
   return {
     schema: "nogra.local.status.v1",
     generatedAt: now(),
@@ -741,6 +968,9 @@ function statusPayload(root) {
       checkpointSourceWatermark: checkpoint.checkpointSourceWatermark,
       checkpointStatus: checkpoint.status
     },
+    git,
+    bridge,
+    promotion,
     index,
     continuity: continuityState(root, config),
     recent: {
@@ -848,6 +1078,7 @@ function initBundlePayload(root, workspaceName = "") {
   const context = {
     workspaceName: cleanName,
     workspaceId: slugify(cleanName, "local").toLowerCase(),
+    releaseVersion: WORKSPACE_CONFIG_RELEASE_VERSION,
     workspacePath: root,
     generatedAt,
     initMode: "plugin",
@@ -1130,6 +1361,7 @@ function ensureManagerHubConfig(root) {
   }
 
   const next = mergeConfig(config, {
+    releaseVersion: WORKSPACE_CONFIG_RELEASE_VERSION,
     paths: {
       hiddenRoot: ".nogra",
       stateRoot: ".nogra/state",
@@ -1228,6 +1460,7 @@ function createProject(root, options = {}) {
   const hubConfigAction = ensureManagerHubConfig(root);
   const hubIndexAction = upsertWorkspaceIndex(path.join(nograDir(root), "index", "workspaces.jsonl"), entry);
   const projectIndexAction = upsertWorkspaceIndex(path.join(nograDir(projectRoot), "index", "workspaces.jsonl"), entry);
+  const configContract = workspaceConfigContractCheck(readWorkspaceConfig(root) || {}, readWorkspaceConfig(projectRoot) || {});
 
   return {
     schema: "nogra.local.create_project_result.v1",
@@ -1242,6 +1475,7 @@ function createProject(root, options = {}) {
       hubIndex: hubIndexAction,
       projectIndex: projectIndexAction
     },
+    configContract,
     next: [
       `Start Claude in the hub and say ${plan.project.workspaceName} to focus this project.`,
       "Use /nogra:adapt inside the project when there is existing code to map."
@@ -1720,6 +1954,18 @@ function sessionAnchorPath(root) {
   return path.join(nograDir(root), "runtime", "session-anchor.json");
 }
 
+function liveHooksJsonlPath(root) {
+  return path.join(nograDir(root), "runtime", "live-hooks.jsonl");
+}
+
+function liveHooksTextPath(root) {
+  return path.join(nograDir(root), "runtime", "live-hooks.log");
+}
+
+function liveHooksLatestPath(root) {
+  return path.join(nograDir(root), "runtime", "live-hooks.latest.json");
+}
+
 function currentLedgerWatermark(root) {
   return nonEmptyLineCount(ledgerEventsPath(root));
 }
@@ -1788,9 +2034,13 @@ function continuityState(root, config = {}) {
   const ledgerFile = ledgerEventsPath(root);
   const checkpointFile = checkpointPath(root, config);
   const anchorFile = sessionAnchorPath(root);
+  const liveHooksFile = liveHooksJsonlPath(root);
+  const liveHooksLog = liveHooksTextPath(root);
+  const liveHooksLatest = liveHooksLatestPath(root);
   const checkpointHasWatermark = checkpointHasSourceWatermark(root, config);
   const ledgerDirExists = directoryExists(ledgerDir);
   const session = readSessionAnchor(root);
+  const latestHook = readJsonIfValid(liveHooksLatest);
   return {
     schema: "nogra.local.continuity_status.v1",
     status: ledgerDirExists && checkpointHasWatermark ? "ready" : "migration-needed",
@@ -1816,9 +2066,61 @@ function continuityState(root, config = {}) {
       transcriptId: session.transcriptId,
       updatedAt: session.updatedAt
     },
+    liveHooks: {
+      path: localPath(root, liveHooksFile),
+      logPath: localPath(root, liveHooksLog),
+      exists: fs.existsSync(liveHooksFile),
+      events: nonEmptyLineCount(liveHooksFile),
+      latestEvent: cleanInline(latestHook?.eventName),
+      latestSummary: cleanInline(latestHook?.summary),
+      latestAt: cleanInline(latestHook?.timestamp)
+    },
     migrationHint: ledgerDirExists && checkpointHasWatermark
       ? ""
       : "Run /nogra:setup or local init --apply in this workspace to merge the 0.5.8 continuity layout without touching app files."
+  };
+}
+
+function boundedLineLimit(value) {
+  const number = positiveIntegerOrNull(value) || 25;
+  return Math.max(1, Math.min(number, 200));
+}
+
+function recentTextLines(file, limit) {
+  if (!fs.existsSync(file)) return [];
+  return readText(file)
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .slice(-limit);
+}
+
+function watchPayload(root, options = {}) {
+  const lineLimit = boundedLineLimit(options.lines);
+  const liveHooksFile = liveHooksJsonlPath(root);
+  const liveHooksLog = liveHooksTextPath(root);
+  const liveHooksLatest = liveHooksLatestPath(root);
+  const latestHook = readJsonIfValid(liveHooksLatest);
+  const lines = recentTextLines(liveHooksLog, lineLimit);
+  return {
+    schema: "nogra.local.watch.v1",
+    status: fs.existsSync(liveHooksLog) ? "ok" : "missing",
+    mode: "snapshot",
+    hostedMcpUsed: false,
+    path: localPath(root, liveHooksLog),
+    jsonlPath: localPath(root, liveHooksFile),
+    latestPath: localPath(root, liveHooksLatest),
+    events: nonEmptyLineCount(liveHooksFile),
+    latestEvent: cleanInline(latestHook?.eventName),
+    latestSummary: cleanInline(latestHook?.summary),
+    latestAt: cleanInline(latestHook?.timestamp),
+    maxLines: lineLimit,
+    lineCount: lines.length,
+    lines,
+    liveFollow: {
+      monitorTarget: localPath(root, liveHooksLog),
+      tailCommand: `tail -F ${liveHooksLog}`
+    },
+    privacy: "Live hook logs are compact event metadata only; they must not store prompt bodies, tool output, file contents or full shell commands."
   };
 }
 
@@ -2012,7 +2314,7 @@ function publicAgentProfile(wanted, frontmatter) {
     disallowedTools,
     nestedSpawnAllowed,
     wall: "Public executor/verifier role frontmatter must explicitly constrain tools and must not include Agent.",
-    ifNestedSpawnNeeded: "Stop and return to Manager for a separately approved orchestration profile. Do not widen the public role in place."
+    ifNestedSpawnNeeded: "Route to internal or enterprise orchestration. Do not widen the public role in place."
   };
 }
 
@@ -2491,7 +2793,7 @@ function handoffContract(root, kind, options = {}) {
       `Spawn with the Claude Code Agent primitive into the plugin-provided ${scopedRole} role.`,
       "Include the complete context bundle in the Agent prompt; spawned agents do not inherit parent conversation, shared memory or files read by Manager.",
       "Pass complete prior findings with attribution when they matter. Use structured fields such as claim, evidence, source URL/document/page or file/line, verificationStatus, confidence and agent id.",
-      "Public executor/verifier roles intentionally omit Agent from their frontmatter tools. They must not spawn nested subagents; stop and return fan-out needs to Manager for a separately approved orchestration profile.",
+      "Public executor/verifier roles intentionally omit Agent from their frontmatter tools. They must not spawn nested subagents; route fan-out to internal or enterprise orchestration instead.",
       "Manager is not the role-runtime. If the role primitive is unavailable, stop and surface the missing primitive.",
       "Keep Nogra bookkeeping in Manager. The spawned role-runtime receives the brief, scope and evidence contract and returns a report.",
       "If runtimePolicy is custom and the client supports per-invocation model/effort overrides, request the configured model and effort; otherwise rely on the release default resolved by the local runtime and report the limitation plainly.",
@@ -2686,11 +2988,30 @@ function printText(payload) {
     console.log(`- Plugin: ${payload.plugin.name} ${payload.plugin.version}`);
     console.log(`- Workspace: ${payload.workspace.initialized ? payload.workspace.workspaceId || "local" : "not initialized"}`);
     console.log(`- Control plane: ${payload.hostedMcpUsed ? "connected" : "local"}`);
+    console.log(`- Bridge: ${payload.bridge?.status || "unknown"}${payload.bridge?.version ? ` ${payload.bridge.version}` : ""}`);
+    console.log(`- Git: ${payload.git?.status || "unknown"}${Number.isFinite(Number(payload.git?.dirtyCount)) ? ` (${payload.git.dirtyCount})` : ""}`);
+    console.log(`- Promotion: ${payload.promotion?.status || "unknown"}`);
     for (const warning of payload.plugin.diagnostics?.warnings || []) {
       console.log(`- Warning: ${warning.message}`);
     }
     console.log(`- Recent briefs: ${payload.recent.briefs.length}`);
     console.log(`- Recent transport runs: ${payload.recent.transportRuns.length}`);
+    return;
+  }
+  if (payload.schema === "nogra.local.watch.v1") {
+    console.log("Nogra live hooks");
+    console.log(`- Status: ${payload.status}`);
+    console.log(`- Log: ${payload.path}`);
+    console.log(`- Events: ${payload.events}`);
+    if (payload.latestEvent) {
+      console.log(`- Latest: ${payload.latestEvent}${payload.latestSummary ? ` - ${payload.latestSummary}` : ""}`);
+    }
+    if (!payload.lines.length) {
+      console.log("- Recent: none");
+      return;
+    }
+    console.log(`- Recent (${payload.lineCount}/${payload.maxLines}):`);
+    for (const line of payload.lines) console.log(`  ${line}`);
     return;
   }
   console.log(JSON.stringify(payload, null, 2));
@@ -2716,6 +3037,8 @@ function main() {
   let payload;
   if (command === "status") {
     payload = statusPayload(root);
+  } else if (command === "watch") {
+    payload = watchPayload(root, options);
   } else if (command === "registry") {
     payload = registryPayload(root);
   } else if (command === "init-bundle") {
@@ -2775,9 +3098,16 @@ function main() {
   return 0;
 }
 
-try {
-  process.exitCode = main();
-} catch (error) {
-  console.error(`nogra-local: ${error.message}`);
-  process.exitCode = 1;
+export {
+  statusPayload,
+  workspaceRoot
+};
+
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  try {
+    process.exitCode = main();
+  } catch (error) {
+    console.error(`nogra-local: ${error.message}`);
+    process.exitCode = 1;
+  }
 }

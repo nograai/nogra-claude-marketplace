@@ -1,6 +1,6 @@
 ---
 name: nogra-status
-description: Show compact Nogra ledger/state, installed plugin ref, workspace id, language/runtime state, and recent local records. Use only when the user runs /nogra:status or explicitly asks for Nogra ledger, Nogra state, Nogra version, installed plugin version, current Nogra records, recent briefs, runs or events. Do not use for generic project, task, session, git or release status.
+description: Show compact Nogra ledger, workspace, version and recent local records. Use only when the user runs /nogra:status or explicitly asks for Nogra state, version, briefs, runs or events.
 ---
 
 # Nogra Ledger State
@@ -53,6 +53,10 @@ After versions, show:
   Nogra owns run state.
 - Local ledger/checkpoint freshness when present: show `ledgerWatermark`,
   `checkpointSourceWatermark` and whether the checkpoint is `fresh` or `stale`.
+- Local bridge/git/promotion projections when present: show bridge status and
+  version, git status plus dirty count only, and the promotion hint with
+  blockers. Do not list individual dirty files. Treat `local-preflight` bridge
+  as local evidence only, not CEO/live Co-work acceptance.
 - Local index readiness when present: show whether risk intake, behavior score,
   risk registry, decisions and expansions files exist. If
   `.nogra/index/behavior-score.md` has a filled latest score line, summarize it
@@ -60,6 +64,14 @@ After versions, show:
 - Local continuity migration status when present: show `ready` or
   `migration-needed`. If migration is needed, say `/nogra:setup` will merge the
   missing local continuity layout without replacing app files or user-set config.
+- Local live hook observability when present: show the log path, event count and
+  latest event summary from `continuity.liveHooks`. Do not dump raw JSONL; if the
+  user asks to watch it live, route to `/nogra:watch`. That command can show a
+  bounded snapshot and can point Claude Code's Monitor tool at the log file.
+- Claude Code statusline when present: Nogra's statusline script is only a
+  projection of the local runtime status payload. It must stay read-only,
+  fail-open and must render bridge, dirty and promotion state only from
+  canonical Nogra status.
 
 ## Background Run Boundary
 

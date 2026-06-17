@@ -1,5 +1,6 @@
 {
   "schema": "nogra.workspace.config.v1",
+  "releaseVersion": "{{releaseVersion}}",
   "workspaceName": "{{workspaceName}}",
   "workspaceId": "{{workspaceId}}",
   "createdAt": "{{generatedAt}}",

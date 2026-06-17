@@ -41,8 +41,8 @@ into prompt scoring or keyword scoring.
 
 Irreversible, production, billing, data, permissions, secrets or git-history
 work still requires judgment and Claude Code's native permission model. The
-local runtime includes a narrow deterministic `PreToolUse` convergence
-gate for those risk boundaries: it asks when a permanent-risk tool call has no
+local runtime includes a narrow deterministic `PreToolUse` convergence gate for
+those risk boundaries: it asks when a permanent-risk tool call has no
 current dispatch receipt. It may also emit a visible Nogra match review for
 read-only public fetches or risk-boundary actions already matched to the current
 dispatch receipt. Match reviews add context only; they do not send

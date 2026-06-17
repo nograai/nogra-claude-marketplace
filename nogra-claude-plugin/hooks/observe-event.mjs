@@ -69,5 +69,6 @@ if (!hasNograConfig(root)) {
   process.exit(0);
 }
 
-captureSessionAnchor(root, input, "SessionEnd");
-captureLiveHookEvent(root, input, { eventName: "SessionEnd", decision: "observed" });
+const eventName = cleanInline(input.hook_event_name || input.hookEventName || "HookEvent");
+captureSessionAnchor(root, input, eventName);
+captureLiveHookEvent(root, input, { eventName, decision: "observed" });

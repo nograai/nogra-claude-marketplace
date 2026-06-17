@@ -13,11 +13,14 @@ const pluginRoot = path.resolve(path.dirname(__filename), "..");
 const repoRoot = path.resolve(pluginRoot, "..", "..");
 const localRuntime = path.join(pluginRoot, "scripts", "nogra-local.mjs");
 const ledgerRuntime = path.join(pluginRoot, "scripts", "nogra-ledger.mjs");
+const skillQualityCheck = path.join(pluginRoot, "scripts", "check-skill-quality.mjs");
 const sessionStartHook = path.join(pluginRoot, "hooks", "session-start.mjs");
 const postCompactHook = path.join(pluginRoot, "hooks", "post-compact.mjs");
 const sessionEndHook = path.join(pluginRoot, "hooks", "session-end.mjs");
 const userPromptSubmitHook = path.join(pluginRoot, "hooks", "user-prompt-submit.mjs");
 const preToolUseHook = path.join(pluginRoot, "hooks", "pre-tool-use.mjs");
+const observeEventHook = path.join(pluginRoot, "hooks", "observe-event.mjs");
+const statuslineScript = path.join(pluginRoot, "scripts", "statusline.mjs");
 
 function parseFrontmatter(text) {
   const lines = text.split(/\r?\n/);
@@ -56,6 +59,23 @@ function agentText(fileName) {
 
 function pluginText(relativePath) {
   return fs.readFileSync(path.join(pluginRoot, relativePath), "utf8");
+}
+
+function fencedShellBlocks(text) {
+  return [...String(text || "").matchAll(/```(?:bash|sh)\n([\s\S]*?)```/g)].map((match) => match[1]);
+}
+
+function assertBashSafeSkillRecipes(relativePath) {
+  const text = pluginText(relativePath);
+  assert(text.includes("Claude Code Bash-safe command style") || relativePath.includes("references/data-sources.md"), `${relativePath} should document Bash-safe command style`);
+  for (const block of fencedShellBlocks(text)) {
+    assert(!block.includes("$PWD"), `${relativePath} command examples should not use $PWD`);
+    assert(!/\bNOGRA_ROOT=/.test(block), `${relativePath} command examples should not assign NOGRA_ROOT`);
+    assert(!block.includes("<<"), `${relativePath} command examples should not use heredocs`);
+    assert(!block.includes("&&"), `${relativePath} command examples should not use shell chaining`);
+    assert(!/\|\|\s*exit/.test(block), `${relativePath} command examples should not use cd-or-exit fallbacks`);
+    assert(!block.includes("/tmp/"), `${relativePath} command examples should not use out-of-workspace temp paths`);
+  }
 }
 
 function displayRuntime(runtime) {
@@ -97,16 +117,26 @@ function runLedger(args, input, cwd = repoRoot) {
   return JSON.parse(output);
 }
 
-function runHook(hook, input) {
+function runHook(hook, input, env = {}) {
   const output = execFileSync(process.execPath, [hook], {
     cwd: repoRoot,
     input: JSON.stringify(input),
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginRoot }
+    env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginRoot, ...env }
   });
   if (!output.trim()) return {};
   return JSON.parse(output);
+}
+
+function runStatusline(input) {
+  return execFileSync(process.execPath, [statuslineScript], {
+    cwd: repoRoot,
+    input: JSON.stringify(input),
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, CLAUDE_PLUGIN_ROOT: pluginRoot }
+  }).trim();
 }
 
 function runSessionStartHook(input) {
@@ -123,6 +153,10 @@ function runSessionEndHook(input) {
 
 function runPreToolUseHook(input) {
   return runHook(preToolUseHook, input);
+}
+
+function runObserveEventHook(input, env = {}) {
+  return runHook(observeEventHook, input, env);
 }
 
 function assert(condition, message) {
@@ -181,6 +215,12 @@ function resolveManagerRoot() {
 }
 
 function main() {
+  execFileSync(process.execPath, [skillQualityCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-local-runtime-smoke-"));
   const managerRoot = resolveManagerRoot();
   const hooksConfig = JSON.parse(pluginText("hooks/hooks.json"));
@@ -225,9 +265,29 @@ function main() {
   assert(executorPrompt.includes("not granted the Claude Code"), "executor should document the public no-nested-spawn wall");
   assert(dispatchSkill.includes("Executor self-report is never verdict evidence"), "dispatch skill should keep verdicts independent from executor self-report quality");
   assert(verifySkill.includes("Executor self-report is never verdict evidence"), "verify skill should keep verdicts independent from executor self-report quality");
+  for (const relativePath of [
+    "skills/setup/SKILL.md",
+    "skills/brief/SKILL.md",
+    "skills/dispatch/SKILL.md",
+    "skills/create/SKILL.md",
+    "skills/verify/SKILL.md",
+    "skills/update/SKILL.md",
+    "skills/watch/SKILL.md",
+    "skills/status/references/data-sources.md"
+  ]) {
+    assertBashSafeSkillRecipes(relativePath);
+  }
+  const setupSkill = pluginText("skills/setup/SKILL.md");
+  assert(setupSkill.includes("Validate these fields") && setupSkill.includes("directly from the returned JSON"), "setup skill should inline validation checklist instead of requiring an extra reference read");
+  assert(setupSkill.includes("no returned file path starts with `.claude/`"), "setup skill should keep .claude path validation visible");
 
   const managerStatus = run(["status", "--root", managerRoot]);
   assert(managerStatus.workspace.mode === "local", "manager workspace should normalize to local");
+  assert(["unknown", "clean", "dirty"].includes(managerStatus.git?.status), "status should expose canonical git dirtiness projection");
+  assert(managerStatus.git?.source?.includes("--no-optional-locks"), "git projection should avoid optional git locks");
+  assert(managerStatus.git?.source?.includes("--porcelain=v2"), "git projection should use a single porcelain status read");
+  assert(managerStatus.bridge?.schema === "nogra.local.bridge_projection.v1", "status should expose canonical bridge projection");
+  assert(managerStatus.promotion?.schema === "nogra.local.promotion_projection.v1", "status should expose canonical promotion projection");
   assert(managerStatus.hostedMcpUsed === false, "status should remain local");
 
   const init = run(["init", "--apply", "--root", temp, "--workspace-name", "Local Smoke"]);
@@ -272,7 +332,7 @@ function main() {
   }
   const freshConfig = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "config.json"), "utf8"));
   assert(freshConfig.connectionMode === "local", "fresh config should declare local mode");
-  assert(!Object.hasOwn(freshConfig, "releaseVersion"), "fresh config should not write releaseVersion");
+  assert(freshConfig.releaseVersion === "v1.0.0", "fresh config should persist workspace config release identity");
   assert(!Object.hasOwn(freshConfig, "version"), "fresh config should not write root version");
   assert(!Object.hasOwn(freshConfig, ["play", "book", "Version"].join("")), "fresh config should not write legacy workspace field");
   assert(freshConfig.runtimePolicy?.profile === "default", "fresh config should use runtimePolicy profile default");
@@ -285,6 +345,9 @@ function main() {
 
   const status = run(["status", "--root", temp]);
   assert(status.workspace.mode === "local", "fresh workspace should be local");
+  assert(status.git?.status === "unknown", "fresh temp status should fail open for git projection outside a git worktree");
+  assert(status.bridge?.status === "unknown", "fresh temp status should fail open for bridge projection without bridge source");
+  assert(status.promotion?.status === "unknown", "fresh temp status should fail open for promotion projection without dev index");
   assert(!Object.hasOwn(status.workspace, "releaseVersion"), "fresh status should not expose workspace releaseVersion");
   assert(!Object.hasOwn(status.workspace, "contractVersion"), "fresh status should not expose workspace contractVersion");
   assert(status.hostedMcpUsed === false, "fresh status should remain local");
@@ -356,6 +419,206 @@ function main() {
     transcript_path: "/tmp/transcript-pretool-safe-001.jsonl"
   });
   assert(Object.keys(safeCommand).length === 0, "PreToolUse should stay silent for normal commands");
+  const liveHooksLog = path.join(temp, ".nogra", "runtime", "live-hooks.log");
+  const liveHooksJsonl = path.join(temp, ".nogra", "runtime", "live-hooks.jsonl");
+  assert(fs.existsSync(liveHooksLog), "PreToolUse should write a visible live hook log");
+  assert(fs.readFileSync(liveHooksLog, "utf8").includes("PreToolUse tool=Bash cmd=npm"), "live hook log should show safe Bash PreToolUse without emitting hook context");
+
+  const claudeMdWrite = runPreToolUseHook({
+    cwd: temp,
+    workspace_roots: [temp],
+    tool_name: "Write",
+    tool_input: {
+      file_path: path.join(temp, "CLAUDE.md"),
+      content: "# Local Instructions\n"
+    },
+    session_id: "session-pretool-instruction-claude-md-001",
+    transcript_path: "/tmp/transcript-pretool-instruction-claude-md-001.jsonl"
+  });
+  assert(claudeMdWrite.hookSpecificOutput?.permissionDecision === "ask", "CLAUDE.md writes should ask as instruction-surface changes");
+  assertReadableReview(claudeMdWrite, "instruction-surface write", "CLAUDE.md instruction-surface review");
+
+  const claudeRulesWrite = runPreToolUseHook({
+    cwd: temp,
+    workspace_roots: [temp],
+    tool_name: "Write",
+    tool_input: {
+      file_path: path.join(temp, ".claude", "rules", "workflow.md"),
+      content: "# Workflow Rules\n"
+    },
+    session_id: "session-pretool-instruction-claude-rules-001",
+    transcript_path: "/tmp/transcript-pretool-instruction-claude-rules-001.jsonl"
+  });
+  assert(claudeRulesWrite.hookSpecificOutput?.permissionDecision === "ask", ".claude rules writes should ask as instruction-surface changes");
+  assertReadableReview(claudeRulesWrite, "instruction-surface write", ".claude rules instruction-surface review");
+
+  const nativeClaudeMemoryWrite = runPreToolUseHook({
+    cwd: temp,
+    workspace_roots: [temp],
+    tool_name: "Write",
+    tool_input: {
+      file_path: path.join(os.tmpdir(), "nogra-smoke-home", ".claude", "projects", "-Users-patricklarsen-y26", "memory", "foo.md"),
+      content: "# Native Claude Memory\n"
+    },
+    session_id: "session-pretool-native-claude-memory-001",
+    transcript_path: "/tmp/transcript-pretool-native-claude-memory-001.jsonl"
+  });
+  assert(Object.keys(nativeClaudeMemoryWrite).length === 0, "native Claude memory writes should stay silent");
+
+  const skillWrite = runPreToolUseHook({
+    cwd: temp,
+    workspace_roots: [temp],
+    tool_name: "Write",
+    tool_input: {
+      file_path: path.join(temp, "skills", "review", "SKILL.md"),
+      content: "# Review Skill\n"
+    },
+    session_id: "session-pretool-instruction-skill-001",
+    transcript_path: "/tmp/transcript-pretool-instruction-skill-001.jsonl"
+  });
+  assert(skillWrite.hookSpecificOutput?.permissionDecision === "ask", "SKILL.md writes should ask as instruction-surface changes");
+  assertReadableReview(skillWrite, "instruction-surface write", "SKILL.md instruction-surface review");
+
+  const pluginHookWrite = runPreToolUseHook({
+    cwd: temp,
+    workspace_roots: [temp],
+    tool_name: "Write",
+    tool_input: {
+      file_path: path.join(temp, "manager", "nogra-claude-plugin", "hooks", "pre-tool-use.mjs"),
+      content: "export {};\n"
+    },
+    session_id: "session-pretool-instruction-hook-001",
+    transcript_path: "/tmp/transcript-pretool-instruction-hook-001.jsonl"
+  });
+  assert(pluginHookWrite.hookSpecificOutput?.permissionDecision === "ask", "Nogra plugin hook writes should ask as instruction-surface changes");
+  assertReadableReview(pluginHookWrite, "instruction-surface write", "plugin hook instruction-surface review");
+
+  const normalAppHookWrite = runPreToolUseHook({
+    cwd: temp,
+    workspace_roots: [temp],
+    tool_name: "Write",
+    tool_input: {
+      file_path: path.join(temp, "src", "hooks", "use-listings.ts"),
+      content: "export function useListings() { return []; }\n"
+    },
+    session_id: "session-pretool-normal-app-hook-001",
+    transcript_path: "/tmp/transcript-pretool-normal-app-hook-001.jsonl"
+  });
+  assert(Object.keys(normalAppHookWrite).length === 0, "normal app hook files should stay silent");
+
+  runObserveEventHook({
+    cwd: temp,
+    workspace_roots: [temp],
+    hook_event_name: "InstructionsLoaded",
+    file_path: path.join(temp, "CLAUDE.md"),
+    memory_type: "Project",
+    load_reason: "session_start",
+    session_id: "session-observe-instructions-001",
+    transcript_path: "/tmp/transcript-observe-instructions-001.jsonl"
+  });
+  runObserveEventHook({
+    cwd: temp,
+    workspace_roots: [temp],
+    hook_event_name: "PostToolUse",
+    tool_name: "Bash",
+    tool_input: {
+      command: "echo super-secret-command-value",
+      description: "Secret output smoke"
+    },
+    tool_response: {
+      stdout: "SUPER_SECRET_OUTPUT",
+      stderr: "",
+      interrupted: false,
+      isImage: false
+    },
+    session_id: "session-observe-posttool-001",
+    transcript_path: "/tmp/transcript-observe-posttool-001.jsonl"
+  });
+  const liveJson = fs.readFileSync(liveHooksJsonl, "utf8");
+  assert(liveJson.includes("\"eventName\":\"InstructionsLoaded\""), "live hook JSONL should record InstructionsLoaded");
+  assert(liveJson.includes("\"eventName\":\"PostToolUse\""), "live hook JSONL should record PostToolUse");
+  assert(liveJson.includes("\"transcriptPath\":\"/tmp/transcript-observe-posttool-001.jsonl\""), "live hook JSONL should preserve transcript path");
+  assert(!liveJson.includes("SUPER_SECRET_OUTPUT"), "live hook JSONL should not store tool output content");
+  assert(!liveJson.includes("super-secret-command-value"), "live hook JSONL should not store full shell commands");
+  const liveStatus = run(["status", "--root", temp]);
+  assert(liveStatus.continuity?.liveHooks?.exists === true, "status should expose live hook log presence");
+  assert(liveStatus.continuity?.liveHooks?.events >= 3, "status should expose live hook event count");
+  assert(liveStatus.continuity?.liveHooks?.latestEvent === "PostToolUse", "status should expose latest live hook event");
+  const liveWatch = run(["watch", "--root", temp, "--lines", "5"]);
+  assert(liveWatch.schema === "nogra.local.watch.v1", "watch should expose a stable local watch schema");
+  assert(liveWatch.status === "ok", "watch should report ok when live hook log exists");
+  assert(liveWatch.mode === "snapshot", "watch should be an explicit bounded snapshot by default");
+  assert(liveWatch.events >= 3, "watch should expose live hook event count");
+  assert(liveWatch.latestEvent === "PostToolUse", "watch should expose latest live hook event");
+  assert(liveWatch.lineCount <= 5, "watch should respect --lines");
+  assert(liveWatch.path.endsWith(".nogra/runtime/live-hooks.log"), "watch should point at the text hook log");
+  assert(liveWatch.liveFollow?.tailCommand?.includes("tail -F"), "watch should expose an opt-in live tail command");
+  const liveWatchText = JSON.stringify(liveWatch);
+  assert(!liveWatchText.includes("SUPER_SECRET_OUTPUT"), "watch should not expose tool output content");
+  assert(!liveWatchText.includes("super-secret-command-value"), "watch should not expose full shell commands");
+
+  const runtimeFilesBeforeStatusline = Object.fromEntries(
+    fs.readdirSync(path.join(temp, ".nogra", "runtime")).map((name) => {
+      const file = path.join(temp, ".nogra", "runtime", name);
+      return [name, fs.readFileSync(file, "utf8")];
+    })
+  );
+  const statusline = runStatusline({
+    cwd: temp,
+    workspace: {
+      current_dir: temp,
+      project_dir: temp,
+      added_dirs: []
+    },
+    model: {
+      display_name: "Sonnet"
+    },
+    context_window: {
+      used_percentage: 12
+    },
+    session_id: "session-statusline-001",
+    transcript_path: "/tmp/transcript-statusline-001.jsonl"
+  });
+  const runtimeFilesAfterStatusline = Object.fromEntries(
+    fs.readdirSync(path.join(temp, ".nogra", "runtime")).map((name) => {
+      const file = path.join(temp, ".nogra", "runtime", name);
+      return [name, fs.readFileSync(file, "utf8")];
+    })
+  );
+  assert(JSON.stringify(runtimeFilesAfterStatusline) === JSON.stringify(runtimeFilesBeforeStatusline), "statusline should be read-only over runtime projections");
+  assert(statusline.includes(`Nogra:${liveStatus.workspace.workspaceId}`), "statusline should project the same workspace id as status");
+  assert(statusline.includes(liveStatus.plugin.version), "statusline should project the same plugin version as status");
+  assert(statusline.includes("hook:PostToolUse"), "statusline should project latest hook event from status");
+  assert(statusline.includes(`checkpoint:${liveStatus.ledger.checkpointStatus}`), "statusline should project checkpoint freshness from status");
+  assert(statusline.includes(`bridge:${liveStatus.bridge.status}`), "statusline should project bridge state from status");
+  const expectedDirty = liveStatus.git.status === "dirty" ? String(liveStatus.git.dirtyCount) : liveStatus.git.status;
+  assert(statusline.includes(`dirty:${expectedDirty}`), "statusline should project git dirtiness from status");
+  assert(statusline.includes(`promo:${liveStatus.promotion.status}`), "statusline should project promotion state from status");
+  assert(statusline.includes("ctx:12%"), "statusline should display Claude-provided context percentage when present");
+  const missingStatusline = runStatusline({
+    cwd: path.join(temp, "missing-dir"),
+    workspace: {
+      current_dir: path.join(temp, "missing-dir"),
+      project_dir: path.join(temp, "missing-dir")
+    }
+  });
+  assert(missingStatusline.startsWith("Nogra:"), "statusline should fail open with a compact Nogra line");
+
+  runObserveEventHook({
+    cwd: temp,
+    workspace_roots: [temp],
+    hook_event_name: "Notification",
+    notification_type: "debug",
+    title: "Rotation smoke",
+    session_id: "session-observe-rotation-001",
+    transcript_path: "/tmp/transcript-observe-rotation-001.jsonl"
+  }, {
+    NOGRA_LIVE_HOOK_LOG_MAX_BYTES: "128"
+  });
+  assert(fs.existsSync(`${liveHooksJsonl}.1`), "live hook JSONL should rotate to a single backup when over cap");
+  assert(fs.existsSync(`${liveHooksLog}.1`), "live hook text log should rotate to a single backup when over cap");
+  assert(fs.readFileSync(liveHooksJsonl, "utf8").includes("\"eventName\":\"Notification\""), "live hook JSONL should continue writing after rotation");
+  assert(fs.readFileSync(liveHooksLog, "utf8").includes("Notification"), "live hook text log should continue writing after rotation");
 
   const publicFetch = runPreToolUseHook({
     cwd: temp,
@@ -699,6 +962,8 @@ function main() {
   const routerReference = pluginText("skills/help/references/router.md");
   const helpSkill = pluginText("skills/help/SKILL.md");
   const statusSkill = pluginText("skills/status/SKILL.md");
+  const statuslineSource = pluginText("scripts/statusline.mjs");
+  const localRuntimeSource = pluginText("scripts/nogra-local.mjs");
   const usageReference = pluginText("skills/help/references/usage.md");
   const initClaude = pluginText("contracts/init-bundle/files/CLAUDE.md");
   const readme = pluginText("README.md");
@@ -719,6 +984,9 @@ function main() {
   assert(usageReference.includes("Workspace off: remove or rename the folder-local `.nogra/` directory."), "usage reference should separate workspace off from plugin uninstall");
   assert(usageReference.includes("claude plugin disable <plugin-id>"), "usage reference should point to plugin-manager disable");
   assert(usageReference.includes("Do not direct users to edit `settings.json` by hand as the primary path."), "usage reference should not route off/uninstall through settings.json");
+  assert(statuslineSource.includes("statusPayload") && !statuslineSource.includes("execFileSync"), "statusline should reuse local status payload in-process per render");
+  assert(localRuntimeSource.includes("GIT_OPTIONAL_LOCKS") && localRuntimeSource.includes("--no-optional-locks"), "git status projection should disable optional git locks");
+  assert(!localRuntimeSource.includes("\"rev-parse\""), "git status projection should not spawn a second git command for head");
   assert(initClaude.includes("## Nogra Intent Router"), "init-bundle CLAUDE.md should include the Nogra intent router");
   assert(initClaude.includes("If no route matches, stay direct."), "init-bundle router should default unmatched prompts to direct work");
   assert(readme.includes("### Build directly"), "README should show direct work as the ordinary scoped-work default");
@@ -762,10 +1030,16 @@ function main() {
   assert(createPlan.hub?.willSetWorkspaceHubMode === true, "create-project plan should mark workspace hub mode intent");
   const createdProject = run(["create-project", "Smoke Child", "--root", temp, "--apply"]);
   assert(createdProject.status === "ok", "create-project apply should succeed");
+  assert(createdProject.configContract?.status === "ok", "create-project result should include a passing workspace config contract check");
   assert(fs.existsSync(path.join(temp, "projects", "smoke-child", ".nogra", "config.json")), "create-project should initialize project-local config");
   assert(fs.existsSync(path.join(temp, ".nogra", "index", "workspaces.jsonl")), "create-project should write hub workspace index");
   assert(fs.existsSync(path.join(temp, "projects", "smoke-child", ".nogra", "index", "workspaces.jsonl")), "create-project should write project self-index");
   const hubConfig = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "config.json"), "utf8"));
+  const childConfig = JSON.parse(fs.readFileSync(path.join(temp, "projects", "smoke-child", ".nogra", "config.json"), "utf8"));
+  assert(childConfig.schema === hubConfig.schema, "create-project child config should use the same workspace config schema as the hub");
+  assert(childConfig.releaseVersion === hubConfig.releaseVersion, "create-project child config should keep the same workspace config release identity as the hub");
+  assert(createdProject.configContract?.hub?.releaseVersion === hubConfig.releaseVersion, "create-project contract check should report hub releaseVersion");
+  assert(createdProject.configContract?.project?.releaseVersion === childConfig.releaseVersion, "create-project contract check should report child releaseVersion");
   assert(hubConfig.bootPolicy?.mode === "workspace-hub", "create-project should set workspace hub boot policy");
   assert(hubConfig.bootPolicy?.workspaceHub?.enabled === true, "create-project should enable workspace hub options");
   assert(!Object.hasOwn(hubConfig.bootPolicy, "managerHub"), "create-project should not write legacy managerHub options");
@@ -1447,9 +1721,10 @@ function main() {
           "manager workspace normalizes to local",
           "fresh init creates local workspace",
           "legacy mode aliases normalize to local",
-          "fresh init avoids product-version fields",
+          "fresh init persists workspace config release identity",
           "fresh init writes runtimePolicy default without concrete role choices",
           "fresh init is English-first without automatic routing controls",
+          "skill command recipes use Bash-safe absolute-root examples",
           "thin router docs map explicit intent while normal scoped work stays direct",
           "fresh init and status expose ledger/checkpoint freshness",
           "hooks prefer workspace root .nogra over nested cwd .nogra",

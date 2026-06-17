@@ -28,6 +28,10 @@ the plugin workflow is active.
 Use `references/dispatch-contract.md` for role/runtime and execution-shape
 mechanics.
 
+Read `references/dispatch-gotchas.md` before dispatching a risky brief, when a
+run returns weak evidence, or when the runtime cannot prove whether a subagent
+will return before the command exits.
+
 Dispatch is a Manager-phase action in the current conversation: create the
 receipt, hand off the approved brief, receive evidence, decide whether
 independent verification is needed, then roll up to the user.
@@ -97,23 +101,25 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
    Read `.nogra/config.json` and capture the runtime facts needed for the run.
    Use `skills/help/references/runtime.md` for runtime-policy meaning and
    `references/dispatch-contract.md` for dispatch shape mechanics.
-   Before any transient `cd`, pin the Nogra workspace root once and use that
-   absolute path for every local runtime or ledger command:
-
-   ```bash
-   NOGRA_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-   ```
+   Claude Code Bash-safe command style: confirm the absolute Nogra workspace
+   root once and use that literal path for every local runtime or ledger
+   command. Use one simple command per Bash tool call. Do not use `$PWD`, `&&`,
+   heredocs or root assignments in Bash tool calls. If a finalize/verification
+   payload is needed, write it with
+   `Write` to a workspace-local temp file under `.nogra/transport/` first, then
+   pass it with `--input` when the helper supports it. Replace
+   `<absolute-workspace-root>` below with the confirmed absolute path.
 
    The runtime helpers resolve a nested root to the nearest parent containing
    `.nogra/`, and fall back to the requested root when no `.nogra/` exists so
    fresh setup still works. Pinning the root is still the Manager contract:
    verification/test commands may change cwd, but control-plane calls must not
-   depend on a mutable `$PWD`.
+   depend on a mutable working directory.
 2. Promote the brief if it is still a draft with the local runtime:
 
-   ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "$NOGRA_ROOT" --brief-id "<briefId>" --json
-   ```
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "<absolute-workspace-root>" --brief-id "<briefId>" --json
+```
 
    The default dispatch control plane is local.
 3. Before local dispatch, perform a Manager-internal routing and sizing check
@@ -145,16 +151,16 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
 4. Read local status/registry and keep the dispatch path local unless the
    workspace is intentionally connected:
 
-   ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" registry --root "$NOGRA_ROOT" --json
-   ```
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" registry --root "<absolute-workspace-root>" --json
+```
 
    The default dispatch control plane is plugin-local.
 5. Create a local dispatch receipt/run id for the approved brief:
 
-   ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" dispatch --root "$NOGRA_ROOT" --brief-id "<briefId>" --target executor --json
-   ```
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" dispatch --root "<absolute-workspace-root>" --brief-id "<briefId>" --target executor --json
+```
 
    Pass `--target-model` only for an explicit per-dispatch override. Otherwise
    the local runtime resolves the configured runtime policy or release default.
@@ -199,7 +205,7 @@ The final user-facing title is `Nogra Verification`. Verification words are the 
    directly into the Agent prompt or context bundle.
    The public executor/verifier roles intentionally omit `Agent` from their
    frontmatter `tools` allowlist. They must not spawn nested subagents. If
-   fan-out is required, stop and return it to Manager for a separately approved
+   fan-out is required, stop and route it to an internal or enterprise
    orchestration path rather than widening the public plugin role.
    If the client supports per-invocation turn limits, pass
    `targetSubagent.maxTurnsHint` from the handoff contract to the spawn

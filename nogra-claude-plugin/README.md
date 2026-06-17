@@ -76,8 +76,8 @@ use the CLI with the exact plugin id shown by `/plugin` or
 `claude plugin list`, for example:
 
 ```bash
-claude plugin disable <plugin-id>
-claude plugin uninstall <plugin-id>
+claude plugin disable nogra@nogra-claude
+claude plugin uninstall nogra@nogra-claude
 ```
 
 If you disable or uninstall during an active Claude Code session, run
@@ -200,6 +200,9 @@ preserves or merges existing Nogra files according to the bundled write policy.
   effort and language.
 - `/nogra:status`: show installed plugin ref, workspace id,
   language/runtime state and recent local ledger records.
+- `/nogra:watch`: show recent local hook events from
+  `.nogra/runtime/live-hooks.log`; live follow is opt-in via Claude Code
+  Monitor or a manual tail command.
 - `/nogra:update`: pull current Nogra contract/guidance on demand.
 - `/nogra:help`: explain Nogra and choose the right Nogra flow.
 
@@ -258,13 +261,47 @@ drafting, dispatch, verification and agent spawning. Claude transcript and
 history stay outside Nogra's routing input. Claude must still use Nogra skills
 for the workflow and wait for the user's choice before entering brief flow.
 
-Session continuity is local and explicit. Session-start and prompt hooks may
-write a bounded session anchor under `.nogra/runtime/session-anchor.json`, and
-Nogra runtime writes append-only ledger events when briefs, dispatches,
-verification, diagnostics or terminal run records are created. A checkpoint is a
-user-visible projection of that ledger state, not an automatic shutdown upload.
-When the ledger is ahead of the checkpoint, `/nogra:status` reports the
-checkpoint as stale so Claude can ask whether to refresh it.
+Session continuity and observability are local and explicit. Session-start and
+prompt hooks may write a bounded session anchor under
+`.nogra/runtime/session-anchor.json`. Hook/event observability is appended to
+`.nogra/runtime/live-hooks.log` and `.nogra/runtime/live-hooks.jsonl` so the
+operator can see which Claude Code events fired and which transcript they
+belonged to. The live hook log stores event metadata only: event name,
+transcript path, tool name, target path, instruction file, decision summary and
+short timing/status fields. It does not store prompt bodies, tool output, file
+contents or full shell commands.
+
+For a live view, tail `.nogra/runtime/live-hooks.log` or ask Claude to Monitor
+that file in the background. Nogra runtime writes append-only ledger events when
+briefs, dispatches, verification, diagnostics or terminal run records are
+created. A checkpoint is a user-visible projection of that ledger state, not an
+automatic shutdown upload. When the ledger is ahead of the checkpoint,
+`/nogra:status` reports the checkpoint as stale so Claude can ask whether to
+refresh it.
+
+Nogra also ships a Claude Code statusline projector at
+`scripts/statusline.mjs`. It reads Claude Code's statusline JSON from stdin,
+reuses the local `/nogra:status` payload as the canonical source, prints one
+compact line and fails open as `Nogra:unknown` if anything is unavailable. It
+does not write `.nogra/` files or invent bridge, git or promotion state. The
+local status payload exposes those as read-only projections: bridge status comes
+from local bridge metadata plus the newest bridge gate report, dirty state is a
+count/head projection from `git --no-optional-locks status --porcelain=v2
+--branch` with `GIT_OPTIONAL_LOCKS=0`, and promotion is a hint derived from the
+workspace index plus bridge/git blockers.
+
+Claude Code plugin settings do not currently install a general `statusLine`
+entry, so enable it in Claude Code settings when wanted:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node /absolute/path/to/nogra-claude-plugin/scripts/statusline.mjs",
+    "padding": 0
+  }
+}
+```
 
 Routing is pull-first. Normal scoped work stays direct unless the user pulls
 Nogra. Natural-language intent belongs to Claude's judgment. Irreversible,

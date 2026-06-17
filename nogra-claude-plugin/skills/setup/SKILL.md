@@ -29,11 +29,21 @@ If the user just installed or updated the plugin inside an already-running
 Claude Code session, tell them to restart or reopen Claude Code first. Plugin
 changes load at session startup.
 
+Read `references/gotchas.md` before diagnosing setup failures, plugin update
+drift, permission-denial reports or user complaints about Nogra setup friction.
+
 ## Flow
 
 Pre-flight (before any step): verify Node.js is available — Nogra's local runtime
 is a Node script. If `node` is not on PATH, stop and tell the user that Nogra
 setup needs Node.js 18+; do not write partial files.
+
+Claude Code Bash-safe command style: use one simple command per Bash tool call
+with absolute paths. Do not use `$PWD`, `&&`, heredocs or root assignments in
+Bash tool calls. If a JSON payload is needed, write it to a
+workspace-local temp file first, then pass `--input <path>`.
+Replace `<absolute-workspace-root>` below with the confirmed absolute path of
+the folder being set up.
 
 1. Confirm the current working directory in one short sentence.
 2. Inspect the folder and report whether it is empty, already Nogra-enabled or
@@ -55,15 +65,22 @@ setup needs Node.js 18+; do not write partial files.
 5. Read the local init bundle from the local runtime:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init-bundle --root "$PWD" --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init-bundle --root "<absolute-workspace-root>" --json
 ```
 
    Pass `--workspace-name "<name>"` only when the user explicitly names the
    workspace.
 6. Before writing anything, verify the returned bundle is the local plugin
-   setup bundle and contains only allowed setup files. Use
-   `references/validation.md` for the exact validation checklist. If any check
-   fails, stop immediately and do not write files.
+   setup bundle and contains only allowed setup files. Validate these fields
+   directly from the returned JSON instead of reading an extra reference file:
+   - setup mode is `plugin`;
+   - server mode is `plugin-local`;
+   - connection mode is `local`;
+   - setup came from the local plugin runtime, not a remote setup path;
+   - the only allowed root non-`.nogra/` path is `CLAUDE.md`;
+   - root `CLAUDE.md` uses `writePolicy=create_if_missing`;
+   - no returned file path starts with `.claude/`.
+   If any check fails, stop immediately and do not write files.
 7. Treat the returned plugin-mode bundle as the local source of truth. Write
    only the returned files into this folder, using each file's `path`,
    `content`, `writePolicy` and `installPlan`.
@@ -101,7 +118,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init-bundle --root "$PWD" -
     or use the local runtime apply path only after explicit GO:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init --apply --root "$PWD" --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init --apply --root "<absolute-workspace-root>" --json
 ```
 
 14. Show final written, updated, preserved and failed counts plus the returned

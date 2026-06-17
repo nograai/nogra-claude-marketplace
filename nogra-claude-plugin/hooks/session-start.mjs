@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveBootContext } from "../runtime/local/boot-context.mjs";
 import { renderConvergenceGuardContext } from "../runtime/local/convergence-guard.mjs";
+import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
 function readStdin() {
@@ -198,6 +199,7 @@ When the user asks for Nogra ledger/state or version, include this plugin ref an
 
 const source = sessionStartSource(input);
 captureSessionAnchor(root, input, "SessionStart");
+captureLiveHookEvent(root, input, { eventName: "SessionStart", decision: "context", reason: source });
 
 if (source === "resume") {
   emitContext(resumePointerContext(root, config, source));
