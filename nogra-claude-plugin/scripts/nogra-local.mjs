@@ -406,11 +406,46 @@ function listInstalledNograPlugins() {
   return entries.sort((a, b) => `${a.name}:${a.marketplace}:${a.ref}`.localeCompare(`${b.name}:${b.marketplace}:${b.ref}`));
 }
 
+function strictPublicPluginMode() {
+  return process.env.NOGRA_STRICT_PUBLIC_PLUGIN === "1" || process.env.NOGRA_PUBLIC_GRADE_STRICT === "1";
+}
+
+function isPrivateLaneNograInstall(item) {
+  const label = [
+    item.name,
+    item.marketplace,
+    item.ref
+  ].map((value) => cleanInline(value).toLowerCase()).join(" ");
+  return /\bprivate\b/u.test(label) || /nogra-private/u.test(label) || /private-beta/u.test(label) || /private-stable/u.test(label);
+}
+
+function publicIsolationDiagnostics(installed, context) {
+  const strict = strictPublicPluginMode();
+  const contextRoot = path.resolve(context.root || "");
+  const privateLanePlugins = installed
+    .filter((item) => !item.orphaned && item.name === "nogra" && isPrivateLaneNograInstall(item))
+    .filter((item) => path.resolve(item.path) !== contextRoot)
+    .map(({ name, version, marketplace, ref, orphaned, path: itemPath }) => ({
+      name,
+      version,
+      marketplace,
+      ref,
+      orphaned,
+      path: itemPath
+    }));
+  return {
+    strict,
+    status: privateLanePlugins.length && strict ? "blocked" : "ok",
+    privateLanePlugins
+  };
+}
+
 function pluginDiagnostics(plugin) {
   const context = pluginInstallContext();
   const installed = listInstalledNograPlugins();
   const activeCoreInstalls = installed.filter((item) => item.name === "nogra" && !item.orphaned);
   const marketplaces = marketplaceCandidates(context, plugin.name);
+  const publicIsolation = publicIsolationDiagnostics(installed, context);
   const versionMismatches = marketplaces
     .filter((item) => item.version && item.version !== plugin.version)
     .map((item) => ({
@@ -436,6 +471,17 @@ function pluginDiagnostics(plugin) {
       }))
     });
   }
+  if (publicIsolation.privateLanePlugins.length) {
+    warnings.push({
+      code: "private-nogra-plugin-installed",
+      severity: publicIsolation.strict ? "error" : "warning",
+      blocking: publicIsolation.strict,
+      message: publicIsolation.strict
+        ? "A private Nogra plugin install is present while strict public-plugin isolation is enabled. Disable the private lane for this workspace before public grading."
+        : "A private Nogra plugin install is present. This is valid for local dogfood, but public-grade workspaces should disable private lanes before testing the public plugin.",
+      plugins: publicIsolation.privateLanePlugins
+    });
+  }
   for (const mismatch of versionMismatches) {
     warnings.push({
       code: "marketplace-version-mismatch",
@@ -456,6 +502,7 @@ function pluginDiagnostics(plugin) {
       path: itemPath
     })),
     marketplaces,
+    publicIsolation,
     warnings
   };
 }
@@ -939,6 +986,7 @@ function statusPayload(root) {
       diagnostics: {
         installedNograPlugins: diagnostics.installedNograPlugins,
         marketplaces: diagnostics.marketplaces,
+        publicIsolation: diagnostics.publicIsolation,
         warnings: diagnostics.warnings
       }
     },

@@ -186,6 +186,33 @@ function assertReadableReview(output, action, label) {
   }
 }
 
+const VOLATILE_PREFIX_FIELDS = [
+  "ledgerWatermark=",
+  "checkpointSourceWatermark=",
+  "checkpointStatus=",
+  "currentActionReceipt=",
+  "currentActionStatus=",
+  "currentActionAge=",
+  "currentActionBrief=",
+  "candidateActionReceipt=",
+  "candidateActionStatus=",
+  "candidateActionAge=",
+  "candidateActionIssue=",
+  "latestBrief=",
+  "latestBriefPath=",
+  "indexStatus=",
+  "indexAnchors=",
+  "indexPaths=",
+  "missingIndexPaths="
+];
+
+function assertCacheSafePrefixContext(context, label) {
+  assert(context.includes("cacheSafe=true"), `${label} should mark the prefix context cache-safe`);
+  for (const field of VOLATILE_PREFIX_FIELDS) {
+    assert(!context.includes(field), `${label} should omit volatile prefix field ${field}`);
+  }
+}
+
 function assertRunFails(args, message) {
   try {
     run(args);
@@ -376,9 +403,27 @@ function main() {
   assert(!rootPreferenceContext.includes(`workspaceRoot=${nestedManagerRoot}`), "SessionStart should not boot from nested manager .nogra when workspace root has .nogra");
   assert(rootPreferenceContext.includes("NOGRA_SESSION_BOOT"), "SessionStart startup should emit boot context");
   assert(rootPreferenceContext.includes("NOGRA_CONVERGENCE_GUARD"), "SessionStart startup should emit convergence guard context");
-  assert(rootPreferenceContext.includes("currentActionReceipt=none"), "SessionStart convergence guard should expose missing current receipt");
+  assertCacheSafePrefixContext(rootPreferenceContext, "SessionStart startup");
   assert(!rootPreferenceContext.includes("NOGRA_ROUTING_POLICY"), "SessionStart startup should not emit the old routing policy block");
   assert(!fs.existsSync(path.join(nestedManagerRoot, ".nogra", "runtime", "session-anchor.json")), "SessionStart should not write session anchor under nested manager .nogra");
+
+  fs.mkdirSync(path.join(temp, ".nogra", "ledger"), { recursive: true });
+  fs.appendFileSync(path.join(temp, ".nogra", "ledger", "events.jsonl"), `${JSON.stringify({ event: "cache-prefix-mutation", at: new Date().toISOString() })}\n`);
+  writeJson(path.join(temp, ".nogra", "transport", "runs", "run-cache-prefix-mutation.json"), {
+    runId: "run-cache-prefix-mutation",
+    status: "failed",
+    briefId: "brief-cache-prefix-mutation",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+  const rootPreferenceAfterMutation = runSessionStartHook({
+    cwd: nestedManagerRoot,
+    workspace_roots: [temp],
+    session_id: "session-root-preference-001",
+    transcript_path: "/tmp/transcript-root-preference-001.jsonl"
+  });
+  const rootPreferenceContextAfterMutation = rootPreferenceAfterMutation.hookSpecificOutput?.additionalContext || "";
+  assert(rootPreferenceContextAfterMutation === rootPreferenceContext, "SessionStart prefix context should be byte-stable after ledger/run mutations");
 
   const resumePointer = runSessionStartHook({
     cwd: nestedManagerRoot,
@@ -391,14 +436,18 @@ function main() {
   assert(resumePointerContext.includes("NOGRA_SESSION_RESUME"), "SessionStart resume should emit a resume pointer");
   assert(resumePointerContext.includes("NOGRA_CONVERGENCE_GUARD"), "SessionStart resume should re-inject convergence guard context");
   assert(resumePointerContext.includes(`workspaceRoot=${temp}`), "SessionStart resume pointer should use workspace root");
+  assertCacheSafePrefixContext(resumePointerContext, "SessionStart resume");
   assert(!resumePointerContext.includes("NOGRA_ROUTING_POLICY"), "SessionStart resume should not emit full routing policy");
 
-  const compactPointer = runPostCompactHook({
+  const compactInput = {
     cwd: nestedManagerRoot,
     workspace_roots: [temp],
     source: "auto",
     session_id: "session-root-compact-001",
     transcript_path: "/tmp/transcript-root-compact-001.jsonl"
+  };
+  const compactPointer = runPostCompactHook({
+    ...compactInput
   });
   const compactPointerContext = compactPointer.hookSpecificOutput?.additionalContext || "";
   assert(compactPointer.hookSpecificOutput?.hookEventName === "PostCompact", "PostCompact should identify its hook event");
@@ -406,7 +455,22 @@ function main() {
   assert(compactPointerContext.includes("NOGRA_CONVERGENCE_GUARD"), "PostCompact should re-inject convergence guard context");
   assert(compactPointerContext.includes("compactionDriftBoundary=true"), "PostCompact convergence guard should mark compaction as a drift boundary");
   assert(compactPointerContext.includes(`workspaceRoot=${temp}`), "PostCompact pointer should use workspace root");
+  assertCacheSafePrefixContext(compactPointerContext, "PostCompact");
   assert(!compactPointerContext.includes("NOGRA_ROUTING_POLICY"), "PostCompact should not emit full routing policy");
+  fs.appendFileSync(path.join(temp, ".nogra", "ledger", "events.jsonl"), `${JSON.stringify({ event: "cache-post-compact-mutation", at: new Date().toISOString() })}\n`);
+  writeJson(path.join(temp, ".nogra", "transport", "runs", "run-cache-post-compact-mutation.json"), {
+    runId: "run-cache-post-compact-mutation",
+    status: "failed",
+    briefId: "brief-cache-post-compact-mutation",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+  const compactPointerAfterMutation = runPostCompactHook(compactInput);
+  const compactPointerContextAfterMutation = compactPointerAfterMutation.hookSpecificOutput?.additionalContext || "";
+  assert(compactPointerContextAfterMutation === compactPointerContext, "PostCompact prefix context should be byte-stable after ledger/run mutations");
+  fs.unlinkSync(path.join(temp, ".nogra", "ledger", "events.jsonl"));
+  fs.unlinkSync(path.join(temp, ".nogra", "transport", "runs", "run-cache-prefix-mutation.json"));
+  fs.unlinkSync(path.join(temp, ".nogra", "transport", "runs", "run-cache-post-compact-mutation.json"));
 
   const safeCommand = runPreToolUseHook({
     cwd: temp,
@@ -713,10 +777,8 @@ function main() {
     transcript_path: "/tmp/transcript-partial-index-001.jsonl"
   });
   const partialIndexContext = partialIndexBoot.hookSpecificOutput?.additionalContext || "";
-  assert(partialIndexContext.includes("indexStatus=degraded"), "convergence guard should report degraded index when anchors are missing");
-  assert(partialIndexContext.includes("indexAnchors=decisions"), "convergence guard should advertise only existing index anchors");
-  assert(!partialIndexContext.includes("indexAnchors=risk-intake,behavior-score,risk-registry,decisions,expansions"), "convergence guard should not advertise absent index anchors");
-  assert(partialIndexContext.includes("missingIndexPaths=.nogra/index/risk-intake.md"), "convergence guard should surface missing index paths");
+  assertCacheSafePrefixContext(partialIndexContext, "SessionStart partial-index");
+  assert(partialIndexContext.includes("stateInstruction=Read project-local .nogra/state files"), "SessionStart should point users to state reads instead of injecting index status");
 
   const vercelProdWithoutReceipt = runPreToolUseHook({
     cwd: temp,
@@ -961,6 +1023,10 @@ function main() {
 
   const routerReference = pluginText("skills/help/references/router.md");
   const helpSkill = pluginText("skills/help/SKILL.md");
+  const briefSkill = pluginText("skills/brief/SKILL.md");
+  const dispatchSkillText = pluginText("skills/dispatch/SKILL.md");
+  const executorAgent = pluginText("agents/executor.md");
+  const verifierAgent = pluginText("agents/verifier.md");
   const statusSkill = pluginText("skills/status/SKILL.md");
   const statuslineSource = pluginText("scripts/statusline.mjs");
   const localRuntimeSource = pluginText("scripts/nogra-local.mjs");
@@ -978,6 +1044,13 @@ function main() {
     assert(/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skillFrontmatter.name), `${skillName} skill display label should be slash-picker safe`);
   }
   assert(helpSkill.includes("turn off, disable, uninstall or remove Nogra"), "help skill should route off/uninstall/remove questions");
+  assert(briefSkill.includes("use `AskUserQuestion`"), "brief skill should guide structured AskUserQuestion elicitation");
+  assert(briefSkill.includes("Ask at most 4 questions"), "brief skill should bound risk-intake batches");
+  assert(briefSkill.includes("the first option is"), "brief skill should keep route recommendations first");
+  assert(briefSkill.includes("Ask for explicit GO before execution in ordinary chat, not through"), "brief skill should keep GO outside AskUserQuestion");
+  assert(!dispatchSkillText.includes("AskUserQuestion"), "dispatch skill should not use AskUserQuestion");
+  assert(!executorAgent.includes("AskUserQuestion"), "executor agent should not use AskUserQuestion");
+  assert(!verifierAgent.includes("AskUserQuestion"), "verifier agent should not use AskUserQuestion");
   assert(usageReference.includes("A thin intent router maps explicit user intent"), "usage reference should expose the thin router");
   assert(usageReference.includes("Pull-first does not mean no plugin code ever runs."), "usage reference should keep pull-first honest about hooks");
   assert(usageReference.includes("## Off and Uninstall"), "usage reference should document off/uninstall");
@@ -1060,6 +1133,7 @@ function main() {
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-plugin-diagnostics-smoke-"));
   const fakeActiveRoot = path.join(fakeHome, ".claude", "plugins", "cache", "nogra-stable", "nogra", "0.2.3");
   const fakeOtherRoot = path.join(fakeHome, ".claude", "plugins", "cache", "nogra-legacy-local", "nogra", "0.2.2");
+  const fakePrivateRoot = path.join(fakeHome, ".claude", "plugins", "cache", "nogra-private-beta", "nogra", "0.2.4-beta.1");
   writeJson(path.join(fakeActiveRoot, ".claude-plugin", "plugin.json"), {
     name: "nogra",
     version: "0.2.3"
@@ -1067,6 +1141,10 @@ function main() {
   writeJson(path.join(fakeOtherRoot, ".claude-plugin", "plugin.json"), {
     name: "nogra",
     version: "0.2.2"
+  });
+  writeJson(path.join(fakePrivateRoot, ".claude-plugin", "plugin.json"), {
+    name: "nogra",
+    version: "0.2.4-beta.1"
   });
   writeJson(path.join(fakeHome, ".claude", "plugins", "marketplaces", "nogra-stable", ".claude-plugin", "marketplace.json"), {
     name: "nogra-stable",
@@ -1084,8 +1162,20 @@ function main() {
   }).plugin.diagnostics;
   const warningCodes = diagnostics.warnings.map((warning) => warning.code);
   assert(warningCodes.includes("multiple-nogra-plugins-installed"), "status should warn on multiple installed Nogra plugin refs");
+  assert(warningCodes.includes("private-nogra-plugin-installed"), "status should warn when a private Nogra lane is installed");
   assert(warningCodes.includes("marketplace-version-mismatch"), "status should warn on marketplace/plugin version mismatch");
   assert(diagnostics.warnings.every((warning) => warning.blocking === false), "plugin diagnostics warnings should be non-blocking");
+  assert(diagnostics.publicIsolation?.status === "ok", "private-lane install is non-blocking outside strict public mode");
+
+  const strictDiagnostics = run(["status", "--root", temp], null, {
+    HOME: fakeHome,
+    CLAUDE_PLUGIN_ROOT: fakeActiveRoot,
+    NOGRA_STRICT_PUBLIC_PLUGIN: "1"
+  }).plugin.diagnostics;
+  const strictPrivateWarning = strictDiagnostics.warnings.find((warning) => warning.code === "private-nogra-plugin-installed");
+  assert(strictDiagnostics.publicIsolation?.status === "blocked", "strict public mode blocks private-lane plugin collisions");
+  assert(strictPrivateWarning?.blocking === true, "strict public mode makes private-lane collision blocking");
+  assert(strictPrivateWarning?.severity === "error", "strict public mode reports private-lane collision as an error");
 
   const brief = {
     title: "Local smoke brief",
@@ -1726,12 +1816,13 @@ function main() {
           "fresh init is English-first without automatic routing controls",
           "skill command recipes use Bash-safe absolute-root examples",
           "thin router docs map explicit intent while normal scoped work stays direct",
+          "brief elicitation uses bounded main-loop AskUserQuestion without GO or subagent drift",
           "fresh init and status expose ledger/checkpoint freshness",
           "hooks prefer workspace root .nogra over nested cwd .nogra",
           "legacy workspaces resolve defaults and migrate continuity layout",
           "diagnostic ledger-smoke writes a ledger event without brief artifacts",
           "create-project initializes project-local state from a workspace hub",
-          "plugin diagnostics warn but do not block on multi-install or version drift",
+          "plugin diagnostics warn normally and block private-lane collisions in strict public mode",
           "brief validate/save/promote local",
           "dispatch receipt local with default/custom runtime policy mapping",
           "ledger events and finalize-run carry monotonic watermarks and session anchors",

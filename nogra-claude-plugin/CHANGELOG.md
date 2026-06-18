@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.6.7 - 2026-06-18
+
+- Added public test isolation diagnostics for private Nogra lanes such as
+  `nogra-private-beta`. Normal local dogfood remains a non-blocking warning,
+  while strict public-grade mode can block private-lane collisions before a
+  public plugin rehearsal is trusted.
+- Documented isolated public plugin testing for users who also dogfood private
+  Nogra lanes on the same machine.
+- Made `SessionStart` and `PostCompact` prefix context cache-safe by removing
+  per-turn ledger, checkpoint, receipt and index state from model-context hook
+  output while preserving local state pointers.
+- Added smoke and lifecycle coverage that proves cache-safe hook output omits
+  volatile prefix fields and stays byte-identical after ledger/run mutations.
+- Guided the brief skill to use main-loop `AskUserQuestion` for bounded
+  risk-intake batches and route-choice questions already present in the brief
+  flow.
+- Kept `PreToolUse` convergence checks and execution GO behavior unchanged;
+  GO remains an explicit chat act before dispatch, never a modal question.
+
 ## 0.6.6 - 2026-06-17
 
 - Added a thin intent-router contract to help/reference docs, the bundled

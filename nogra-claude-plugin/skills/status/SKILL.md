@@ -35,6 +35,10 @@ normal work:
   show `installed=<version>, marketplace=<version>` plus the marketplace name.
   Suggest `/plugin update` or checking the active plugin ref, but do not refuse
   init, brief or dispatch solely because of this warning.
+- If a private Nogra lane such as `nogra-private-beta` is installed, show it as
+  a visibility warning during normal work. In public-grade or release rehearsal
+  workspaces, strict public isolation may mark that warning blocking so the
+  private lane is disabled before the public plugin is tested.
 
 ## Runtime State
 

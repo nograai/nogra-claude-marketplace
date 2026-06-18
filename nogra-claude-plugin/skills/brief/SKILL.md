@@ -107,13 +107,20 @@ confirmed absolute path of the workspace.
    materially affect the brief. If brief shape and runtime capacity look
    mismatched, name the mismatch as a fact instead of inventing a new tier or
    runtime rule.
-4. If a missing decision would materially change scope, ask one concrete
-   question. Ask one question at a time. Use the local risk intake shape to keep
-   questions bounded: outcome, GO, irreversible actions, evidence, allowed
-   systems or recurring drift. Do not run a generic open-ended interview inside
-   the brief flow.
-5. If there are multiple viable routes, present 2-3 approaches with trade-offs
-   and a recommendation. Keep it short enough for the user to choose.
+4. If missing decisions would materially change scope, use `AskUserQuestion`
+   from the main Claude Code loop to ask a bounded, finite risk-intake batch.
+   Ask at most 4 questions in one call. Each question must be materially
+   scope-changing and should map to the local risk intake shape: outcome,
+   evidence shape, allowed scope/systems, irreversible actions or recurring
+   drift. Keep each question concrete. Use multi-select only when multiple
+   choices can validly apply. Do not run a generic open-ended interview inside
+   the brief flow. Do not ask for execution GO here.
+5. If there are multiple viable routes, use `AskUserQuestion` from the main
+   Claude Code loop to present the route choice. Options are approaches; labels
+   are short approach names; descriptions are trade-offs; the first option is
+   the recommendation. Use 2-4 options and keep it short enough for the user to
+   choose. Preserve the UI's free-text / Other path when available. Do not use
+   this route-choice question as execution approval.
 6. Phrase environment-dependent stop criteria as pre-flight checks, not
    reactive failure handling. If the work depends on a tool, runtime,
    credential or service, write the check as the executor's first action and
@@ -223,8 +230,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" brief-promote --root "<abso
 16. Do not manually repair local runtime writes by hand-writing `.nogra/`
     artifacts after a runtime error. Stop and surface the failure instead.
 17. Present the brief to the user in a compact summary plus the saved brief id.
-18. Ask for explicit GO before execution. If the user approves, use the
-    `nogra-dispatch` skill. Do not continue into implementation inside this skill.
+18. Ask for explicit GO before execution in ordinary chat, not through
+    `AskUserQuestion`. If the user approves, use the `nogra-dispatch` skill.
+    Do not continue into implementation inside this skill.
 
 ## Brief Writing Rules
 

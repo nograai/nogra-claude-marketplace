@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveBootContext } from "../runtime/local/boot-context.mjs";
-import { renderConvergenceGuardContext } from "../runtime/local/convergence-guard.mjs";
+import { renderCacheSafeConvergenceGuardContext } from "../runtime/local/convergence-guard.mjs";
 import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
@@ -97,11 +97,8 @@ emitContext(`<!-- nogra-plugin:post-compact source=${source} -->
 workspaceId=${boot.workspaceId || ""}
 workspaceRoot=${boot.workspaceRoot || root}
 status=${boot.status || ""}
-ledgerWatermark=${boot.ledgerWatermark ?? 0}
-checkpointSourceWatermark=${boot.checkpointSourceWatermark ?? 0}
-checkpointStatus=${boot.checkpointStatus || "fresh"}
 
 This is a thin continuity pointer after context compaction. It is not workflow policy. Do not relitigate Nogra routing after compaction. If current-state claims matter, read project-local .nogra/state files and current git state before acting.
 </NOGRA_COMPACT_POINTER>
 
-${renderConvergenceGuardContext({ root, eventName: "PostCompact" })}`);
+${renderCacheSafeConvergenceGuardContext({ root, eventName: "PostCompact" })}`);

@@ -115,6 +115,33 @@ function assertReadableReview(result, action, label) {
   }
 }
 
+const VOLATILE_PREFIX_FIELDS = [
+  "ledgerWatermark=",
+  "checkpointSourceWatermark=",
+  "checkpointStatus=",
+  "currentActionReceipt=",
+  "currentActionStatus=",
+  "currentActionAge=",
+  "currentActionBrief=",
+  "candidateActionReceipt=",
+  "candidateActionStatus=",
+  "candidateActionAge=",
+  "candidateActionIssue=",
+  "latestBrief=",
+  "latestBriefPath=",
+  "indexStatus=",
+  "indexAnchors=",
+  "indexPaths=",
+  "missingIndexPaths="
+];
+
+function assertCacheSafePrefixContext(context, label) {
+  assert(context.includes("cacheSafe=true"), `${label} marks prefix context cache-safe`);
+  for (const field of VOLATILE_PREFIX_FIELDS) {
+    assert(!context.includes(field), `${label} omits volatile prefix field ${field}`);
+  }
+}
+
 console.log("Lifecycle hook wiring:");
 {
   const hooksConfig = JSON.parse(fs.readFileSync(hooksConfigPath, "utf8"));
@@ -139,7 +166,7 @@ console.log("SessionStart lifecycle:");
   assert(startup.status === 0, "startup exits cleanly");
   assert(startupContext.includes("NOGRA_SESSION_BOOT"), "startup emits boot context");
   assert(startupContext.includes("NOGRA_CONVERGENCE_GUARD"), "startup emits convergence guard context");
-  assert(startupContext.includes("currentActionReceipt=none"), "startup exposes missing current receipt");
+  assertCacheSafePrefixContext(startupContext, "startup");
   assert(startupContext.includes("workspaceRoot="), "startup includes workspace root");
   assert(!startupContext.includes("NOGRA_ROUTING_POLICY"), "startup does not emit old routing policy block");
 
@@ -154,6 +181,7 @@ console.log("SessionStart lifecycle:");
   assert(resume.status === 0, "resume exits cleanly");
   assert(resumeContext.includes("NOGRA_SESSION_RESUME"), "resume emits a continuity pointer");
   assert(resumeContext.includes("NOGRA_CONVERGENCE_GUARD"), "resume re-injects convergence guard context");
+  assertCacheSafePrefixContext(resumeContext, "resume");
   assert(!resumeContext.includes("NOGRA_ROUTING_POLICY"), "resume does not emit full routing policy");
 }
 
@@ -173,7 +201,7 @@ console.log("PostCompact lifecycle:");
   assert(compactContext.includes("NOGRA_COMPACT_POINTER"), "PostCompact emits compact pointer");
   assert(compactContext.includes("NOGRA_CONVERGENCE_GUARD"), "PostCompact re-injects convergence guard context");
   assert(compactContext.includes("compactionDriftBoundary=true"), "PostCompact marks compaction as drift boundary");
-  assert(compactContext.includes("ledgerWatermark="), "PostCompact includes ledger watermark");
+  assertCacheSafePrefixContext(compactContext, "PostCompact");
   assert(!compactContext.includes("NOGRA_ROUTING_POLICY"), "PostCompact does not emit full routing policy");
 }
 

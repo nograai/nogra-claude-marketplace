@@ -411,6 +411,26 @@ export function renderConvergenceGuardContext({ root, eventName = "SessionStart"
   return lines.join("\n");
 }
 
+export function renderCacheSafeConvergenceGuardContext({ root, eventName = "SessionStart" } = {}) {
+  const workspaceRoot = root ? path.resolve(root) : process.cwd();
+  const compaction = eventName === "PostCompact";
+  const lines = [
+    "<NOGRA_CONVERGENCE_GUARD>",
+    "Nogra convergence: user intent and Claude action meet in Nogra before git/action risk.",
+    "cacheSafe=true",
+    `event=${eventName}`,
+    `workspaceRoot=${workspaceRoot}`,
+    "briefIsNotGO=true",
+    `compactionDriftBoundary=${compaction ? "true" : "false"}`,
+    `driftGuards=${DRIFT_GUARDS.join(",")}`,
+    "riskBoundaries=git-history,destructive-write,production-deploy,data-migration,secrets,permissions,billing,customer-send",
+    "stateInstruction=Read project-local .nogra/state files, /nogra:status, and current git state before current-state claims.",
+    "rule=If a risk boundary has no current dispatch receipt, stop before the tool call and ask for explicit intent/GO or create/dispatch a Nogra brief.",
+    "</NOGRA_CONVERGENCE_GUARD>"
+  ];
+  return lines.join("\n");
+}
+
 function shellWords(command) {
   const words = [];
   const pattern = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^']*)'|(\S+)/gu;

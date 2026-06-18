@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveBootContext } from "../runtime/local/boot-context.mjs";
-import { renderConvergenceGuardContext } from "../runtime/local/convergence-guard.mjs";
+import { renderCacheSafeConvergenceGuardContext } from "../runtime/local/convergence-guard.mjs";
 import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
@@ -125,14 +125,11 @@ function bootContextBlock(root) {
   const boot = resolveBootContext({ cwd: root });
   const lines = [
     "<NOGRA_BOOT_CONTEXT>",
-    boot.message,
-    "",
+    "Nogra workspace context is available locally. Dynamic ledger, checkpoint, run, and project-index state is intentionally not injected at session start to preserve prompt-cache prefixes.",
     `status=${boot.status}`,
     `workspaceId=${boot.workspaceId || ""}`,
     `workspaceRoot=${boot.workspaceRoot || ""}`,
-    `ledgerWatermark=${boot.ledgerWatermark ?? 0}`,
-    `checkpointSourceWatermark=${boot.checkpointSourceWatermark ?? 0}`,
-    `checkpointStatus=${boot.checkpointStatus || "fresh"}`,
+    "stateInstruction=Read project-local .nogra/state files, /nogra:status, and current git state before current-state claims.",
     "writes=[]",
     "autoLoaded=false",
     "</NOGRA_BOOT_CONTEXT>"
@@ -159,7 +156,7 @@ Session state lives in local .nogra/ records. Ledger state is the truth source; 
 
 ${bootContextBlock(root)}
 
-${renderConvergenceGuardContext({ root, eventName: "SessionStart" })}`;
+${renderCacheSafeConvergenceGuardContext({ root, eventName: "SessionStart" })}`;
 }
 
 function resumePointerContext(root, config, source) {
@@ -170,15 +167,12 @@ function resumePointerContext(root, config, source) {
 Nogra plugin: ${plugin.id} ref=${plugin.ref}.
 workspaceId=${boot.workspaceId || ""}
 workspaceRoot=${boot.workspaceRoot || root}
-ledgerWatermark=${boot.ledgerWatermark ?? 0}
-checkpointSourceWatermark=${boot.checkpointSourceWatermark ?? 0}
-checkpointStatus=${boot.checkpointStatus || "fresh"}
 status=${boot.status || ""}
 
 This is a continuity pointer after a resumed session. Do not treat compacted or resumed chat summaries as project truth. If current-state claims matter, read the project-local .nogra/state files before acting.
 </NOGRA_SESSION_RESUME>
 
-${renderConvergenceGuardContext({ root, eventName: "SessionStart" })}`;
+${renderCacheSafeConvergenceGuardContext({ root, eventName: "SessionStart" })}`;
 }
 
 const input = parseInput(readStdin());
