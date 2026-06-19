@@ -388,6 +388,10 @@ function sessionAnchorFile(root) {
   return path.join(root, ".nogra", "runtime", "session-anchor.json");
 }
 
+function workspaceConfigFile(root) {
+  return path.join(root, ".nogra", "config.json");
+}
+
 function readJsonFile(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
 }
@@ -399,6 +403,15 @@ function readJsonFileIfValid(file) {
   } catch {
     return null;
   }
+}
+
+function readWorkspaceConfig(root) {
+  const config = readJsonFileIfValid(workspaceConfigFile(root));
+  return config && typeof config === "object" ? config : {};
+}
+
+function resolvedWorkspaceId(root, explicit = "") {
+  return cleanInline(explicit) || cleanInline(readWorkspaceConfig(root).workspaceId) || "local";
 }
 
 function nonEmptyLineCount(file) {
@@ -438,7 +451,7 @@ function appendLedgerEvent(root, type, extra = {}) {
     ledgerWatermark,
     generatedAt: at,
     createdAt: at,
-    workspaceId: cleanInline(safeExtra.workspaceId) || "local",
+    workspaceId: resolvedWorkspaceId(root, safeExtra.workspaceId),
     sessionId: session.sessionId,
     transcriptId: session.transcriptId,
     type,
@@ -507,9 +520,10 @@ function finalizeRun(root, input, options = {}) {
   const executionPair = roleRuntimePair(record, status);
   const verificationPair = verificationRoleRuntimePair(record, input);
   const continuation = continuationFields(input);
+  const eventWorkspaceId = resolvedWorkspaceId(root, input.workspaceId || record.workspaceId || record.metadata?.workspaceId);
   const ledgerEvent = appendLedgerEvent(root, status === "cancelled" ? "transport_run_cancelled" : "transport_run_returned", {
     eventId: `ledger-event-${runId}-terminal-${status}`,
-    workspaceId: cleanInline(input.workspaceId) || "local",
+    workspaceId: eventWorkspaceId,
     runId,
     status,
     phase,
@@ -529,6 +543,7 @@ function finalizeRun(root, input, options = {}) {
   const updated = {
     ...record,
     runId,
+    workspaceId: eventWorkspaceId,
     updatedAt: now(),
     status,
     phase,
@@ -555,6 +570,7 @@ function finalizeRun(root, input, options = {}) {
           executionRuntimeSource: executionPair.executionRuntimeSource || record.metadata.executionRuntimeSource || "",
           executionLabel: executionPair.executionLabel || record.metadata.executionLabel || "",
           ledgerWatermark: ledgerEvent.ledgerWatermark,
+          workspaceId: eventWorkspaceId,
           sessionId: ledgerEvent.sessionId || record.metadata.sessionId || "",
           transcriptId: ledgerEvent.transcriptId || record.metadata.transcriptId || "",
           ...verificationFields,
@@ -567,6 +583,7 @@ function finalizeRun(root, input, options = {}) {
           executionRuntimeSource: executionPair.executionRuntimeSource,
           executionLabel: executionPair.executionLabel,
           ledgerWatermark: ledgerEvent.ledgerWatermark,
+          workspaceId: eventWorkspaceId,
           sessionId: ledgerEvent.sessionId,
           transcriptId: ledgerEvent.transcriptId,
           ...verificationFields,
@@ -580,7 +597,7 @@ function finalizeRun(root, input, options = {}) {
     eventId: cleanInline(input.eventId) || terminalEventId(runId, status),
     generatedAt: cleanInline(input.eventAt) || completedAt,
     createdAt: cleanInline(input.eventAt) || completedAt,
-    workspaceId: cleanInline(input.workspaceId) || "local",
+    workspaceId: eventWorkspaceId,
     runId,
     type: status === "cancelled" ? "transport_run_cancelled" : "transport_run_returned",
     status,

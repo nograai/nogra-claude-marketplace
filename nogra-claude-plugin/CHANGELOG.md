@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.6.8 - 2026-06-19
+
+- Normalized terminal finalize-run workspace identity so returned/cancelled
+  ledger and transport events use the run/config workspace id instead of falling
+  back to generic `local` when finalize input omits `workspaceId`.
+- Added smoke coverage proving terminal run state, ledger events and transport
+  events preserve the same workspace id.
+
 ## 0.6.7 - 2026-06-18
 
 - Added public test isolation diagnostics for private Nogra lanes such as

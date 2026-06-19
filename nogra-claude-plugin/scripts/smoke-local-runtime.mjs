@@ -96,6 +96,13 @@ function writeJson(file, payload) {
   fs.writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
+function readJsonl(file) {
+  return fs.readFileSync(file, "utf8")
+    .split(/\r?\n/u)
+    .filter((line) => line.trim())
+    .map((line) => JSON.parse(line));
+}
+
 function run(args, input, env = {}) {
   const output = execFileSync(process.execPath, [localRuntime, ...args, "--json"], {
     cwd: repoRoot,
@@ -1288,6 +1295,13 @@ function main() {
   assert(finalizedVerifier.status === "ok", "ledger finalize-run should complete verifier run");
   const finalizedVerifierRun = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "transport", "runs", `${verifierDispatch.runId}.json`), "utf8"));
   assert(finalizedVerifierRun.ledgerWatermark > verifierDispatch.ledgerWatermark, "ledger finalize-run should append a newer ledger watermark");
+  assert(finalizedVerifierRun.workspaceId === freshConfig.workspaceId, "ledger finalize-run should preserve config workspaceId on run state without explicit input workspaceId");
+  const finalizedVerifierLedgerEvent = readJsonl(path.join(temp, ".nogra", "ledger", "events.jsonl"))
+    .find((event) => event.eventId === `ledger-event-${verifierDispatch.runId}-terminal-ok`);
+  const finalizedVerifierTransportEvent = readJsonl(path.join(temp, ".nogra", "transport", "events.jsonl"))
+    .find((event) => event.eventId === `transport-event-${verifierDispatch.runId}-terminal-ok`);
+  assert(finalizedVerifierLedgerEvent?.workspaceId === freshConfig.workspaceId, "terminal ledger event should use config workspaceId without explicit input workspaceId");
+  assert(finalizedVerifierTransportEvent?.workspaceId === freshConfig.workspaceId, "terminal transport event should use config workspaceId without explicit input workspaceId");
 
   const nestedCwd = path.join(temp, "nested", "verification-cwd");
   fs.mkdirSync(nestedCwd, { recursive: true });
