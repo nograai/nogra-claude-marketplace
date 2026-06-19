@@ -76,8 +76,8 @@ use the CLI with the exact plugin id shown by `/plugin` or
 `claude plugin list`, for example:
 
 ```bash
-claude plugin disable nogra@nogra-private-beta
-claude plugin uninstall nogra@nogra-private-beta
+claude plugin disable nogra@nogra-claude
+claude plugin uninstall nogra@nogra-claude
 ```
 
 If you disable or uninstall during an active Claude Code session, run
@@ -92,7 +92,8 @@ tests in an isolated workspace where private lanes are disabled. `/nogra:status`
 will warn when another non-orphaned Nogra install is present. Public-grade and
 release rehearsals may enable strict public isolation so a private lane such as
 `nogra-private-beta` blocks the rehearsal until it is disabled for that
-workspace.
+workspace. When disabling a private lane for a public rehearsal, use the exact
+private plugin id shown by `/plugin` or `claude plugin list`.
 
 ## Working Examples
 

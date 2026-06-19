@@ -1044,6 +1044,9 @@ function main() {
     assert(/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skillFrontmatter.name), `${skillName} skill display label should be slash-picker safe`);
   }
   assert(helpSkill.includes("turn off, disable, uninstall or remove Nogra"), "help skill should route off/uninstall/remove questions");
+  const pluginReadme = pluginText("README.md");
+  assert(pluginReadme.includes("claude plugin disable nogra@nogra-claude"), "public README should use the public marketplace id for general disable instructions");
+  assert(pluginReadme.includes("private plugin id shown by `/plugin`"), "public README should keep private-lane disable guidance scoped to public rehearsal isolation");
   assert(briefSkill.includes("use `AskUserQuestion`"), "brief skill should guide structured AskUserQuestion elicitation");
   assert(briefSkill.includes("Ask at most 4 questions"), "brief skill should bound risk-intake batches");
   assert(briefSkill.includes("the first option is"), "brief skill should keep route recommendations first");
