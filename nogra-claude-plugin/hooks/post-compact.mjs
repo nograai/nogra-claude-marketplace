@@ -68,7 +68,7 @@ function emitContext(context) {
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {
-        hookEventName: "PostCompact",
+        hookEventName: "SessionStart",
         additionalContext: context
       }
     })
@@ -77,7 +77,7 @@ function emitContext(context) {
 
 function compactSource(input) {
   const source = cleanInline(input.source || input.trigger || input.compactSource).toLowerCase();
-  return ["manual", "auto"].includes(source) ? source : "unknown";
+  return ["manual", "auto", "compact"].includes(source) ? source : "unknown";
 }
 
 const input = parseInput(readStdin());

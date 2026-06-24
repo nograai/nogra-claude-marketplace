@@ -10,11 +10,9 @@
             "async": false
           }
         ]
-      }
-    ],
-    "PostCompact": [
+      },
       {
-        "matcher": "manual|auto",
+        "matcher": "compact",
         "hooks": [
           {
             "type": "command",
