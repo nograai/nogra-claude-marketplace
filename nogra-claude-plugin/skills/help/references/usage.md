@@ -95,7 +95,7 @@ claude plugin uninstall <plugin-id>
 
 Use the exact plugin id shown by `/plugin` or `claude plugin list`, such as
 `nogra@nogra-claude` for the public marketplace build or
-`nogra@nogra-private-beta` for the closed beta build. After disabling or
+`nogra@nogra-private-beta` for the closed private build. After disabling or
 uninstalling during an active session, run `/reload-plugins` or restart Claude
 Code before trusting the loaded plugin state.
 

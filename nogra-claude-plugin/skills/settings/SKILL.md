@@ -25,6 +25,8 @@ Use `skills/help/references/runtime.md` for canonical runtime-policy details.
 In this settings surface, expose only the choices a user can act on:
 
 - `default`: use Nogra's release default executor/verifier runtime preferences.
+  The verifier defaults to a different model than the executor (cross-model
+  verify) as a preference, not enforcement.
 - `custom`: use the executor/verifier model and effort values the user chooses.
 
 Default does not write concrete executor or verifier runtime values. Custom

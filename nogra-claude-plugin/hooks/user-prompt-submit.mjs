@@ -2,6 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { readActiveIntent, renderActiveIntentContext } from "../runtime/local/active-intent.mjs";
 import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { resolveProjectFocus } from "../runtime/local/project-focus.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
@@ -123,11 +124,23 @@ if (!userPrompt || /^\s*\/nogra[:\s]/u.test(userPrompt) || isNograExtensionComma
 }
 
 const focus = resolveProjectFocus({ cwd: root, prompt: userPrompt });
+const activeIntent = readActiveIntent(root);
+const contexts = [];
+const reasons = [];
+if (focus.additionalContext) {
+  contexts.push(focus.additionalContext);
+  reasons.push("project-focus");
+}
+if (activeIntent.active) {
+  contexts.push(renderActiveIntentContext(activeIntent.intent));
+  reasons.push("active-intent");
+}
+
 captureLiveHookEvent(root, input, {
   eventName: "UserPromptSubmit",
-  decision: focus.additionalContext ? "context" : "silent",
-  reason: focus.additionalContext ? "project-focus" : ""
+  decision: contexts.length ? "context" : "silent",
+  reason: reasons.join("+")
 });
-if (focus.additionalContext) {
-  emitContext(focus.additionalContext);
+if (contexts.length) {
+  emitContext(contexts.join("\n\n"));
 }

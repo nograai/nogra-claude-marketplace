@@ -145,8 +145,9 @@ function assertCacheSafePrefixContext(context, label) {
 console.log("Lifecycle hook wiring:");
 {
   const hooksConfig = JSON.parse(fs.readFileSync(hooksConfigPath, "utf8"));
-  assert(hooksConfig.hooks?.SessionStart?.[0]?.matcher === "startup|resume|clear", "SessionStart excludes compact");
-  assert(hooksConfig.hooks?.PostCompact?.[0]?.matcher === "manual|auto", "PostCompact handles compaction");
+  assert(hooksConfig.hooks?.SessionStart?.[0]?.matcher === "startup|resume|clear", "SessionStart slot 0 excludes compact");
+  assert(hooksConfig.hooks?.SessionStart?.some((entry) => entry.matcher === "compact"), "post-compact rehydration is homed on SessionStart/compact");
+  assert(!Object.hasOwn(hooksConfig.hooks ?? {}, "PostCompact"), "PostCompact event is not wired (re-homed onto SessionStart/compact)");
   assert(Boolean(hooksConfig.hooks?.SessionEnd?.[0]), "SessionEnd is wired");
   assert(Boolean(hooksConfig.hooks?.UserPromptSubmit?.[0]), "UserPromptSubmit remains wired");
   assert(hooksConfig.hooks?.PreToolUse?.[0]?.matcher === "Bash|Edit|Write|MultiEdit", "PreToolUse gates only write/action tools");
@@ -197,7 +198,7 @@ console.log("PostCompact lifecycle:");
   });
   const compactContext = additionalContext(compact);
   assert(compact.status === 0, "PostCompact exits cleanly");
-  assert(parseHookOutput(compact).hookSpecificOutput?.hookEventName === "PostCompact", "PostCompact reports its hook event");
+  assert(parseHookOutput(compact).hookSpecificOutput?.hookEventName === "SessionStart", "post-compact rehydration reports a SessionStart hook event");
   assert(compactContext.includes("NOGRA_COMPACT_POINTER"), "PostCompact emits compact pointer");
   assert(compactContext.includes("NOGRA_CONVERGENCE_GUARD"), "PostCompact re-injects convergence guard context");
   assert(compactContext.includes("compactionDriftBoundary=true"), "PostCompact marks compaction as drift boundary");

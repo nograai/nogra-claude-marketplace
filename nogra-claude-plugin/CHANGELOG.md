@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.6.9 - 2026-06-26
+
+- Added an observe-only `Stop` verify-nudge: when a session ends on a completion
+  claim (verified / all passed / done / tests green / safe to merge) and no
+  Nogra verification ran this session, Nogra emits one non-blocking line
+  suggesting `/nogra:verify`. It never blocks the stop, never re-prompts the
+  model, and fires at most once per session — a preference signal, not a gate.
+- Made cross-model verify the default: under the default runtime profile the
+  verifier resolves to a different model than the executor, so the "done" check
+  is less likely to inherit the executor's blind spots. Claude Code's native
+  `/model` remains the source of truth; pinning a single model overrides it.
+- Added `/nogra:authorize` to authorize recognized action classes (e.g.
+  git-history) so the convergence gate stops re-asking about an approved class;
+  reversible at any time with `revoke` / `clear`.
+- Corrected stale post-compact test assertions left by the 0.6.8 SessionStart
+  re-homing so the smoke and routing-preconditions tests assert the shipped
+  design (post-compact on the `SessionStart`/`compact` channel, `hookEventName`
+  "SessionStart"); polished public docs wording. No change to published 0.6.8
+  runtime behavior.
+
 ## 0.6.8 - 2026-06-19
 
 - Normalized terminal finalize-run workspace identity so returned/cancelled

@@ -78,6 +78,8 @@ function formatStatusline(input, status) {
   const version = cleanInline(status?.plugin?.version || "unknown", 32);
   const checkpoint = cleanInline(status?.ledger?.checkpointStatus || "unknown", 24);
   const continuity = cleanInline(status?.continuity?.status || "unknown", 24);
+  const activeIntent = status?.continuity?.activeIntent?.active ? "active" : "";
+  const quality = cleanInline(status?.continuity?.sessionQuality?.latestStatus || "", 24);
   const bridge = cleanInline(status?.bridge?.status || "unknown", 24);
   const git = status?.git || {};
   const dirty = git.status === "dirty" && Number.isFinite(Number(git.dirtyCount))
@@ -91,6 +93,8 @@ function formatStatusline(input, status) {
     hookSegment(status),
     `checkpoint:${checkpoint}`,
     `continuity:${continuity}`,
+    activeIntent ? `intent:${activeIntent}` : "",
+    quality ? `quality:${quality}` : "",
     `bridge:${bridge}`,
     `dirty:${dirty}`,
     `promo:${promotion}`
@@ -98,7 +102,7 @@ function formatStatusline(input, status) {
   if (context) {
     parts.push(context);
   }
-  return parts.join(" ");
+  return parts.filter(Boolean).join(" ");
 }
 
 function main() {

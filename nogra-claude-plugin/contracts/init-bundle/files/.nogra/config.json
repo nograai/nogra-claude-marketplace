@@ -21,7 +21,7 @@
     "budget": {
       "mode": "default"
     },
-    "guidance": "Use /nogra:settings to view or change runtime policy. profile=default uses Nogra's release default executor/verifier runtime preferences. profile=custom may add roles.executor and roles.verifier with model, effort, context and maxTurns when the user chooses them. Claude Code's native /model and /effort remain the live source of truth."
+    "guidance": "Use /nogra:settings to view or change runtime policy. profile=default uses Nogra's release default executor/verifier runtime preferences; the verifier defaults to a different model than the executor (cross-model verify) as a preference, not enforcement. profile=custom may add roles.executor and roles.verifier with model, effort, context and maxTurns when the user chooses them. Claude Code's native /model and /effort remain the live source of truth."
   },
   "routingPolicy": {
     "defaultLanguage": "en",

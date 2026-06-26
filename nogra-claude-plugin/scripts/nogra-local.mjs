@@ -7,6 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { activeIntentPath, readActiveIntent } from "../runtime/local/active-intent.mjs";
+import { analyzeSessionQuality, sessionQualityLatestPath, writeSessionQualityReceipt } from "../runtime/local/session-quality.mjs";
 
 const BRIEF_SCHEMA = "nogra.brief.v1";
 const INIT_BUNDLE_SCHEMA = "nogra.init.bundle.v1";
@@ -36,6 +38,7 @@ function usage() {
     "  node scripts/nogra-local.mjs brief-save [--root <dir>] [--input <file>] [--source <label>] [--json]",
     "  node scripts/nogra-local.mjs brief-promote [--root <dir>] [--brief-id <id>] [--input <file>] [--json]",
     "  node scripts/nogra-local.mjs ledger-smoke [--root <dir>] [--label <text>] [--json]",
+    "  node scripts/nogra-local.mjs quality [--root <dir>] [--transcript <file>] [--write] [--json]",
     "  node scripts/nogra-local.mjs handoff-contract [--root <dir>] --kind executor|verifier [--run-id <id>] [--json]",
     "  node scripts/nogra-local.mjs dispatch [--root <dir>] --brief-id <id> [--target executor] [--target-model <model>] [--max-turns <n>] [--json]",
     "  node scripts/nogra-local.mjs verify [--root <dir>] --run-id <id> [--input <file>] [--json]",
@@ -58,7 +61,7 @@ function parseArgs(argv) {
       continue;
     }
     const name = value.slice(2);
-    if (["json", "apply", "dry-run", "migrate-local", "help"].includes(name)) {
+    if (["json", "apply", "dry-run", "migrate-local", "help", "write"].includes(name)) {
       out[name] = true;
       continue;
     }
@@ -478,7 +481,7 @@ function pluginDiagnostics(plugin) {
       blocking: publicIsolation.strict,
       message: publicIsolation.strict
         ? "A private Nogra plugin install is present while strict public-plugin isolation is enabled. Disable the private lane for this workspace before public grading."
-        : "A private Nogra plugin install is present. This is valid for local dogfood, but public-grade workspaces should disable private lanes before testing the public plugin.",
+        : "A private Nogra plugin install is present. This is valid for local development, but public-grade workspaces should disable private lanes before testing the public plugin.",
       plugins: publicIsolation.privateLanePlugins
     });
   }
@@ -528,6 +531,11 @@ function defaultReturnPolicy(config = {}) {
   };
 }
 
+// Release default runtime preferences. The verifier defaults to a DIFFERENT
+// model than the executor (cross-model verify): an independent model is less
+// likely to repeat the executor's blind spots when checking "done". This is a
+// preference surfaced in dispatch/receipts, not enforcement -- Claude Code's
+// native /model remains the live source of truth for the current chat.
 const RELEASE_RUNTIME_FALLBACK = {
   executor: {
     model: "anthropic:sonnet",
@@ -536,7 +544,7 @@ const RELEASE_RUNTIME_FALLBACK = {
     maxTurns: null
   },
   verifier: {
-    model: "sonnet",
+    model: "opus",
     effort: "medium",
     context: "default",
     maxTurns: null
@@ -2014,6 +2022,10 @@ function liveHooksLatestPath(root) {
   return path.join(nograDir(root), "runtime", "live-hooks.latest.json");
 }
 
+function sessionQualityReceiptsPath(root) {
+  return path.join(nograDir(root), "runtime", "quality");
+}
+
 function currentLedgerWatermark(root) {
   return nonEmptyLineCount(ledgerEventsPath(root));
 }
@@ -2085,10 +2097,14 @@ function continuityState(root, config = {}) {
   const liveHooksFile = liveHooksJsonlPath(root);
   const liveHooksLog = liveHooksTextPath(root);
   const liveHooksLatest = liveHooksLatestPath(root);
+  const qualityLatest = sessionQualityLatestPath(root);
+  const qualityReceipts = sessionQualityReceiptsPath(root);
   const checkpointHasWatermark = checkpointHasSourceWatermark(root, config);
   const ledgerDirExists = directoryExists(ledgerDir);
   const session = readSessionAnchor(root);
   const latestHook = readJsonIfValid(liveHooksLatest);
+  const latestQuality = readJsonIfValid(qualityLatest);
+  const activeIntent = activeIntentState(root);
   return {
     schema: "nogra.local.continuity_status.v1",
     status: ledgerDirExists && checkpointHasWatermark ? "ready" : "migration-needed",
@@ -2123,9 +2139,38 @@ function continuityState(root, config = {}) {
       latestSummary: cleanInline(latestHook?.summary),
       latestAt: cleanInline(latestHook?.timestamp)
     },
+    activeIntent,
+    sessionQuality: {
+      latestPath: localPath(root, qualityLatest),
+      receiptsPath: localPath(root, qualityReceipts),
+      exists: fs.existsSync(qualityLatest),
+      latestStatus: cleanInline(latestQuality?.status),
+      score: Number.isFinite(Number(latestQuality?.score)) ? Number(latestQuality.score) : null,
+      maxSeverity: cleanInline(latestQuality?.maxSeverity),
+      patternCount: Number.isFinite(Number(latestQuality?.patternCount)) ? Number(latestQuality.patternCount) : 0,
+      latestAt: cleanInline(latestQuality?.generatedAt),
+      nextGuard: cleanInline(latestQuality?.nextGuard, 160)
+    },
     migrationHint: ledgerDirExists && checkpointHasWatermark
       ? ""
       : "Run /nogra:setup or local init --apply in this workspace to merge the 0.5.8 continuity layout without touching app files."
+  };
+}
+
+function activeIntentState(root) {
+  const file = activeIntentPath(root);
+  const state = readActiveIntent(root);
+  const intent = state.intent && typeof state.intent === "object" ? state.intent : {};
+  return {
+    path: localPath(root, file),
+    exists: fs.existsSync(file),
+    status: cleanInline(state.status || "missing", 80),
+    active: Boolean(state.active),
+    project: cleanInline(intent.project || intent.workspaceName || intent.workspaceId, 160),
+    objective: cleanInline(intent.objective, 240),
+    currentBlock: cleanInline(intent.currentBlock || intent.block || intent.focus, 240),
+    doneWhen: cleanInline(intent.doneWhen || intent.doneCriteria || intent.acceptance, 240),
+    updatedAt: cleanInline(intent.updatedAt || intent.generatedAt || intent.startedAt, 80)
   };
 }
 
@@ -3039,6 +3084,13 @@ function printText(payload) {
     console.log(`- Bridge: ${payload.bridge?.status || "unknown"}${payload.bridge?.version ? ` ${payload.bridge.version}` : ""}`);
     console.log(`- Git: ${payload.git?.status || "unknown"}${Number.isFinite(Number(payload.git?.dirtyCount)) ? ` (${payload.git.dirtyCount})` : ""}`);
     console.log(`- Promotion: ${payload.promotion?.status || "unknown"}`);
+    if (payload.continuity?.activeIntent?.exists) {
+      const intent = payload.continuity.activeIntent;
+      console.log(`- Active intent: ${intent.active ? "active" : intent.status || "inactive"}${intent.objective ? ` - ${intent.objective}` : ""}`);
+    }
+    if (payload.continuity?.sessionQuality?.exists) {
+      console.log(`- Session quality: ${payload.continuity.sessionQuality.latestStatus || "unknown"} (${payload.continuity.sessionQuality.patternCount || 0})`);
+    }
     for (const warning of payload.plugin.diagnostics?.warnings || []) {
       console.log(`- Warning: ${warning.message}`);
     }
@@ -3121,6 +3173,12 @@ function main() {
     payload = diagnosticLedgerSmoke(root, {
       label: options.label || ""
     });
+  } else if (command === "quality" || command === "session-quality") {
+    const receipt = analyzeSessionQuality(root, {
+      transcriptPath: options.transcript || options["transcript-path"] || "",
+      sessionId: options["session-id"] || options.sessionId || ""
+    });
+    payload = options.write ? writeSessionQualityReceipt(root, receipt) : receipt;
   } else if (command === "handoff-contract") {
     payload = handoffContract(root, options.kind || "executor", {
       runId: options["run-id"] || options.runId || ""

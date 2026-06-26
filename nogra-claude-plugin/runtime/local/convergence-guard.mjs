@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { readActiveIntent as readActiveIntentState } from "./active-intent.mjs";
 
 const PENDING_AUTHORIZATION_RUN_STATUSES = new Set(["queued", "running", "returning", "in_progress"]);
 const TERMINAL_AUTHORIZATION_RUN_STATUSES = new Set(["returned", "ok", "partial"]);
@@ -116,6 +117,44 @@ function readJsonIfValid(file) {
 
 function readWorkspaceConfig(root) {
   return readJsonIfValid(path.join(root, ".nogra", "config.json")) || {};
+}
+
+function gateMode(root) {
+  const config = readWorkspaceConfig(root);
+  return cleanInline(config.gate).toLowerCase() === "hard" ? "hard" : "advisory";
+}
+
+function readActiveIntent(root) {
+  const state = readActiveIntentState(root);
+  if (!state || !state.active || !state.intent) return null;
+  const gate = state.intent.gate && typeof state.intent.gate === "object" ? state.intent.gate : {};
+  const authorize = Array.isArray(gate.authorize) ? gate.authorize.map((v) => cleanInline(v).toLowerCase()) : [];
+  const nonGoals = Array.isArray(gate.nonGoals) ? gate.nonGoals.map((v) => cleanInline(v).toLowerCase()) : [];
+  if (!authorize.length && !nonGoals.length) return null;
+  return { authorize, nonGoals };
+}
+
+function boundaryClass(risk, name, payload = {}) {
+  const fp = cleanInline(payload.file_path || payload.path || "").toLowerCase();
+  if (fp.includes("boligscout")) return "boligscout";
+  if (/^git /u.test(risk)) return "git-history";
+  if (risk === "production deploy") return "production-deploy";
+  if (risk === "instruction-surface write") return "instruction-surface";
+  if (risk === "data migration" || risk === "database mutation") return "data-migration";
+  if (risk === "customer/billing action") return "billing";
+  if (risk === "destructive rm" || risk === "find action") return "destructive-write";
+  return cleanInline(risk);
+}
+
+function nonGoalViolation(intent, cls, name, payload = {}) {
+  if (!intent || !intent.nonGoals.length) return "";
+  const text = (cleanInline(payload.file_path || payload.path || "") + " " + cleanInline(payload.command || "")).toLowerCase();
+  for (const label of intent.nonGoals) {
+    if (!label) continue;
+    if (cls && cls === label) return label;
+    if (text.includes(label)) return label;
+  }
+  return "";
 }
 
 function cleanInline(value) {
@@ -1089,19 +1128,52 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
   } else if (["Edit", "Write", "MultiEdit"].includes(name)) {
     risk = pathRisk(name, payload);
   }
-  if (!risk) {
+  const mode = gateMode(root);
+  const intent = readActiveIntent(root);
+  const cls = boundaryClass(risk, name, payload);
+
+  const nonGoal = nonGoalViolation(intent, cls, name, payload);
+  if (nonGoal) {
+    review = {
+      state: "needs confirmation",
+      risk: "high",
+      authorization: "non-goal",
+      actionType: risk || cls || "action",
+      reason: `[${nonGoal}] is a declared non-goal of the running intent - needs an explicit GO`
+    };
     return {
-      shouldAsk: false,
-      risk,
+      shouldAsk: true,
+      denyEligible: mode === "hard",
+      gateMode: mode,
+      risk: risk || cls,
       toolName: name,
       guard,
       review,
-      reviewMessage: ""
+      reviewMessage: `Nogra check: ${review.actionType}\nImpact: declared non-goal of the running intent\nReason: ${review.reason}\nNext: give an explicit GO, or this stays blocked.`
     };
+  }
+
+  if (!risk) {
+    return { shouldAsk: false, denyEligible: false, gateMode: mode, risk, toolName: name, guard, review, reviewMessage: "" };
   }
   guard = resolveConvergenceGuard({ root });
   const receipt = guard.currentActionReceipt;
   const candidate = visibleCandidateReceipt(guard.candidateActionReceipt);
+
+  if (intent && intent.authorize.includes(cls)) {
+    review = { state: "approved", risk: "high", authorization: "active-intent", actionType: risk, reason: `matched running active-intent (authorize: ${cls})` };
+    return {
+      shouldAsk: false,
+      denyEligible: false,
+      gateMode: mode,
+      risk,
+      toolName: name,
+      guard,
+      review,
+      reviewMessage: `Nogra check: ${risk} matched running active-intent\nImpact: ${actionImpact(risk)}\nReason: ${review.reason}.`
+    };
+  }
+
   if (receipt && CLASS_SCOPED_RECEIPT_INHERITANCE_ENABLED) {
     review = {
       state: "approved",
@@ -1145,8 +1217,11 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
     };
   }
   const reviewMessage = review ? actionReviewMessage(review) : "";
+  const denyEligible = mode === "hard" && review.state === "needs confirmation" && !review.currentActionReceipt;
   return {
     shouldAsk: Boolean(review?.state === "needs confirmation"),
+    denyEligible,
+    gateMode: mode,
     risk,
     toolName: name,
     guard,

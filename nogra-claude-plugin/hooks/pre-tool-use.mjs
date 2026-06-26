@@ -69,7 +69,10 @@ function emitReview(result) {
     hookEventName: "PreToolUse",
     additionalContext: result.reviewMessage
   };
-  if (result.shouldAsk) {
+  if (result.denyEligible) {
+    hookSpecificOutput.permissionDecision = "deny";
+    hookSpecificOutput.permissionDecisionReason = result.reviewMessage;
+  } else if (result.shouldAsk) {
     hookSpecificOutput.permissionDecision = "ask";
     hookSpecificOutput.permissionDecisionReason = result.reviewMessage;
   }

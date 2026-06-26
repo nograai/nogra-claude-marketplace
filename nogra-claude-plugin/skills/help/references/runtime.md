@@ -36,9 +36,14 @@ Defaults:
 - `profile`: default
 - `roles`: empty until the user chooses custom runtime values
 In this plugin release, `profile: default` resolves to Sonnet/medium for the
-executor role and Sonnet/medium for the verifier role. Those concrete values are
-not written into default config because the user has not chosen custom runtime
-settings.
+executor role and Opus/medium for the verifier role. The verifier deliberately
+defaults to a *different* model than the executor (cross-model verify) so the
+"done" check is less likely to inherit the executor's blind spots. This is a
+preference surfaced in dispatch and receipts, not enforcement: Claude Code's
+native `/model` remains the live source of truth for the current chat, and a
+user who pins a single model with `/model` overrides the preference. Those
+concrete values are not written into default config because the user has not
+chosen custom runtime settings.
 
 Use `/nogra:settings` to view or change runtimePolicy.
 

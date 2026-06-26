@@ -20,6 +20,7 @@ const sessionEndHook = path.join(pluginRoot, "hooks", "session-end.mjs");
 const userPromptSubmitHook = path.join(pluginRoot, "hooks", "user-prompt-submit.mjs");
 const preToolUseHook = path.join(pluginRoot, "hooks", "pre-tool-use.mjs");
 const observeEventHook = path.join(pluginRoot, "hooks", "observe-event.mjs");
+const stopNudgeHook = path.join(pluginRoot, "hooks", "stop-nudge.mjs");
 const statuslineScript = path.join(pluginRoot, "scripts", "statusline.mjs");
 
 function parseFrontmatter(text) {
@@ -101,6 +102,11 @@ function readJsonl(file) {
     .split(/\r?\n/u)
     .filter((line) => line.trim())
     .map((line) => JSON.parse(line));
+}
+
+function writeTranscript(file, records) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
 }
 
 function run(args, input, env = {}) {
@@ -265,11 +271,20 @@ function main() {
   const verifySkill = pluginText(path.join("skills", "verify", "SKILL.md"));
   const expectedExecutorRuntime = "anthropic:sonnet";
   const expectedExecutorRuntimeDisplay = displayRuntime(expectedExecutorRuntime);
-  const expectedVerifierRuntime = "sonnet";
-  assert(hooksConfig.hooks?.SessionStart?.[0]?.matcher === "startup|resume|clear", "SessionStart should not match compact");
-  assert(hooksConfig.hooks?.PostCompact?.[0]?.matcher === "manual|auto", "PostCompact should handle compact rehydration");
+  const expectedVerifierRuntime = "opus";
+  // Cross-model verify (default profile): the verifier resolves to a different
+  // model than the executor so the "done" check does not inherit the executor's
+  // blind spots. The verifier dispatch receipt below proves it in run state.
+  assert(displayRuntime(expectedExecutorRuntime) !== displayRuntime(expectedVerifierRuntime), "default profile should verify cross-model: verifier model must differ from executor model");
+  assert(hooksConfig.hooks?.SessionStart?.[0]?.matcher === "startup|resume|clear", "SessionStart slot 0 should handle startup/resume/clear, not compact");
+  assert(hooksConfig.hooks?.SessionStart?.some((entry) => entry.matcher === "compact"), "post-compact rehydration should be homed on the SessionStart/compact channel");
+  assert(!Object.hasOwn(hooksConfig.hooks ?? {}, "PostCompact"), "PostCompact event should not be wired (side-effect-only in Claude Code 2.1.x; re-homed onto SessionStart/compact)");
   assert(Boolean(hooksConfig.hooks?.SessionEnd?.[0]), "SessionEnd should record lifecycle anchor");
   assert(hooksConfig.hooks?.PreToolUse?.[0]?.matcher === "Bash|Edit|Write|MultiEdit", "PreToolUse should gate only write/action tools");
+  const stopHookCommands = (hooksConfig.hooks?.Stop || []).flatMap((group) => (group.hooks || []).map((hook) => hook.command || ""));
+  assert(stopHookCommands.some((command) => command.includes("observe-event.mjs")), "Stop should still record lifecycle events");
+  assert(stopHookCommands.some((command) => command.includes("stop-nudge.mjs")), "Stop should run the observe-only verify nudge");
+  assert(!stopHookCommands.some((command) => command.includes("stop-intent.mjs")), "Stop should not run active-intent semantic feedback (nudge is observe-only, never a gate)");
   assert(!executorFrontmatter.model, "executor role frontmatter should not hardcode model");
   assert(!executorFrontmatter.effort, "executor role frontmatter should not hardcode effort");
   assert(!verifierFrontmatter.model, "verifier role frontmatter should not hardcode model");
@@ -457,7 +472,7 @@ function main() {
     ...compactInput
   });
   const compactPointerContext = compactPointer.hookSpecificOutput?.additionalContext || "";
-  assert(compactPointer.hookSpecificOutput?.hookEventName === "PostCompact", "PostCompact should identify its hook event");
+  assert(compactPointer.hookSpecificOutput?.hookEventName === "SessionStart", "post-compact rehydration should emit a SessionStart hook event (PostCompact rejects additionalContext)");
   assert(compactPointerContext.includes("NOGRA_COMPACT_POINTER"), "PostCompact should emit a thin compact pointer");
   assert(compactPointerContext.includes("NOGRA_CONVERGENCE_GUARD"), "PostCompact should re-inject convergence guard context");
   assert(compactPointerContext.includes("compactionDriftBoundary=true"), "PostCompact convergence guard should mark compaction as a drift boundary");
@@ -478,6 +493,40 @@ function main() {
   fs.unlinkSync(path.join(temp, ".nogra", "ledger", "events.jsonl"));
   fs.unlinkSync(path.join(temp, ".nogra", "transport", "runs", "run-cache-prefix-mutation.json"));
   fs.unlinkSync(path.join(temp, ".nogra", "transport", "runs", "run-cache-post-compact-mutation.json"));
+
+  // Stop verify-nudge (OBSERVE-only): fires at most once per session on an
+  // unverified completion claim, never blocks, never re-prompts the model.
+  const nudgeWs = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-stop-nudge-"));
+  fs.mkdirSync(path.join(nudgeWs, ".nogra", "ledger"), { recursive: true });
+  fs.mkdirSync(path.join(nudgeWs, ".nogra", "runtime"), { recursive: true });
+  writeJson(path.join(nudgeWs, ".nogra", "config.json"), {
+    schema: "nogra.workspace.config.v1",
+    workspaceId: "stop-nudge-ws"
+  });
+  const nudgeInput = (sessionId, message) => ({
+    cwd: nudgeWs,
+    workspace_roots: [nudgeWs],
+    session_id: sessionId,
+    transcript_path: "/tmp/transcript-stop-nudge.jsonl",
+    last_assistant_message: message
+  });
+
+  const falseDoneNudge = runHook(stopNudgeHook, nudgeInput("session-nudge-claim", "All tests green and the migration is done."));
+  assert(typeof falseDoneNudge.systemMessage === "string" && falseDoneNudge.systemMessage.includes("/nogra:verify"), "Stop nudge should suggest /nogra:verify on an unverified completion claim");
+  assert(!("decision" in falseDoneNudge) && !("continue" in falseDoneNudge) && !falseDoneNudge.hookSpecificOutput, "Stop nudge must be observe-only: no decision/continue/additionalContext, never a gate");
+
+  const repeatNudge = runHook(stopNudgeHook, nudgeInput("session-nudge-claim", "Done, verified, safe to merge."));
+  assert(Object.keys(repeatNudge).length === 0, "Stop nudge should fire at most once per session (no repeat in the same session)");
+
+  const noClaimNudge = runHook(stopNudgeHook, nudgeInput("session-nudge-noclaim", "Here is a summary of what I explored; nothing was changed."));
+  assert(Object.keys(noClaimNudge).length === 0, "Stop nudge should stay silent when the final message makes no completion claim");
+
+  fs.appendFileSync(
+    path.join(nudgeWs, ".nogra", "ledger", "events.jsonl"),
+    `${JSON.stringify({ schema: "nogra.ledger.event.v1", type: "verification_recorded", sessionId: "session-nudge-verified", eventId: "ledger-event-verify-nudge" })}\n`
+  );
+  const verifiedNudge = runHook(stopNudgeHook, nudgeInput("session-nudge-verified", "Done. Everything is verified and safe to merge."));
+  assert(Object.keys(verifiedNudge).length === 0, "Stop nudge should stay silent when a verification already ran this session");
 
   const safeCommand = runPreToolUseHook({
     cwd: temp,
@@ -674,6 +723,177 @@ function main() {
     }
   });
   assert(missingStatusline.startsWith("Nogra:"), "statusline should fail open with a compact Nogra line");
+
+  const qualityTranscript = path.join(temp, "quality-transcript.jsonl");
+  fs.writeFileSync(qualityTranscript, [
+    JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: "STOP. One shot. Ingen agents uden GO."
+      }
+    }),
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu-quality-agent",
+            name: "Agent",
+            input: {
+              description: "Audit funnel drift"
+            }
+          }
+        ]
+      }
+    }),
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: "Affiliate revenue is the biggest MRR lever at 79 kr/md."
+      }
+    })
+  ].join("\n") + "\n", "utf8");
+  const qualityReceipt = run(["quality", "--root", temp, "--transcript", qualityTranscript, "--write"]);
+  assert(qualityReceipt.schema === "nogra.sessionQualityReceipt.v1", "quality command should return a session quality receipt");
+  assert(qualityReceipt.status === "intervention", "quality command should classify stop+agent drift as intervention");
+  assert(qualityReceipt.blocking === false, "quality receipt should remain advisory and non-blocking");
+  const qualityPatternIds = qualityReceipt.patterns.map((entry) => entry.id);
+  assert(qualityPatternIds.includes("stop_boundary_followed_by_tools"), "quality command should detect tool work after a stop boundary");
+  assert(qualityPatternIds.includes("agent_spawn_after_stop_boundary"), "quality command should detect agent spawn after a stop boundary");
+  assert(qualityPatternIds.includes("business_claim_without_source_marker"), "quality command should detect business claims without source markers");
+  assert(qualityPatternIds.includes("truth_ledger_missing_for_risky_session"), "quality command should require a truth ledger for risky sessions");
+  assert(qualityReceipt.remedyPolicy?.blocking === false, "quality remedy policy should not turn into a hard runtime lock");
+  assert(fs.existsSync(path.join(temp, qualityReceipt.path)), "quality --write should persist a compact receipt");
+  const statusAfterQuality = run(["status", "--root", temp]);
+  assert(statusAfterQuality.continuity?.sessionQuality?.latestStatus === "intervention", "status should expose latest session quality status");
+  assert(statusAfterQuality.continuity?.sessionQuality?.patternCount === qualityReceipt.patternCount, "status should expose latest session quality pattern count");
+  const qualityStatusline = runStatusline({
+    cwd: temp,
+    workspace: {
+      current_dir: temp,
+      project_dir: temp,
+      added_dirs: []
+    },
+    context_window: {
+      used_percentage: 13
+    }
+  });
+  assert(qualityStatusline.includes("quality:intervention"), "statusline should expose latest session quality status when present");
+
+  const qualityAgentWithoutStopTranscript = path.join(temp, "quality-agent-without-stop-transcript.jsonl");
+  writeTranscript(qualityAgentWithoutStopTranscript, [
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content: "Please audit this with a helper agent if useful."
+      }
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu-quality-agent-without-stop",
+            name: "Agent",
+            input: {
+              description: "Fresh-eyes review"
+            }
+          }
+        ]
+      }
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: "Observed: helper agent was requested by the user. User-provided: helper allowed. Inferred: warning only. Unknown: no blockers."
+      }
+    }
+  ]);
+  const qualityAgentWithoutStop = run(["quality", "--root", temp, "--transcript", qualityAgentWithoutStopTranscript]);
+  assert(qualityAgentWithoutStop.status === "watch", "quality should warn, not intervene, for agent use without a stop boundary");
+  assert(qualityAgentWithoutStop.patterns.map((entry) => entry.id).includes("agent_spawn_observed"), "quality should record agent spawn without stop as observed");
+  assert(!qualityAgentWithoutStop.patterns.map((entry) => entry.id).includes("truth_ledger_missing_for_risky_session"), "truth ledger should suppress missing-ledger warning");
+
+  const qualityResumeTranscript = path.join(temp, "quality-resume-after-stop-transcript.jsonl");
+  writeTranscript(qualityResumeTranscript, [
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content: "STOP. Ingen agents uden GO."
+      }
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: "Afventer GO."
+      }
+    },
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content: "GO, continue."
+      }
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu-quality-resume-agent",
+            name: "Agent",
+            input: {
+              description: "Now allowed"
+            }
+          }
+        ]
+      }
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: "Observed: GO came after stop. User-provided: continue. Inferred: stop window cleared. Unknown: none."
+      }
+    }
+  ]);
+  const qualityResume = run(["quality", "--root", temp, "--transcript", qualityResumeTranscript]);
+  const qualityResumeIds = qualityResume.patterns.map((entry) => entry.id);
+  assert(!qualityResumeIds.includes("stop_boundary_followed_by_tools"), "quality should not flag tools after a later GO clears the stop boundary");
+  assert(!qualityResumeIds.includes("agent_spawn_after_stop_boundary"), "quality should not treat agent use after explicit GO as after-stop drift");
+  assert(qualityResumeIds.includes("agent_spawn_observed"), "quality should still record agent usage after GO as a watch item");
+
+  const qualitySourcedBusinessTranscript = path.join(temp, "quality-sourced-business-transcript.jsonl");
+  writeTranscript(qualitySourcedBusinessTranscript, [
+    {
+      type: "user",
+      message: {
+        role: "user",
+        content: "Summarize revenue from DB evidence."
+      }
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: "Observed: DB query returned 319 unlocks and 79 kr/md price. User-provided: target CR is 8%. Inferred: MRR depends on conversion. Unknown: Vercel attribution."
+      }
+    }
+  ]);
+  const qualitySourcedBusiness = run(["quality", "--root", temp, "--transcript", qualitySourcedBusinessTranscript]);
+  assert(qualitySourcedBusiness.status === "ok", "quality should allow business claims when source markers and truth ledger are present");
 
   runObserveEventHook({
     cwd: temp,
@@ -1028,6 +1248,77 @@ function main() {
   assert(!fs.existsSync(rootRoutingScorePath), "UserPromptSubmit should not write routing score under workspace root .nogra");
   assert(!fs.existsSync(nestedRoutingScorePath), "UserPromptSubmit should not write routing score under nested manager .nogra");
 
+  const activeIntentWorkspace = path.join(temp, "active-intent-workspace");
+  run(["init", "--apply", "--root", activeIntentWorkspace, "--workspace-name", "Active Intent Smoke"]);
+  writeJson(path.join(activeIntentWorkspace, ".nogra", "runtime", "active-intent.json"), {
+    schema: "nogra.activeIntent.v1",
+    status: "active",
+    project: "BoligScout",
+    objective: "Walk the Chrome user journey and fix only conversion blockers.",
+    currentPlan: [
+      "Open the local product surface",
+      "Walk signup, listing, contact, and payment surfaces",
+      "Patch only blockers found in the journey"
+    ],
+    currentBlock: "Browser proof before manifest or roadmap work",
+    doneWhen: "Journey has observations plus concrete fixes or explicit user intent change.",
+    nonGoals: ["Generic Nogra manifest work", "Unrelated refactors"],
+    changePolicy: "Intent changes only on explicit user override or a stable new intent across 2 user turns."
+  });
+  const activeIntentStatus = run(["status", "--root", activeIntentWorkspace]);
+  assert(activeIntentStatus.continuity?.activeIntent?.active === true, "status should expose active intent when runtime state exists");
+  assert(activeIntentStatus.continuity?.activeIntent?.objective?.includes("Walk the Chrome user journey"), "status active intent should carry the objective");
+  const activeIntentStatusline = runStatusline({
+    cwd: activeIntentWorkspace,
+    workspace: {
+      current_dir: activeIntentWorkspace,
+      project_dir: activeIntentWorkspace,
+      added_dirs: []
+    },
+    context_window: {
+      used_percentage: 16
+    }
+  });
+  assert(activeIntentStatusline.includes("intent:active"), "statusline should expose active intent state when present");
+  const activeIntentSubmit = runHook(userPromptSubmitHook, {
+    cwd: activeIntentWorkspace,
+    workspace_roots: [activeIntentWorkspace],
+    session_id: "session-active-intent-submit-001",
+    transcript_path: "/tmp/transcript-active-intent-submit-001.jsonl",
+    prompt: "Continue."
+  });
+  const activeIntentContext = activeIntentSubmit.hookSpecificOutput?.additionalContext || "";
+  assert(activeIntentContext.includes("<NOGRA_ACTIVE_INTENT>"), "UserPromptSubmit should inject active intent when runtime state exists");
+  assert(activeIntentContext.includes("Walk the Chrome user journey"), "active intent context should carry the objective");
+  assert(activeIntentContext.includes("Intent changes only"), "active intent context should carry the change policy");
+
+  const activeIntentBeforeRetarget = fs.readFileSync(path.join(activeIntentWorkspace, ".nogra", "runtime", "active-intent.json"), "utf8");
+  const activeIntentRetargetSubmit = runHook(userPromptSubmitHook, {
+    cwd: activeIntentWorkspace,
+    workspace_roots: [activeIntentWorkspace],
+    session_id: "session-active-intent-retarget-submit-001",
+    transcript_path: "/tmp/transcript-active-intent-retarget-submit-001.jsonl",
+    prompt: "Actually switch to public release now."
+  });
+  const activeIntentRetargetContext = activeIntentRetargetSubmit.hookSpecificOutput?.additionalContext || "";
+  assert(activeIntentRetargetContext.includes("Walk the Chrome user journey"), "UserPromptSubmit should carry the existing active intent even when the prompt suggests a new target");
+  assert(fs.readFileSync(path.join(activeIntentWorkspace, ".nogra", "runtime", "active-intent.json"), "utf8") === activeIntentBeforeRetarget, "UserPromptSubmit should not mutate active intent automatically on a single retargeting prompt");
+
+  const inactiveIntentWorkspace = path.join(temp, "inactive-intent-workspace");
+  run(["init", "--apply", "--root", inactiveIntentWorkspace, "--workspace-name", "Inactive Intent Smoke"]);
+  writeJson(path.join(inactiveIntentWorkspace, ".nogra", "runtime", "active-intent.json"), {
+    schema: "nogra.activeIntent.v1",
+    status: "done",
+    objective: "Already closed trial."
+  });
+  const inactiveIntentSubmit = runHook(userPromptSubmitHook, {
+    cwd: inactiveIntentWorkspace,
+    workspace_roots: [inactiveIntentWorkspace],
+    session_id: "session-inactive-intent-submit-001",
+    transcript_path: "/tmp/transcript-inactive-intent-submit-001.jsonl",
+    prompt: "Continue."
+  });
+  assert(Object.keys(inactiveIntentSubmit).length === 0, "inactive active-intent state should not inject context");
   const routerReference = pluginText("skills/help/references/router.md");
   const helpSkill = pluginText("skills/help/SKILL.md");
   const briefSkill = pluginText("skills/brief/SKILL.md");
@@ -1051,9 +1342,6 @@ function main() {
     assert(/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skillFrontmatter.name), `${skillName} skill display label should be slash-picker safe`);
   }
   assert(helpSkill.includes("turn off, disable, uninstall or remove Nogra"), "help skill should route off/uninstall/remove questions");
-  const pluginReadme = pluginText("README.md");
-  assert(pluginReadme.includes("claude plugin disable nogra@nogra-claude"), "public README should use the public marketplace id for general disable instructions");
-  assert(pluginReadme.includes("private plugin id shown by `/plugin`"), "public README should keep private-lane disable guidance scoped to public rehearsal isolation");
   assert(briefSkill.includes("use `AskUserQuestion`"), "brief skill should guide structured AskUserQuestion elicitation");
   assert(briefSkill.includes("Ask at most 4 questions"), "brief skill should bound risk-intake batches");
   assert(briefSkill.includes("the first option is"), "brief skill should keep route recommendations first");
@@ -1100,6 +1388,34 @@ function main() {
   assert(Object.keys(sessionEndOutput).length === 0, "SessionEnd should stay silent");
   const sessionEndAnchor = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "runtime", "session-anchor.json"), "utf8"));
   assert(sessionEndAnchor.hookEventName === "SessionEnd", "SessionEnd should update session anchor only");
+  const cleanQualityTranscript = path.join(temp, "quality-clean-transcript.jsonl");
+  fs.writeFileSync(cleanQualityTranscript, [
+    JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: "Please summarize the current state."
+      }
+    }),
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: "Observed: no risky tool work. User-provided: summary request. Inferred: safe to answer. Unknown: none."
+      }
+    })
+  ].join("\n") + "\n", "utf8");
+  const cleanSessionEndOutput = runSessionEndHook({
+    cwd: temp,
+    workspace_roots: [temp],
+    source: "prompt_input_exit",
+    session_id: "session-quality-clean-001",
+    transcript_path: cleanQualityTranscript
+  });
+  assert(Object.keys(cleanSessionEndOutput).length === 0, "SessionEnd quality capture should stay silent");
+  const cleanQualityReceipt = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "runtime", "session-quality.latest.json"), "utf8"));
+  assert(cleanQualityReceipt.status === "ok", "SessionEnd should write an ok quality receipt for clean transcripts");
+  assert(cleanQualityReceipt.transcript?.id === "quality-clean-transcript", "SessionEnd quality receipt should identify the transcript");
   captureSessionAnchor(temp, {
     session_id: "session-smoke-001",
     transcript_path: "/tmp/transcript-smoke-001.jsonl",

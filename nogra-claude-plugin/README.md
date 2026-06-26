@@ -87,7 +87,7 @@ you to; plugin scope can be user, project or local.
 
 ## Public Test Isolation
 
-If you also dogfood private Nogra lanes on the same machine, keep public plugin
+If you also run private Nogra lanes on the same machine, keep public plugin
 tests in an isolated workspace where private lanes are disabled. `/nogra:status`
 will warn when another non-orphaned Nogra install is present. Public-grade and
 release rehearsals may enable strict public isolation so a private lane such as
