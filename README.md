@@ -144,6 +144,11 @@ records own the project index; each project owns its own `.nogra/` state.
 - LLM index: https://nogra.ai/llms.txt
 - Public marketplace source: https://github.com/nograai/nogra-claude-marketplace
 
+## Code of Conduct
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md) (version
+3.0). Report concerns to conduct@nogra.ai.
+
 ## License
 
 Apache-2.0.
