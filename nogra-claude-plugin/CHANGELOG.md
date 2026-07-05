@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1 - 2026-07-05
+
+- Fixed: the brain-init skill + contracts (skills/brain-init/, contracts/brain-init/)
+  were dropped from the 0.7.0 marketplace build; /nogra:brain-init now works on a fresh install.
+
 ## 0.7.0 - 2026-07-04
 
 - Fresh installs now scaffold a **thin hub by default**: empty `inbox/` and
