@@ -1,0 +1,33 @@
+{
+  "schema": "nogra.brain_init.manifest.v1",
+  "files": [
+    {
+      "source": "brain-init/files/brain/raw/.gitkeep",
+      "path": "brain/raw/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the empty raw-sources lane inside the opt-in brain vault."
+    },
+    {
+      "source": "brain-init/files/brain/wiki/.gitkeep",
+      "path": "brain/wiki/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the empty compiled-pages lane inside the opt-in brain vault."
+    },
+    {
+      "source": "brain-init/files/brain/index.md",
+      "path": "brain/index.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Entry point into the brain vault once pages exist."
+    },
+    {
+      "source": "brain-init/files/brain/CLAUDE.md",
+      "path": "brain/CLAUDE.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Thin pull-first guidance for the brain vault. Never auto-loaded."
+    }
+  ]
+}
