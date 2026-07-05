@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.3 - 2026-07-05
+
+- Added a bounded memory layer: .nogra/memory/local/MEMORY.md (<=2200 chars) and USER.md
+  (<=1375) load into every session deterministically via a SessionStart hook; the bound is
+  enforced on read (oldest content drops when full). Claude does the remembering; Nogra owns
+  the bound. Self-contained (no extra runtime).
+
 ## 0.7.2 - 2026-07-05
 
 - Removed the clickable `[Open brief](file://...)` link from the brief approval

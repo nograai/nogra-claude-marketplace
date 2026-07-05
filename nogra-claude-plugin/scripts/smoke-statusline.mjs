@@ -21,8 +21,13 @@ const statuslinePath = path.join(pluginRoot, "scripts", "statusline.mjs");
 // Byte-stable pre-change baseline for an uninitialized directory, captured
 // against this statusline before the gate-mode + active-run segments were
 // added. Must stay identical after the change (fail-open, no .nogra found).
+// Version is derived from plugin.json, not hardcoded — a version bump is the one
+// field expected to vary; every other segment must still match byte-for-byte.
+const pluginVersion = JSON.parse(
+  fs.readFileSync(path.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8"),
+).version;
 const EXPECTED_UNINIT_BASELINE =
-  "Nogra:local 0.7.1 hook:none checkpoint:fresh continuity:migration-needed bridge:unknown dirty:unknown promo:unknown";
+  `Nogra:local ${pluginVersion} hook:none checkpoint:fresh continuity:migration-needed bridge:unknown dirty:unknown promo:unknown`;
 
 function assert(condition, message) {
   if (!condition) {

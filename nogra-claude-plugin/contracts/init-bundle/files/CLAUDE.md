@@ -54,6 +54,14 @@ brief and run records are created lazily by their commands. Keep these files
 compact and factual — behavior is verified against evidence, not file
 presence.
 
+## Memory
+
+`.nogra/memory/local/MEMORY.md` (durable facts, ≤2200 chars) and `USER.md` (who
+the user is, ≤1375) are your bounded memory. Nogra loads both into every session,
+deterministically — not deprioritized like this file. Write durable facts there;
+when a file is full the oldest content drops on read, so consolidate (merge
+deliberately) rather than hoard. Claude does the remembering; Nogra owns the bound.
+
 There's also an opt-in `brain/` deep-work knowledge vault — never scaffolded
 by default; run `/nogra:brain-init` when you want it.
 

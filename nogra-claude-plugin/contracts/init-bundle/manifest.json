@@ -79,6 +79,13 @@
       "purpose": "Local advisory memory index."
     },
     {
+      "source": "init-bundle/files/.nogra/memory/local/USER.md",
+      "path": ".nogra/memory/local/USER.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Local bounded user profile — loaded into every session."
+    },
+    {
       "source": "init-bundle/files/.nogra/index/workspaces.jsonl",
       "path": ".nogra/index/workspaces.jsonl",
       "mimeType": "application/x-jsonlines",
