@@ -1,6 +1,91 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 - 2026-07-04
+
+- Fresh installs now scaffold a **thin hub by default**: empty `inbox/` and
+  `projects/` folders (each a single `.gitkeep`) land next to `.nogra/` and
+  root `CLAUDE.md`, so incoming files and hub sub-projects have a home from
+  day one. Same `create_if_missing` convention as the other lanes; existing
+  folders are never touched.
+- Added the **`/nogra:brain-init` skill**: scaffolds an opt-in empty `brain/`
+  knowledge vault (`raw/`, `wiki/`, `index.md`, thin pull-first
+  `brain/CLAUDE.md`) on demand via the local runtime's new `brain-init`
+  command. Never created by setup, never auto-loaded, idempotent — a second
+  run preserves everything and writes nothing. Setup output and the shipped
+  workspace `CLAUDE.md` mention it in one line each.
+- Trimmed the shipped workspace `CLAUDE.md` (143 -> 93 lines) and
+  `.nogra/README.md` (21 -> 12 lines) to minimum lines without dropping any
+  rule.
+- Added the **MCP bridge**: the plugin now carries Nogra's own MCP server with
+  it. A plugin-root `.mcp.json` registers the server automatically on install,
+  exposing the 32 public tools (briefs, transport, registry, events, redaction)
+  in public mode — private/dev-lane tools are excluded at the server boundary.
+  The server ships separately as `nogra-mcp` on PyPI; the plugin only points at
+  it, it does not vendor it.
+- Added the **MCP launcher** (`scripts/mcp-launcher.mjs`) between `.mcp.json`
+  and the server: resolves a runner from PATH — `npx` first, `uvx` second,
+  `pipx` third — and when none exists prints exactly one instruction line on
+  stderr and exits non-zero. `npx` is tried first because Node (and therefore
+  `npx`) is always present wherever Claude Code runs, while `uv`/`pipx` are
+  not; npm's `@nograai/mcp` ships standalone platform binaries, so the npx
+  rung needs no Python at all. `uvx`/`pipx` remain as fallbacks for the PyPI
+  `nogra-mcp` package. It never auto-installs anything and never touches the
+  network itself; signals are forwarded and the server's exit code passes
+  through on every rung.
+- Added a **verify-nudge config toggle**: `verifyNudge: "off"` in
+  `.nogra/config.json` turns the observe-only Stop nudge off for that
+  workspace. An OFF switch, not an amputation — the default stays ON for every
+  install, the hook stays fail-open, and only the exact value `"off"` disables
+  it.
+- Added the **run-scratch WRITE-OPS coverage class** to the gate escalation
+  ladder: after GO, a dispatched run's own scratch housekeeping no longer
+  raises a raw operator ask. The class is a fixed allowlist of pure file-op
+  binaries (`rm`, `rmdir`, `mkdir`, `mv`, `cp`, `touch`) plus direct
+  `Edit`/`Write`/`MultiEdit` tool calls, and only when EVERY resolved target
+  sits inside the dispatch receipt's declared `scratchRoots`. Purely
+  deterministic — allowlist membership plus path containment; zero model
+  judgment.
+- **Exec is fail-closed**: interpreters and arbitrary binaries (`node`,
+  `python3`, `sh`, `npx`, `uvx`, ...) are never eligible for run-scratch
+  coverage and ask exactly as before, even when every path argument is inside
+  a scratch root — an exec's effects are not bounded by its argument paths.
+  Compound, piped and redirected commands are fail-closed the same way: any
+  Bash command that is not a single plain invocation of an allowlisted
+  write-op binary is never eligible.
+- **Escape containment**: targets are `..`-normalized and symlink-normalized
+  BEFORE prefix-matching against declared roots; any target resolving outside
+  the roots asks, and `mv`/`cp` crossing the scratch boundary in either
+  direction asks. Unresolvable tokens (`$VAR`, `~`, globs, braces) on a
+  scratch path can never count as inside and ask.
+- The dispatch receipt now declares a deterministic additive `scratchRoots`
+  list at dispatch time: the run's own artifacts dir by default, plus any
+  roots passed via the repeatable `--scratch-root` flag (normalized and
+  deduped). A root that cannot be named deterministically is omitted, never
+  approximated.
+- **Citation surface**: every auto-approval — the existing receipt scope-match
+  class AND the new run-scratch class — now carries the grep-provable citation
+  `approved <action> — in scope of your GO, receipt <runId>` in its decision
+  reason.
+- Unchanged, locked: gate-arming/arm-self-gate (still never auto-approvable,
+  still evaluated before run-scratch), non-goal precedence, hard mode,
+  never-auto-approvable classes, gray-zone always-ask, and the default
+  `gate.autoApprove` OFF behavior (byte-identical for default workspaces).
+- Added **auto-approval** (opt-in, default OFF — `gate.autoApprove` must be
+  explicitly `true`). When a tool call falls within the scope of an approved,
+  active dispatch receipt, the convergence gate can let it flow instead of
+  re-asking — a GO that already covers the action. Every auto-approval carries
+  a citation back to its receipt; nothing is trusted, it is enforced against a
+  boundary the human set in the brief. The gate is purely deterministic:
+  receipt provenance decides, with zero model judgment in the decision path;
+  anything outside the mechanical boundary/scope match always asks.
+- Added the **arm-self-gate**: writes to `.nogra/config.json` (where standing
+  delegations are armed) are *never* auto-approvable. Arming the gate always
+  requires explicit human review — deterministically, regardless of any
+  receipt. Elevation is never self-conferred, including elevation of the gate
+  itself.
+- Added **delegation visibility**: when auto-approval is enabled, the boot
+  context and statusline name it (`gateDelegations`); byte-absent when off.
+  A standing delegation can never be silent.
 
 ## 0.6.9 - 2026-06-26
 

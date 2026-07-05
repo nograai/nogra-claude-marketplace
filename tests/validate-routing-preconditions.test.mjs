@@ -16,6 +16,7 @@ const postCompactHook = path.join(pluginRoot, "hooks", "post-compact.mjs");
 const sessionEndHook = path.join(pluginRoot, "hooks", "session-end.mjs");
 const userPromptSubmitHook = path.join(pluginRoot, "hooks", "user-prompt-submit.mjs");
 const preToolUseHook = path.join(pluginRoot, "hooks", "pre-tool-use.mjs");
+const stopNudgeHook = path.join(pluginRoot, "hooks", "stop-nudge.mjs");
 
 let failures = 0;
 
@@ -419,6 +420,83 @@ console.log("UserPromptSubmit lifecycle:");
   assert(initClaude.includes("## Nogra Intent Router"), "init bundle includes intent router");
   assert(readme.includes("### Build directly"), "README documents direct scoped work as default");
   assert(!readme.includes("Nogra treats this as scoped work, shapes a brief first"), "README no longer promises automatic brief shaping");
+}
+
+// ---------------------------------------------------------------------------
+// Stop verify-nudge
+// ---------------------------------------------------------------------------
+
+function workspaceWithRun(runPayload) {
+  const root = workspace();
+  const runsDir = path.join(root, ".nogra", "transport", "runs");
+  fs.mkdirSync(runsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(runsDir, `${runPayload.runId}.json`),
+    `${JSON.stringify(runPayload, null, 2)}\n`,
+    "utf8"
+  );
+  return root;
+}
+
+console.log("# Stop verify-nudge:");
+
+// (b) No dispatch context → silent
+{
+  const root = workspace();
+  const result = runHook(stopNudgeHook, { session_id: "sn-b", cwd: root, workspace_roots: [root] });
+  assert(result.status === 0, "no dispatch context: exits 0");
+  assert(!result.stdout, "no dispatch context: emits no output");
+}
+
+// (d) stop_hook_active=true → loop guard, silent
+{
+  const root = workspaceWithRun({ runId: "run-d1", briefId: "brief-d1", status: "running" });
+  const result = runHook(stopNudgeHook, { session_id: "sn-d", stop_hook_active: true, cwd: root, workspace_roots: [root] });
+  assert(result.status === 0, "stop_hook_active=true: exits 0");
+  assert(!result.stdout, "stop_hook_active=true: emits no output (loop guard)");
+}
+
+// (a) + (e) Active unverified run → nudge once, exact shape
+{
+  const root = workspaceWithRun({ runId: "run-a1", briefId: "brief-a1", status: "running" });
+  const result = runHook(stopNudgeHook, { session_id: "sn-a", cwd: root, workspace_roots: [root] });
+  assert(result.status === 0, "active unverified run: exits 0");
+  const parsed = parseHookOutput(result);
+  assert(
+    parsed.hookSpecificOutput?.hookEventName === "Stop",
+    "active unverified run: hookSpecificOutput.hookEventName is Stop"
+  );
+  assert(
+    typeof parsed.hookSpecificOutput?.additionalContext === "string" &&
+    parsed.hookSpecificOutput.additionalContext.includes("nogra:verify"),
+    "active unverified run: additionalContext mentions nogra:verify"
+  );
+  assert(!parsed.decision, "active unverified run: no decision field (never blocks)");
+  assert(!parsed.systemMessage, "active unverified run: no systemMessage (additionalContext only)");
+}
+
+// (c) Dedup: second call same session-id → silent
+{
+  const root = workspaceWithRun({ runId: "run-c1", briefId: "brief-c1", status: "running" });
+  const input = { session_id: "sn-c", cwd: root, workspace_roots: [root] };
+  const first = runHook(stopNudgeHook, input);
+  assert(Boolean(first.stdout), "dedup first call: emits nudge");
+  const second = runHook(stopNudgeHook, input);
+  assert(second.status === 0, "dedup second call: exits 0");
+  assert(!second.stdout, "dedup second call: emits no output (same session already nudged)");
+}
+
+// FLAG 2: terminal run WITH evidence artifacts → silent (not nag)
+{
+  const root = workspaceWithRun({
+    runId: "run-verified",
+    briefId: "brief-verified",
+    status: "returned",
+    artifacts: { reportExists: true }
+  });
+  const result = runHook(stopNudgeHook, { session_id: "sn-f2", cwd: root, workspace_roots: [root] });
+  assert(result.status === 0, "verified run (evidence artifacts): exits 0");
+  assert(!result.stdout, "verified run (evidence artifacts): emits no output — not nag");
 }
 
 if (failures > 0) {

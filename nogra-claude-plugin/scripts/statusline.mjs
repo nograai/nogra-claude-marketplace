@@ -73,6 +73,181 @@ function contextSegment(input) {
   return `ctx:${pct}%`;
 }
 
+// Gate-mode + active-run/executor segments: read-only projections mirroring
+// the operator reference statusline (label grammar + filter rules), so a
+// user watching the shipped statusline sees the same gate state and
+// delegation chain visibility. Every reader below fails open to "" on any
+// error — never throws, never writes.
+
+function asNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function dateMs(value) {
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+const TERMINAL_TRANSPORT_STATUSES = new Set(["returned", "ok", "partial", "blocked", "failed", "cancelled", "acknowledged"]);
+const STATUSLINE_ACTIVE_RUN_STATUSES = new Set(["queued", "running", "returning", "in_progress"]);
+const STATUSLINE_RUN_TTL_MS = 12 * 60 * 60 * 1000;
+
+function readTransportRuns(root) {
+  if (!root) return [];
+  const runsDir = path.join(root, ".nogra", "transport", "runs");
+  try {
+    return fs.readdirSync(runsDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .map((entry) => {
+        const file = path.join(runsDir, entry.name);
+        const record = readJsonFile(file);
+        if (!record || typeof record !== "object") return null;
+        let mtimeMs = 0;
+        try {
+          mtimeMs = fs.statSync(file).mtimeMs;
+        } catch {
+          mtimeMs = 0;
+        }
+        return { ...record, __mtimeMs: mtimeMs };
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function runSortMs(record) {
+  return Math.max(dateMs(record.updatedAt), dateMs(record.completedAt), dateMs(record.createdAt), asNumber(record.__mtimeMs, 0));
+}
+
+function runStatusOf(record) {
+  return cleanInline(record?.status, 32).toLowerCase();
+}
+
+function runAgeMs(record) {
+  const anchor = dateMs(record?.updatedAt) || dateMs(record?.createdAt) || runSortMs(record);
+  return anchor ? Date.now() - anchor : 0;
+}
+
+function runNextOwner(record) {
+  return cleanInline(record?.nextOwner || record?.metadata?.nextOwner || "", 64);
+}
+
+function runRequiresManagerDecision(record) {
+  return Boolean(
+    record?.requiresManagerDecision ||
+      record?.executionSizing?.requiresManagerDecision ||
+      record?.metadata?.executionSizing?.requiresManagerDecision ||
+      record?.metadata?.requiresManagerDecision ||
+      record?.executionCrossing?.sizingDecisionRequired
+  );
+}
+
+function isActiveTransportRun(record) {
+  const status = runStatusOf(record);
+  if (!status || TERMINAL_TRANSPORT_STATUSES.has(status)) return false;
+  if (!STATUSLINE_ACTIVE_RUN_STATUSES.has(status)) return false;
+  if (!cleanInline(record?.briefId, 128)) return false;
+  if (runRequiresManagerDecision(record)) return false;
+  if (!runNextOwner(record).startsWith("nogra:")) return false;
+  return runAgeMs(record) <= STATUSLINE_RUN_TTL_MS;
+}
+
+function shortRunId(runId) {
+  const cleaned = cleanInline(runId, 128);
+  const parts = cleaned.split("-").filter(Boolean);
+  const suffix = parts[parts.length - 1] || cleaned;
+  return suffix.length <= 12 ? suffix : suffix.slice(-8);
+}
+
+function formatElapsed(seconds) {
+  const safeSeconds = Math.max(0, Math.floor(asNumber(seconds, 0)));
+  if (safeSeconds < 60) return `${safeSeconds}s`;
+  const minutes = Math.floor(safeSeconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes ? `${hours}h${remainingMinutes}m` : `${hours}h`;
+}
+
+function runExecutorModel(record) {
+  const runtime = cleanInline(record?.executionRuntime || record?.metadata?.executionRuntime || record?.targetModel, 64);
+  const alias = runtime.includes(":") ? runtime.split(":").pop() : runtime;
+  if (alias) return alias.charAt(0).toUpperCase() + alias.slice(1);
+  const label = cleanInline(record?.executionLabel, 160);
+  const mid = label.split("·")[1];
+  return mid ? mid.trim() : "";
+}
+
+function activeRunSegment(root) {
+  try {
+    const activeRuns = readTransportRuns(root)
+      .filter(isActiveTransportRun)
+      .sort((a, b) => runSortMs(b) - runSortMs(a));
+    if (!activeRuns.length) return "";
+
+    const run = activeRuns[0];
+    const status = runStatusOf(run);
+    const phase = cleanInline(run.phase, 32).toLowerCase();
+    const state = phase && phase !== status ? `${status}/${phase}` : status;
+    const startMs = dateMs(run.createdAt) || dateMs(run.updatedAt) || runSortMs(run);
+    const elapsed = startMs ? formatElapsed((Date.now() - startMs) / 1000) : "";
+    const extra = activeRuns.length > 1 ? ` +${activeRuns.length - 1}` : "";
+    const model = runExecutorModel(run);
+    const executor = model ? `▶ executor: ${model} · ` : "";
+
+    return executor + [`Run ${shortRunId(run.runId)}`, state, elapsed].filter(Boolean).join(" ") + extra;
+  } catch {
+    return "";
+  }
+}
+
+// gate accepts legacy string form ("hard"/"advisory") or object form
+// { mode, autoApprove }. Literal true only — the
+// statusline is a visibility surface for standing delegations, so it must
+// never show ON for anything but an explicit opt-in. Mirrors the reference
+// gateState/gateLabel grammar exactly.
+function gateState(config) {
+  const gate = config?.gate;
+  if (typeof gate === "string") {
+    return { mode: cleanInline(gate, 24).toLowerCase() || "advisory", autoApprove: false };
+  }
+  if (gate && typeof gate === "object") {
+    return {
+      mode: cleanInline(gate.mode, 24).toLowerCase() || "advisory",
+      autoApprove: gate.autoApprove === true
+    };
+  }
+  return { mode: "advisory", autoApprove: false };
+}
+
+function gateLabel(config) {
+  const state = gateState(config);
+  const auto = state.autoApprove ? "auto ON" : "auto off";
+  const hard = state.mode === "hard" ? " · hard" : "";
+  return `Nogra ⛩ ${auto}${hard}`;
+}
+
+function gateSegment(root) {
+  try {
+    if (!root) return "";
+    const config = readJsonFile(path.join(root, ".nogra", "config.json"));
+    if (!config) return "";
+    return gateLabel(config);
+  } catch {
+    return "";
+  }
+}
+
 function formatStatusline(input, status) {
   const workspaceId = cleanInline(status?.workspace?.workspaceId || "unknown", 36);
   const version = cleanInline(status?.plugin?.version || "unknown", 32);
@@ -87,6 +262,9 @@ function formatStatusline(input, status) {
     : cleanInline(git.status || "unknown", 24);
   const promotion = cleanInline(status?.promotion?.status || "unknown", 24);
   const context = contextSegment(input);
+  const root = status?.workspace?.root || "";
+  const gate = gateSegment(root);
+  const activeRun = activeRunSegment(root);
   const parts = [
     `Nogra:${workspaceId}`,
     version,
@@ -97,7 +275,9 @@ function formatStatusline(input, status) {
     quality ? `quality:${quality}` : "",
     `bridge:${bridge}`,
     `dirty:${dirty}`,
-    `promo:${promotion}`
+    `promo:${promotion}`,
+    gate,
+    activeRun
   ];
   if (context) {
     parts.push(context);

@@ -20,9 +20,13 @@ After installing this plugin:
 2. Restart or reopen Claude Code so the plugin loads.
 3. Run `/nogra:setup` — this creates the folder's local Nogra state
    (`.nogra/config.json`, standard `.nogra/` domain folders, plus a root
-   `CLAUDE.md` only if you don't already have one).
+   `CLAUDE.md` only if you don't already have one), and empty `inbox/` and
+   `projects/` folders at the workspace root.
 4. For an existing codebase, also run `/nogra:adapt` so Nogra reads the project
    and records its map under `.nogra/`.
+
+There's also an opt-in `brain/` deep-work knowledge vault — never created by
+default; run `/nogra:brain-init` when you want one.
 
 You can also ask Claude:
 
@@ -42,6 +46,23 @@ By default, setup, brief contracts, brief validation, local dispatch receipts an
 verification support use bundled plugin contracts plus the workspace `.nogra/`
 records. After the plugin has been installed, all workflow stays local
 to the workspace.
+
+### MCP layer (optional, needs uv)
+
+The plugin also registers Nogra's own MCP server (`nogra`), launched through a
+small bundled Node launcher (`scripts/mcp-launcher.mjs`) that tries `uvx`, then
+`pipx`, and tells you exactly what's missing if neither is on PATH — it never
+installs or fetches anything itself. This layer needs
+[uv](https://docs.astral.sh/uv/) (or pipx) on your PATH; on first start `uvx`
+fetches the published `nogra-mcp` package and runs it in public mode against
+the current workspace.
+
+Without `uv`/`pipx` the MCP layer simply does not start — hooks, skills,
+commands and the local `.nogra/` workflow keep working unchanged. Nothing else
+in the plugin depends on it.
+
+Config note: set `verifyNudge: "off"` at the top level of `.nogra/config.json`
+to silence the completion-claim verify nudge for that workspace (default: on).
 
 ## Privacy and Support
 
@@ -185,10 +206,18 @@ what you want to do next.
 
 ## Updates
 
-The marketplace publishes versioned plugin packages. To pick up a released
-plugin version, run `/plugin update` and `/reload-plugins`, or enable
-marketplace auto-update in Claude Code. The plugin metadata declares the package
-version for human-readable marketplace surfaces.
+The marketplace publishes versioned plugin packages. Claude Code caches the
+marketplace catalog when the marketplace is added, so refresh the marketplace
+before updating the plugin — otherwise the update serves the cached snapshot:
+
+```bash
+claude plugin marketplace update <marketplace-name>
+claude plugin update nogra@<marketplace-name>
+```
+
+Then run `/reload-plugins` or restart Claude Code. Marketplace auto-update in
+Claude Code covers both steps. The plugin metadata declares the package version
+for human-readable marketplace surfaces.
 
 If you ask Claude whether Nogra can be installed without overwriting existing
 files, Claude should walk through the file plan before writing anything. Setup

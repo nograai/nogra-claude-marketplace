@@ -77,6 +77,30 @@ export function readActiveIntent(root) {
   };
 }
 
+function gateList(value, lowercase) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      const cleaned = cleanInline(entry, 500);
+      return lowercase ? cleaned.toLowerCase() : cleaned;
+    })
+    .filter(Boolean)
+    .slice(0, 64);
+}
+
+// Normalized gate authorization carried by a GO: boundary classes the user
+// approved (`authorize`), declared non-goals (`nonGoals`), and
+// path/glob/command scope patterns (`scope`) that bound where the
+// authorization applies.
+export function normalizeActiveIntentGate(intent) {
+  const gate = intent && intent.gate && typeof intent.gate === "object" ? intent.gate : {};
+  return {
+    authorize: gateList(gate.authorize, true),
+    nonGoals: gateList(gate.nonGoals, true),
+    scope: gateList(gate.scope, false)
+  };
+}
+
 export function writeActiveIntent(root, intent) {
   const payload = {
     schema: "nogra.activeIntent.v1",

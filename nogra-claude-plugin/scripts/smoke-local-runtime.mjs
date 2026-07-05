@@ -14,6 +14,11 @@ const repoRoot = path.resolve(pluginRoot, "..", "..");
 const localRuntime = path.join(pluginRoot, "scripts", "nogra-local.mjs");
 const ledgerRuntime = path.join(pluginRoot, "scripts", "nogra-ledger.mjs");
 const skillQualityCheck = path.join(pluginRoot, "scripts", "check-skill-quality.mjs");
+const gateTriadCheck = path.join(pluginRoot, "scripts", "smoke-gate-triad.mjs");
+const gateVisibilityCheck = path.join(pluginRoot, "scripts", "smoke-gate-visibility.mjs");
+const gateArmingCheck = path.join(pluginRoot, "scripts", "smoke-gate-arming.mjs");
+const gateArmingGitCheck = path.join(pluginRoot, "scripts", "smoke-gate-arming-git.mjs");
+const gateRunScratchCheck = path.join(pluginRoot, "scripts", "smoke-gate-run-scratch.mjs");
 const sessionStartHook = path.join(pluginRoot, "hooks", "session-start.mjs");
 const postCompactHook = path.join(pluginRoot, "hooks", "post-compact.mjs");
 const sessionEndHook = path.join(pluginRoot, "hooks", "session-end.mjs");
@@ -256,6 +261,52 @@ function resolveManagerRoot() {
 
 function main() {
   execFileSync(process.execPath, [skillQualityCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  // Gate triad: receipt-driven auto-approval (allow/ask/deny direction, scope
+  // matching, non-goal override, opt-in default-off). Isolated fixtures only.
+  execFileSync(process.execPath, [gateTriadCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  // Boot-context visibility: standing gate delegations are named in
+  // the cache-safe boot context when ON, byte-absent when OFF (baseline
+  // byte-stability for default workspaces).
+  execFileSync(process.execPath, [gateVisibilityCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  // Gate arming: writes to .nogra/config.json (where standing delegations are
+  // armed) are a deterministic always-ask class, structurally excluded from
+  // every approval path. gate-arming is never auto-approvable — locked by
+  // doctrine. Isolated fixtures only — zero live model calls.
+  execFileSync(process.execPath, [gateArmingCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  // Gate arming, git-write routing: git checkout/restore/clean that TARGET an
+  // instruction surface route by target class (config.json -> gate-arming,
+  // other surfaces -> instruction-surface, identical to a direct write of the
+  // same file); non-surface git-writes stay git-history byte-identically.
+  // Isolated fixtures only — zero live model calls.
+  execFileSync(process.execPath, [gateArmingGitCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  // Run-scratch WRITE-OPS class: after GO, a dispatched run's own scratch
+  // housekeeping (fixed write-op allowlist + Edit/Write, all resolved targets
+  // inside the receipt's declared scratchRoots) auto-approves WITH a
+  // citation; exec stays fail-closed (interpreters never auto-approve, even
+  // with scratch-internal args); compound/piped forms fail closed; ../ and
+  // symlink escapes ask; both coverage classes carry the grep-provable
+  // citation line. Isolated fixtures only — zero live model calls.
+  execFileSync(process.execPath, [gateRunScratchCheck], {
     cwd: pluginRoot,
     encoding: "utf8",
     stdio: "inherit"
@@ -527,6 +578,41 @@ function main() {
   );
   const verifiedNudge = runHook(stopNudgeHook, nudgeInput("session-nudge-verified", "Done. Everything is verified and safe to merge."));
   assert(Object.keys(verifiedNudge).length === 0, "Stop nudge should stay silent when a verification already ran this session");
+
+  // Config toggle: a top-level verifyNudge: "off" silences the nudge for the
+  // whole workspace, even on an unmistakable completion claim (OFF switch,
+  // not amputation of the underlying nudge logic).
+  const nudgeOffWs = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-stop-nudge-off-"));
+  fs.mkdirSync(path.join(nudgeOffWs, ".nogra", "ledger"), { recursive: true });
+  fs.mkdirSync(path.join(nudgeOffWs, ".nogra", "runtime"), { recursive: true });
+  writeJson(path.join(nudgeOffWs, ".nogra", "config.json"), {
+    schema: "nogra.workspace.config.v1",
+    workspaceId: "stop-nudge-off-ws",
+    verifyNudge: "off"
+  });
+  const toggleOffNudge = runHook(stopNudgeHook, {
+    cwd: nudgeOffWs,
+    workspace_roots: [nudgeOffWs],
+    session_id: "session-nudge-toggle-off",
+    transcript_path: "/tmp/transcript-stop-nudge-toggle-off.jsonl",
+    last_assistant_message: "Done, verified, safe to merge."
+  });
+  assert(Object.keys(toggleOffNudge).length === 0, "Stop nudge should stay silent for the whole workspace when verifyNudge: \"off\" is set, even on a completion claim");
+
+  // Malformed config.json fails open: the new toggle read must not disturb
+  // existing nudge behavior when config.json cannot be parsed.
+  const nudgeMalformedWs = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-stop-nudge-malformed-"));
+  fs.mkdirSync(path.join(nudgeMalformedWs, ".nogra", "ledger"), { recursive: true });
+  fs.mkdirSync(path.join(nudgeMalformedWs, ".nogra", "runtime"), { recursive: true });
+  fs.writeFileSync(path.join(nudgeMalformedWs, ".nogra", "config.json"), "{ not valid json", "utf8");
+  const malformedConfigNudge = runHook(stopNudgeHook, {
+    cwd: nudgeMalformedWs,
+    workspace_roots: [nudgeMalformedWs],
+    session_id: "session-nudge-malformed-config",
+    transcript_path: "/tmp/transcript-stop-nudge-malformed-config.jsonl",
+    last_assistant_message: "Done, verified, safe to merge."
+  });
+  assert(typeof malformedConfigNudge.systemMessage === "string" && malformedConfigNudge.systemMessage.includes("/nogra:verify"), "Stop nudge should fail open (nudge still fires) when config.json is malformed");
 
   const safeCommand = runPreToolUseHook({
     cwd: temp,

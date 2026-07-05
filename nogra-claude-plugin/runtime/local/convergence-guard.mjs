@@ -2,12 +2,14 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { readActiveIntent as readActiveIntentState } from "./active-intent.mjs";
+import { normalizeActiveIntentGate, readActiveIntent as readActiveIntentState } from "./active-intent.mjs";
 
 const PENDING_AUTHORIZATION_RUN_STATUSES = new Set(["queued", "running", "returning", "in_progress"]);
 const TERMINAL_AUTHORIZATION_RUN_STATUSES = new Set(["returned", "ok", "partial"]);
 const AUTHORIZATION_RECEIPT_TTL_MS = 12 * 60 * 60 * 1000;
-const CLASS_SCOPED_RECEIPT_INHERITANCE_ENABLED = false;
+// Receipt statuses that can never auto-approve an action, even when boundary
+// class and scope match: the run stopped before a clean completion.
+const APPROVAL_BLOCKING_RECEIPT_STATUSES = new Set(["partial", "blocked", "failed", "cancelled"]);
 const GIT_RISK_SUBCOMMANDS = new Set([
   "push",
   "tag",
@@ -20,6 +22,24 @@ const GIT_RISK_SUBCOMMANDS = new Set([
   "checkout",
   "restore",
   "switch"
+]);
+// Git-write subcommands that can carry working-tree FILE targets (pathspecs):
+// `checkout <ref> -- <pathspec...>`, `checkout -- <pathspec...>`,
+// `checkout <ref-or-pathspec>` (git's own ambiguous single-positional form),
+// `restore <pathspec...>` / `restore --source <ref> <pathspec>` /
+// `restore --staged <pathspec>`, and `clean <pathspec>` (deletes untracked
+// files matching the pathspec). Commands using these route by TARGET class
+// (see gitWriteSurfaceTargetRisk): a git-write to a file is classified the
+// SAME as a direct write to that file. Deliberately absent: `switch`
+// (branch-only grammar — it never takes a pathspec, so pure branch switches
+// always stay git-history) and `reset` (its pathspec forms touch the index
+// only — git refuses `reset --hard` with paths — so a reset can never rewrite
+// the working-tree file); push/tag/merge/rebase/cherry-pick/revert take
+// refs, not pathspecs.
+const FILE_TARGET_GIT_WRITE_SUBCOMMANDS = new Set([
+  "checkout",
+  "restore",
+  "clean"
 ]);
 const SAFE_INSPECTION_COMMANDS = new Set([
   "awk",
@@ -119,22 +139,36 @@ function readWorkspaceConfig(root) {
   return readJsonIfValid(path.join(root, ".nogra", "config.json")) || {};
 }
 
-function gateMode(root) {
+// Workspace gate settings. `gate` accepts the legacy string form
+// ("hard"/"advisory") or an object form: { "mode": "advisory", "autoApprove": true }.
+// autoApprove is the per-workspace opt-in for receipt-driven allow emission;
+// default off preserves ask-only behavior exactly.
+function gateSettings(root) {
   const config = readWorkspaceConfig(root);
-  return cleanInline(config.gate).toLowerCase() === "hard" ? "hard" : "advisory";
+  const raw = config.gate;
+  const gateObject = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const modeSource = typeof raw === "string" ? raw : gateObject.mode;
+  return {
+    mode: cleanInline(modeSource).toLowerCase() === "hard" ? "hard" : "advisory",
+    // Default OFF is locked by doctrine — do not flip. Only literal true
+    // opts this workspace into receipt-driven allow emission.
+    autoApprove: gateObject.autoApprove === true
+  };
 }
 
 function readActiveIntent(root) {
   const state = readActiveIntentState(root);
   if (!state || !state.active || !state.intent) return null;
-  const gate = state.intent.gate && typeof state.intent.gate === "object" ? state.intent.gate : {};
-  const authorize = Array.isArray(gate.authorize) ? gate.authorize.map((v) => cleanInline(v).toLowerCase()) : [];
-  const nonGoals = Array.isArray(gate.nonGoals) ? gate.nonGoals.map((v) => cleanInline(v).toLowerCase()) : [];
-  if (!authorize.length && !nonGoals.length) return null;
-  return { authorize, nonGoals };
+  const gate = normalizeActiveIntentGate(state.intent);
+  if (!gate.authorize.length && !gate.nonGoals.length) return null;
+  return gate;
 }
 
 function boundaryClass(risk, name, payload = {}) {
+  // gate-arming is never auto-approvable — locked by doctrine; do not add it
+  // to any approval path. The mapping stays first so no other class label can
+  // shadow a write to the gate's own arming surface.
+  if (risk === "gate-arming write") return "gate-arming";
   const fp = cleanInline(payload.file_path || payload.path || "").toLowerCase();
   if (fp.includes("boligscout")) return "boligscout";
   if (/^git /u.test(risk)) return "git-history";
@@ -159,6 +193,93 @@ function nonGoalViolation(intent, cls, name, payload = {}) {
 
 function cleanInline(value) {
   return String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeScopeList(value, lowercase = false) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      const cleaned = cleanInline(entry);
+      return lowercase ? cleaned.toLowerCase() : cleaned;
+    })
+    .filter(Boolean)
+    .slice(0, 64);
+}
+
+function escapeScopeRegExpChar(char) {
+  return /[.*+?^${}()|[\]\\]/u.test(char) ? `\\${char}` : char;
+}
+
+// Deterministic glob for receipt scope patterns: `**` matches anything,
+// `*` matches anything except `/`, `?` matches one non-`/` character.
+function scopePatternRegExp(pattern) {
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === "*") {
+      if (pattern[index + 1] === "*") {
+        source += ".*";
+        index += 1;
+      } else {
+        source += "[^/]*";
+      }
+    } else if (char === "?") {
+      source += "[^/]";
+    } else {
+      source += escapeScopeRegExpChar(char);
+    }
+  }
+  try {
+    return new RegExp(`^${source}$`, "u");
+  } catch {
+    return null;
+  }
+}
+
+// The concrete target a scope pattern must cover: the command string for
+// Bash, the file path for write tools.
+function scopeActionTarget(name, payload = {}) {
+  if (name === "Bash") return cleanInline(payload.command || "");
+  return cleanInline(payload.file_path || payload.path || "");
+}
+
+function relativeScopeTarget(root, target) {
+  if (!root || !path.isAbsolute(target)) return "";
+  const relative = path.relative(path.resolve(root), target);
+  if (!relative || relative.startsWith("..")) return "";
+  return relative.replaceAll("\\", "/");
+}
+
+function matchesScopePatterns(root, target, patterns) {
+  const normalizedTarget = cleanInline(target).replaceAll("\\", "/");
+  if (!normalizedTarget || !Array.isArray(patterns) || !patterns.length) return false;
+  const candidates = [normalizedTarget];
+  const relative = relativeScopeTarget(root, normalizedTarget);
+  if (relative) candidates.push(relative);
+  return patterns.some((pattern) => {
+    const regex = scopePatternRegExp(pattern);
+    return Boolean(regex) && candidates.some((candidate) => regex.test(candidate));
+  });
+}
+
+// Receipt-side boundary/scope check. A receipt only matches an action when it
+// declares authorizedBoundaries AND the action's boundary class is covered AND
+// the target matches a declared scope pattern. Everything else degrades to ask.
+function receiptBoundaryScopeMatch(root, receipt, cls, target) {
+  const boundaries = Array.isArray(receipt.authorizedBoundaries) ? receipt.authorizedBoundaries : [];
+  const patterns = Array.isArray(receipt.scopePatterns) ? receipt.scopePatterns : [];
+  // gate-arming is never auto-approvable — locked by doctrine; do not add it
+  // to any approval path. Even a receipt that explicitly lists gate-arming in
+  // authorizedBoundaries (with a covering scope pattern) must never match:
+  // changing the gate's rules is the meta-action and only a live human
+  // approval opens that door.
+  if (cls === "gate-arming") return { matched: false, kind: "gate-arming", boundaries, patterns };
+  if (!boundaries.length) return { matched: false, kind: "unscoped", boundaries, patterns };
+  if (!cls || !boundaries.includes(cls)) return { matched: false, kind: "boundary-miss", boundaries, patterns };
+  if (!patterns.length || !matchesScopePatterns(root, target, patterns)) {
+    return { matched: false, kind: "scope-miss", boundaries, patterns };
+  }
+  return { matched: true, kind: "match", boundaries, patterns };
 }
 
 function mtimeMs(file) {
@@ -202,6 +323,8 @@ function listTransportRuns(root) {
       return {
         runId: cleanInline(payload.runId || name.replace(/\.json$/u, "")),
         briefId: cleanInline(payload.briefId || ""),
+        title: cleanInline(payload.title || payload.metadata?.title || ""),
+        objective: cleanInline(payload.objective || payload.metadata?.objective || ""),
         target: cleanInline(payload.target || payload.targetRole || ""),
         targetRole: cleanInline(payload.targetRole || payload.target || payload.metadata?.targetRole || ""),
         status: cleanInline(payload.status || ""),
@@ -211,6 +334,9 @@ function listTransportRuns(root) {
         stopReason: cleanInline(payload.stopReason || payload.metadata?.stopReason || ""),
         returnReason: cleanInline(payload.returnReason || payload.reason || payload.metadata?.returnReason || payload.metadata?.reason || ""),
         pendingState: cleanInline(payload.pendingState || payload.metadata?.pendingState || ""),
+        authorizedBoundaries: normalizeScopeList(payload.authorizedBoundaries ?? payload.metadata?.authorizedBoundaries, true),
+        scopePatterns: normalizeScopeList(payload.scope ?? payload.metadata?.scope),
+        scratchRoots: normalizeScopeList(payload.scratchRoots ?? payload.metadata?.scratchRoots),
         createdAt: cleanInline(payload.createdAt || ""),
         updatedAt: cleanInline(payload.updatedAt || payload.createdAt || ""),
         topLevelRequiresManagerDecision: Boolean(payload.requiresManagerDecision),
@@ -453,6 +579,17 @@ export function renderConvergenceGuardContext({ root, eventName = "SessionStart"
 export function renderCacheSafeConvergenceGuardContext({ root, eventName = "SessionStart" } = {}) {
   const workspaceRoot = root ? path.resolve(root) : process.cwd();
   const compaction = eventName === "PostCompact";
+  // Visibility clause: a standing delegation must never be ambient. When the
+  // autoApprove opt-in is ON, name it here; when it is off (the default),
+  // emit nothing so the rendered output stays byte-identical for default
+  // workspaces (no cache invalidation, no behavior change). The line derives
+  // ONLY from .nogra/config.json — semi-static, the same cache class as
+  // workspaceId. Never surface ledger/transport/runtime state here: that
+  // would break the prompt-cache-safe boot design.
+  const settings = gateSettings(workspaceRoot);
+  const delegations = [
+    ...(settings.autoApprove ? ["autoApprove"] : [])
+  ];
   const lines = [
     "<NOGRA_CONVERGENCE_GUARD>",
     "Nogra convergence: user intent and Claude action meet in Nogra before git/action risk.",
@@ -460,6 +597,7 @@ export function renderCacheSafeConvergenceGuardContext({ root, eventName = "Sess
     `event=${eventName}`,
     `workspaceRoot=${workspaceRoot}`,
     "briefIsNotGO=true",
+    ...(delegations.length ? [`gateDelegations=${delegations.join(",")}`] : []),
     `compactionDriftBoundary=${compaction ? "true" : "false"}`,
     `driftGuards=${DRIFT_GUARDS.join(",")}`,
     "riskBoundaries=git-history,destructive-write,production-deploy,data-migration,secrets,permissions,billing,customer-send",
@@ -482,6 +620,7 @@ function shellWords(command) {
 
 function gitRisk(command) {
   const words = shellWords(command);
+  const riskySubcommands = [];
   for (let index = 0; index < words.length; index += 1) {
     if (words[index] !== "git") continue;
     let subcommand = "";
@@ -499,10 +638,77 @@ function gitRisk(command) {
       break;
     }
     if (subcommand && GIT_RISK_SUBCOMMANDS.has(subcommand)) {
-      return `git ${subcommand}`;
+      riskySubcommands.push(subcommand);
     }
   }
-  return "";
+  if (!riskySubcommands.length) return "";
+  // Consistency rule: a git-write that can carry a file target and TARGETS an
+  // instruction surface is classified the same as a direct write to that
+  // file — config.json targets become gate-arming (never approvable), other
+  // instruction surfaces become instruction-surface (receipt-approvable like
+  // a direct Edit). Every subcommand in the command is considered so a
+  // compound command cannot hide the stricter class behind an earlier,
+  // weaker git-write. gate-arming is never auto-approvable — locked by
+  // doctrine; do not add it to any approval path.
+  if (riskySubcommands.some((subcommand) => FILE_TARGET_GIT_WRITE_SUBCOMMANDS.has(subcommand))) {
+    const surfaceRisk = gitWriteSurfaceTargetRisk(command, words);
+    if (surfaceRisk) return surfaceRisk;
+  }
+  return `git ${riskySubcommands[0]}`;
+}
+
+// Target routing for git-writes that can carry file targets (the consistency
+// rule): a git-write to a file is classified the SAME as a direct write to
+// that file. Grammar covered: `checkout <ref> -- <pathspec...>`,
+// `checkout -- <pathspec...>`, `checkout <ref-or-pathspec>` (git's own
+// ambiguous single-positional form), `restore <pathspec...>`,
+// `restore --source <ref>|--source=<ref> <pathspec>`,
+// `restore --staged <pathspec>`, `clean <pathspec>`, with `git -C <dir>`
+// prefixes, flag noise, and `NAME=value` env-assignment prefixes tolerated.
+// Instead of a positional parser (whose failure modes could leak a permissive
+// classification), every shell word — and the value side of any word carrying
+// `=` — is classified through the SAME path-risk check as a direct write
+// (pathRisk), plus a whole-command substring net for the arming surface.
+// This is the fail-closed superset of positional parsing: every extracted
+// pathspec is a shell word, an unparseable or indirected target that still
+// textually names a surface routes to the stricter class (config.json
+// mention wins as gate-arming), and a token naming no surface can only fall
+// back to git-history exactly as before. Deliberate consequences, documented:
+// a ref that merely LOOKS like a surface path (git checkout hooks.json) asks
+// as instruction-surface (receipt-approvable, one ask), and a compound
+// command mentioning .nogra/config.json anywhere alongside a
+// file-target-capable git-write asks as gate-arming. Pure branch switches
+// (git checkout main, git switch feature) name no surface and stay
+// git-history byte-identically. Only the two surface classes route; every
+// other pathRisk label (secrets/env, git metadata, risk-file heuristics)
+// deliberately stays git-history so this change closes exactly one window.
+// gate-arming is never auto-approvable — locked by doctrine; do not add it
+// to any approval path.
+function gitWriteSurfaceTargetRisk(command, words) {
+  const normalized = command.replaceAll("\\", "/").toLowerCase();
+  if (normalized.includes(".nogra/config.json")) return "gate-arming write";
+  let surfaceRisk = "";
+  for (const word of words) {
+    const candidates = [word];
+    const assignmentIndex = word.indexOf("=");
+    if (assignmentIndex > 0 && assignmentIndex < word.length - 1) {
+      candidates.push(word.slice(assignmentIndex + 1));
+    }
+    for (const candidate of candidates) {
+      const risk = directWriteSurfaceRisk(candidate);
+      if (risk === "gate-arming write") return risk;
+      if (risk) surfaceRisk = risk;
+    }
+  }
+  return surfaceRisk;
+}
+
+// The consistency rule's check: reuse the direct-write path-risk check
+// (pathRisk) verbatim so a git-write target and a direct Edit of the same
+// file can never diverge, and honor ONLY its two surface classes.
+function directWriteSurfaceRisk(target) {
+  const risk = pathRisk("Bash", { file_path: target });
+  return risk === "gate-arming write" || risk === "instruction-surface write" ? risk : "";
 }
 
 function psqlMutationRisk(command) {
@@ -648,9 +854,54 @@ function readOnlyInspectionCommand(command) {
   });
 }
 
+// Write indicators for the gate-arming textual Bash check: a shell redirect
+// (excluding plain stderr noise like `2>/dev/null` / `2>&1`), `tee`,
+// `sed -i`, or `cp`/`mv` anywhere in the command. Deliberately coarse:
+// v1 covers the listed indicators only. `git checkout/restore/clean` of the
+// file — formerly a receipt-approvable git-history detour — is CLOSED: those
+// commands now route by target class in gitRisk (see
+// gitWriteSurfaceTargetRisk), so a config.json target classifies as
+// gate-arming there. Known remaining vectors (accepted, documented rather
+// than over-engineered): interpreter one-liners writing the file from inside
+// node/python/perl, `dd of=...`, `rsync`/`install` onto the path,
+// quote-splicing obfuscation of the path itself, and git-writes that reach
+// the file without naming it — directory/glob pathspecs
+// (`git checkout -- .nogra/`, `.nogra/config.*`) and `--pathspec-from-file`
+// lists (all still git-history and asking without a matching receipt).
+function hasGateArmingWriteIndicator(command) {
+  const withoutStderrNoise = command
+    .replace(/\s2>\s*\/dev\/null/gu, " ")
+    .replace(/\s2>&1\b/gu, " ");
+  if (/(?:^|\s)(?:\d?>{1,2}|&>{1,2})/u.test(withoutStderrNoise)) return true;
+  const words = shellWords(command);
+  const names = words.map((word) => path.basename(word).toLowerCase());
+  if (names.includes("tee") || names.includes("cp") || names.includes("mv")) return true;
+  if (names.includes("sed") && words.some((word) => word === "-i" || word.startsWith("-i."))) return true;
+  return false;
+}
+
+// gate-arming (Bash side): pragmatic TEXTUAL detection — the command mentions
+// a .nogra/config.json path AND carries a write indicator. Shell redirect
+// targets are not path-mapped, so the FILE mention itself is the boundary;
+// slightly over-broad is the correct trade (config writes are rare and meta).
+// Read-only mentions (cat/grep/jq of the config) carry no write indicator and
+// never trigger. gate-arming is never auto-approvable — locked by doctrine;
+// do not add it to any approval path.
+function gateArmingCommandRisk(command) {
+  const normalized = command.replaceAll("\\", "/").toLowerCase();
+  if (!normalized.includes(".nogra/config.json")) return "";
+  return hasGateArmingWriteIndicator(command) ? "gate-arming write" : "";
+}
+
 function commandRisk(command) {
   const cleaned = cleanInline(command);
   if (!cleaned) return "";
+  // gate-arming detection runs FIRST so no other risk label (e.g. a git
+  // subcommand touching the config) can shadow it into a receipt-approvable
+  // class. gate-arming is never auto-approvable — locked by doctrine; do not
+  // add it to any approval path.
+  const gateArming = gateArmingCommandRisk(cleaned);
+  if (gateArming) return gateArming;
   const git = gitRisk(cleaned);
   if (git) return git;
   const psqlMutation = psqlMutationRisk(cleaned);
@@ -905,6 +1156,9 @@ function actionImpact(actionType) {
   if (action === "instruction-surface write") {
     return "changes instructions, hooks, skills, or plugin metadata that can affect agent behavior";
   }
+  if (action === "gate-arming write") {
+    return "can change standing delegations (autoApprove) — the rules the gate itself enforces";
+  }
   if (action === "git metadata write") {
     return "writes inside Git metadata; repository integrity or history can be affected";
   }
@@ -1008,6 +1262,15 @@ function statusCoverageLine(review, action) {
 function readableCoverageLine(review, action) {
   const statusLine = statusCoverageLine(review, action);
   if (statusLine) return statusLine;
+  if (review.authorization === "receipt-scope-miss" && review.currentActionReceipt) {
+    const receiptId = shortReceiptId(review.currentActionReceipt);
+    const target = review.scopeMissTarget || "unknown";
+    const declaredScope = review.scopeMissDeclaredScope || "none";
+    if (review.scopeMissKind === "boundary-miss") {
+      return `Why: recent Nogra run ${receiptId} does not authorize boundary ${review.scopeMissBoundary || "unknown"} for target ${target}; authorized boundaries: [${review.scopeMissAuthorizedBoundaries || "none"}], declared scope: [${declaredScope}]`;
+    }
+    return `Why: recent Nogra run ${receiptId} authorizes boundary ${review.scopeMissBoundary || "unknown"}, but target ${target} is outside its declared scope [${declaredScope}]`;
+  }
   if (review.currentActionReceipt) {
     return `Why: recent Nogra run ${shortReceiptId(review.currentActionReceipt)} exists, but it does not cover ${action}`;
   }
@@ -1063,7 +1326,7 @@ function actionReviewMessage(review) {
         readableAuditLine(review, action)
       ];
   let message = parts.join("\n");
-  if (review.state === "approved") {
+  if (review.state === "approved" && !review.autoApproved) {
     message = `${message}. Claude Code permission rules still apply`;
   }
   return `${message}.`;
@@ -1075,6 +1338,20 @@ function pathRisk(toolName, toolInput = {}) {
   const normalized = filePath.replaceAll("\\", "/");
   const segments = normalized.split("/").filter(Boolean);
   const basename = segments[segments.length - 1] || normalized;
+  // gate-arming: ANY write tool targeting a .nogra/config.json (any
+  // workspace's, not just the current root) — the surface where standing
+  // delegations (gate.autoApprove) are armed. The FILE is
+  // the boundary: content-aware narrowing must never narrow this detection.
+  // Checked first so no other risk label can shadow it. gate-arming is never
+  // auto-approvable — locked by doctrine; do not add it to any approval path.
+  const lowerSegments = segments.map((segment) => segment.toLowerCase());
+  if (
+    lowerSegments.length >= 2 &&
+    lowerSegments[lowerSegments.length - 1] === "config.json" &&
+    lowerSegments[lowerSegments.length - 2] === ".nogra"
+  ) {
+    return "gate-arming write";
+  }
   if (normalized.includes("/.git/") || normalized.endsWith("/.git") || normalized === ".git") return "git metadata write";
   if (/\/?\.env(?:\.|$)/u.test(normalized)) return "secrets/env write";
   if (
@@ -1116,6 +1393,212 @@ function toolInput(input = {}) {
     : {};
 }
 
+// --- Run-scratch WRITE-OPS coverage class -----------------------------
+// A deterministic, additive auto-approval class limited to pure file-op
+// writes -- a SINGLE plain Bash invocation of rm, rmdir, mkdir, mv, cp or
+// touch, or a direct Edit/Write/MultiEdit tool call -- whose resolved
+// target(s) all fall inside the dispatch receipt's declared scratchRoots.
+// EXEC (any other binary, including interpreters like node/python3/sh) is
+// never eligible: this class recognizes exactly six fixed binaries, so an
+// interpreter with scratch-path arguments never reaches this code at all and
+// asks exactly as before this change (fail-closed by construction, not by a
+// runtime check). Compound/piped Bash (;, &&, ||, |, backticks, $(),
+// redirects) is likewise never eligible -- fail-closed by construction, not
+// by pattern-matching every escape. An action that never references a
+// declared scratch root returns null (no decision; existing classification
+// stands, byte-identical). An action that DOES reference a scratch root but
+// resolves outside it via `..` or a symlink asks rather than silently
+// allowing or silently falling through -- the raw command textually engaged
+// the root, so silence would be ambiguous.
+const RUN_SCRATCH_WRITE_OP_BINARIES = new Set(["rm", "rmdir", "mkdir", "mv", "cp", "touch"]);
+
+// Variable expansion ($VAR, ~), globs (*, ?, [ ]) and brace expansion ({ })
+// cannot be resolved from the raw command text alone. An unresolvable token
+// can never count as "within" a scratch root (it always blocks allow); it
+// counts as ENGAGED only when it textually names a scratch root, so an
+// unrelated `rm $HOME/x` keeps today's exact fall-through behavior.
+function hasUnresolvableRunScratchToken(word) {
+  return /[$~*?[\]{}]/u.test(word);
+}
+
+// A single, uncompounded Bash invocation: no `;`, `&`, `<`, backtick, `$(`,
+// `||`, a single `|`, or any output redirect (stdout or stderr). Anything
+// else fails closed -- falls through with no run-scratch decision at all, so
+// existing classification (or native ask) applies unchanged.
+function isSingleSimpleBashCommand(command) {
+  if (hasUnsafeShellControl(command)) return false;
+  if (hasShellWriteRedirect(command)) return false;
+  const pipeline = splitShellPipeline(command);
+  if (!pipeline || pipeline.length !== 1) return false;
+  return true;
+}
+
+function runScratchBashBinary(command) {
+  if (!isSingleSimpleBashCommand(command)) return "";
+  const words = shellWords(command);
+  if (!words.length) return "";
+  const binary = path.basename(words[0]).toLowerCase();
+  return RUN_SCRATCH_WRITE_OP_BINARIES.has(binary) ? binary : "";
+}
+
+function runScratchBashArguments(command) {
+  return shellWords(command).slice(1).filter((word) => !word.startsWith("-"));
+}
+
+// Tolerant realpath: resolves symlinks along the nearest EXISTING ancestor
+// chain, then reattaches any not-yet-created tail components literally. A
+// path component that does not exist yet (the file/dir a write-op is about
+// to create) cannot itself be a symlink escape -- only an EXISTING segment
+// can be, so resolving only as far as reality goes is sufficient and never
+// approximates a real symlink.
+function tolerantRealpath(target) {
+  let current = target;
+  const tail = [];
+  while (!exists(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    tail.unshift(path.basename(current));
+    current = parent;
+  }
+  try {
+    const real = fs.realpathSync(current);
+    return tail.length ? path.join(real, ...tail) : real;
+  } catch {
+    return target;
+  }
+}
+
+function withinScratchRoots(target, scratchRoots) {
+  return scratchRoots.some((root) => target === root || target.startsWith(`${root}${path.sep}`));
+}
+
+// Raw textual containment BEFORE `..`/symlink resolution: did the command
+// literally reference a declared scratch root as a path prefix? This is the
+// signal that separates "unrelated action, run-scratch does not apply" (null,
+// existing behavior preserved) from "engaged a scratch root but the resolved
+// target escapes it" (ask).
+function rawEngagesScratchRoot(rawAbsolute, scratchRoots) {
+  const normalized = rawAbsolute.replaceAll("\\", "/");
+  return scratchRoots.some((root) => normalized === root || normalized.startsWith(`${root}/`));
+}
+
+function resolveRunScratchTarget(cwd, arg) {
+  const rawAbsolute = (path.isAbsolute(arg) ? arg : `${cwd}/${arg}`).replaceAll("\\", "/");
+  const lexicalAbsolute = path.resolve(cwd, arg);
+  const real = tolerantRealpath(lexicalAbsolute);
+  return { rawAbsolute, real };
+}
+
+// One evaluation per action: every target must resolve inside a declared
+// scratch root to allow; if the action engages a scratch root at all (raw
+// prefix match on any argument, e.g. mv/cp crossing the boundary in either
+// direction) but any target resolves outside it, the whole action asks; if
+// the action never references a scratch root at all, this class does not
+// apply (null) and the caller falls through unchanged.
+function evaluateRunScratchTargets(cwd, args, scratchRoots) {
+  if (!args.length) return null;
+  let engaged = false;
+  let allWithin = true;
+  const resolvedTargets = [];
+  for (const arg of args) {
+    if (hasUnresolvableRunScratchToken(arg)) {
+      allWithin = false;
+      resolvedTargets.push(`${arg} (unresolvable)`);
+      const rawAbsolute = (path.isAbsolute(arg) ? arg : `${cwd}/${arg}`).replaceAll("\\", "/");
+      if (rawEngagesScratchRoot(rawAbsolute, scratchRoots)) engaged = true;
+      continue;
+    }
+    const { rawAbsolute, real } = resolveRunScratchTarget(cwd, arg);
+    resolvedTargets.push(real);
+    const realWithin = withinScratchRoots(real, scratchRoots);
+    if (rawEngagesScratchRoot(rawAbsolute, scratchRoots) || realWithin) engaged = true;
+    if (!realWithin) allWithin = false;
+  }
+  if (!engaged) return null;
+  return { allWithin, resolvedTargets };
+}
+
+// Every auto-approval this gate emits -- the pre-existing receipt scope-match
+// class AND this new run-scratch class -- carries the same grep-provable
+// citation phrase in its decision reason.
+function autoApprovalCitation(action, runId) {
+  return `approved ${action} — in scope of your GO, receipt ${runId}`;
+}
+
+function evaluateRunScratchAction({ name, payload, command, cwd, receipt }) {
+  const scratchRoots = Array.isArray(receipt.scratchRoots) ? receipt.scratchRoots : [];
+  if (!scratchRoots.length) return null;
+  let actionLabel = "";
+  let args = [];
+  if (name === "Bash") {
+    const binary = runScratchBashBinary(command);
+    if (!binary) return null;
+    args = runScratchBashArguments(command);
+    actionLabel = `run-scratch ${binary}`;
+  } else if (name === "Edit" || name === "Write" || name === "MultiEdit") {
+    const filePath = cleanInline(payload.file_path || payload.path || "");
+    if (!filePath) return null;
+    args = [filePath];
+    actionLabel = `run-scratch ${name.toLowerCase()}`;
+  } else {
+    return null;
+  }
+  const evaluation = evaluateRunScratchTargets(cwd, args, scratchRoots);
+  if (!evaluation) return null;
+  const targetLabel = name === "Bash" ? command : args[0];
+  const sharedReview = {
+    actionType: actionLabel,
+    currentActionReceipt: receipt.runId,
+    currentActionStatus: receipt.status,
+    currentActionAge: receipt.age,
+    currentActionBrief: receipt.briefId,
+    currentActionNextOwner: receipt.nextOwner,
+    currentActionReturnReason: receipt.returnReason
+  };
+  if (evaluation.allWithin) {
+    const allowReason = `Nogra approved this run — run-scratch write (${targetLabel}) inside declared scratch roots; ${autoApprovalCitation(actionLabel, receipt.runId)}`;
+    const review = {
+      ...sharedReview,
+      state: "approved",
+      risk: "low",
+      authorization: "run-scratch",
+      autoApproved: true,
+      mutation: "scratch-only",
+      credentials: "none",
+      reason: allowReason
+    };
+    const reviewMessage = [
+      `Nogra check: ${actionLabel} matched current Nogra run`,
+      "Impact: writes only inside the run's declared scratch roots",
+      `Reason: ${allowReason}`,
+      `Audit: action=${actionLabel}; coverage=covered; receipt=${shortReceiptId(receipt.runId)} status=${receipt.status}.`
+    ].join("\n");
+    return { shouldAsk: false, denyEligible: false, shouldAllow: true, allowReason, review, reviewMessage };
+  }
+  const reason = `${actionLabel} references declared scratch root(s) [${scratchRoots.join(", ")}] but target ${targetLabel} resolves outside them (resolved: ${evaluation.resolvedTargets.join(", ")})`;
+  const review = {
+    ...sharedReview,
+    state: "needs confirmation",
+    risk: "high",
+    authorization: "run-scratch-escape",
+    mutation: "possible",
+    credentials: "unknown",
+    scopeMissTarget: targetLabel,
+    scratchRootsDeclared: scratchRoots.join(", "),
+    scratchResolvedTarget: evaluation.resolvedTargets.join(", "),
+    reason
+  };
+  const reviewMessage = [
+    `Nogra check: ${actionLabel} escapes the run's declared scratch roots`,
+    "Approve only if you intended this now",
+    "Impact: the resolved target is outside the run's declared scratch roots (possible ../ or symlink escape, or a mv/cp crossing the boundary)",
+    `Why: ${reason}`,
+    "Next: approve once to continue, or stop and brief this action first",
+    `Audit: action=${actionLabel}; coverage=scratch-escape; receipt=${shortReceiptId(receipt.runId)} status=${receipt.status}.`
+  ].join("\n");
+  return { shouldAsk: true, denyEligible: false, shouldAllow: false, allowReason: "", review, reviewMessage };
+}
+
 export function evaluateToolConvergenceRisk({ root, input } = {}) {
   const name = toolName(input);
   const payload = toolInput(input);
@@ -1128,10 +1611,13 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
   } else if (["Edit", "Write", "MultiEdit"].includes(name)) {
     risk = pathRisk(name, payload);
   }
-  const mode = gateMode(root);
+  const settings = gateSettings(root);
+  const mode = settings.mode;
   const intent = readActiveIntent(root);
   const cls = boundaryClass(risk, name, payload);
+  const target = scopeActionTarget(name, payload);
 
+  // Non-goals stay first in evaluation order and override any receipt.
   const nonGoal = nonGoalViolation(intent, cls, name, payload);
   if (nonGoal) {
     review = {
@@ -1149,36 +1635,167 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
       toolName: name,
       guard,
       review,
+      shouldAllow: false,
+      allowReason: "",
       reviewMessage: `Nogra check: ${review.actionType}\nImpact: declared non-goal of the running intent\nReason: ${review.reason}\nNext: give an explicit GO, or this stays blocked.`
     };
   }
 
-  if (!risk) {
-    return { shouldAsk: false, denyEligible: false, gateMode: mode, risk, toolName: name, guard, review, reviewMessage: "" };
-  }
-  guard = resolveConvergenceGuard({ root });
-  const receipt = guard.currentActionReceipt;
-  const candidate = visibleCandidateReceipt(guard.candidateActionReceipt);
-
-  if (intent && intent.authorize.includes(cls)) {
-    review = { state: "approved", risk: "high", authorization: "active-intent", actionType: risk, reason: `matched running active-intent (authorize: ${cls})` };
+  // Gate arming (second in evaluation order, after non-goals): a write that
+  // touches .nogra/config.json is the meta-action — it can change the rules
+  // the gate itself enforces (gate.autoApprove). The gate
+  // guards its own door with a deterministic ALWAYS-ASK: this branch returns
+  // before receipts or active intent are even resolved, so
+  // gate-arming is structurally excluded from every approval path — no
+  // receipt match (receiptBoundaryScopeMatch also refuses it), no
+  // active-intent authorize, no allow emission, no
+  // PermissionRequest auto-answer. gate-arming is never auto-approvable —
+  // locked by doctrine; do not add it to any approval path.
+  //
+  // Belt-and-suspenders (documentation only — the plugin never applies
+  // settings changes): a native Claude Code ask rule is the floor no hook
+  // output can override, because permission rules are evaluated regardless
+  // of hook decisions. Operators who want that native floor can add to
+  // .claude/settings.json:
+  //   { "permissions": { "ask": [
+  //       "Edit(**/.nogra/config.json)",
+  //       "Write(**/.nogra/config.json)"
+  //   ] } }
+  if (cls === "gate-arming") {
+    const armingFile = name === "Bash" ? ".nogra/config.json" : target || ".nogra/config.json";
+    review = {
+      state: "needs confirmation",
+      risk: "critical",
+      authorization: "gate-arming",
+      actionType: risk,
+      reason: "writes to .nogra/config.json can change standing delegations (autoApprove) and are never auto-approvable; only a live human approval opens this door"
+    };
+    const armingMessage = [
+      `Nogra check: gate-arming write (${armingFile})`,
+      "Gate arming: this write can change standing delegations (autoApprove). Approve only if you intend to change the gate's rules right now",
+      `Impact: ${actionImpact(risk)}`,
+      "Why: .nogra/config.json is the surface where the gate's own rules are armed; no receipt or active intent can approve gate arming — only a live human approval opens this door",
+      "Audit: action=gate-arming write; coverage=never-auto-approvable; decidedBy=gate (deterministic, no model judgment)."
+    ].join("\n");
     return {
-      shouldAsk: false,
-      denyEligible: false,
+      shouldAsk: true,
+      denyEligible: mode === "hard",
       gateMode: mode,
       risk,
       toolName: name,
+      boundaryClass: cls,
       guard,
       review,
-      reviewMessage: `Nogra check: ${risk} matched running active-intent\nImpact: ${actionImpact(risk)}\nReason: ${review.reason}.`
+      shouldAllow: false,
+      allowReason: "",
+      reviewMessage: armingMessage,
+      gateSettings: settings
     };
   }
 
-  if (receipt && CLASS_SCOPED_RECEIPT_INHERITANCE_ENABLED) {
+  // Run-scratch WRITE-OPS class (third in the ladder, after non-goals and
+  // gate-arming, BEFORE the no-risk early return): a GO-dispatched run's own
+  // scratchpad housekeeping must not raise a raw operator ask. Deliberately
+  // placed after gate-arming so a write-op that also touches
+  // .nogra/config.json (e.g. cp of the config into scratch) keeps its
+  // gate-arming always-ask byte-identically. Requires the same workspace
+  // opt-in (gate.autoApprove) as every other allow emission — default-off
+  // workspaces stay byte-identical — plus a valid current receipt that
+  // declares scratchRoots and is not in an approval-blocking status. Only
+  // the six fixed write-op binaries and direct Edit/Write/MultiEdit calls
+  // can ever reach this evaluation; exec and compound/piped commands are
+  // structurally excluded (fail-closed) and flow through unchanged.
+  if (settings.autoApprove) {
+    const scratchCommand = name === "Bash" ? cleanInline(payload.command || input.command || "") : "";
+    const scratchCandidate = name === "Bash"
+      ? Boolean(runScratchBashBinary(scratchCommand))
+      : ["Edit", "Write", "MultiEdit"].includes(name);
+    if (scratchCandidate) {
+      guard = resolveConvergenceGuard({ root });
+      const scratchReceipt = guard.currentActionReceipt;
+      const scratchStatusBlocked = scratchReceipt
+        ? APPROVAL_BLOCKING_RECEIPT_STATUSES.has(cleanInline(scratchReceipt.status).toLowerCase())
+        : true;
+      if (scratchReceipt && !scratchStatusBlocked) {
+        const scratchDecision = evaluateRunScratchAction({
+          name,
+          payload,
+          command: scratchCommand,
+          cwd: cleanInline(input.cwd) || process.cwd(),
+          receipt: scratchReceipt
+        });
+        if (scratchDecision) {
+          return {
+            ...scratchDecision,
+            gateMode: mode,
+            risk: risk || scratchDecision.review.actionType,
+            toolName: name,
+            boundaryClass: "run-scratch",
+            guard,
+            gateSettings: settings
+          };
+        }
+      }
+    }
+  }
+
+  if (!risk) {
+    return { shouldAsk: false, denyEligible: false, gateMode: mode, risk, toolName: name, guard, review, shouldAllow: false, allowReason: "", reviewMessage: "" };
+  }
+  guard = guard || resolveConvergenceGuard({ root });
+  const receipt = guard.currentActionReceipt;
+  const candidate = visibleCandidateReceipt(guard.candidateActionReceipt);
+
+  // gate-arming can never reach this branch (the deterministic always-ask
+  // above returns first), so an active-intent gate.authorize entry of
+  // "gate-arming" is inert by construction — locked by doctrine; do not add
+  // it to any approval path.
+  if (intent && intent.authorize.includes(cls)) {
+    const scopeDeclared = intent.scope.length > 0;
+    const scopeMatched = scopeDeclared && matchesScopePatterns(root, target, intent.scope);
+    // An intent without declared scope keeps the legacy class-only approval
+    // (never allow-eligible). A declared scope must match to approve at all.
+    if (!scopeDeclared || scopeMatched) {
+      review = { state: "approved", risk: "high", authorization: "active-intent", actionType: risk, reason: `matched running active-intent (authorize: ${cls})` };
+      const shouldAllow = settings.autoApprove && scopeMatched;
+      return {
+        shouldAsk: false,
+        denyEligible: false,
+        gateMode: mode,
+        risk,
+        toolName: name,
+        guard,
+        review,
+        shouldAllow,
+        allowReason: shouldAllow
+          ? `Nogra approved this run — active intent GO (authorize: ${cls}), boundary ${cls}, scope match: ${target}`
+          : "",
+        reviewMessage: `Nogra check: ${risk} matched running active-intent\nImpact: ${actionImpact(risk)}\nReason: ${review.reason}.`
+      };
+    }
+    // Scope declared but target outside it: fall through to receipt evaluation.
+  }
+
+  const scopedReceiptMatch = receipt && settings.autoApprove
+    ? receiptBoundaryScopeMatch(root, receipt, cls, target)
+    : null;
+  const statusBlocksApproval = receipt
+    ? APPROVAL_BLOCKING_RECEIPT_STATUSES.has(cleanInline(receipt.status).toLowerCase())
+    : false;
+  let shouldAllow = false;
+  let allowReason = "";
+
+  if (receipt && scopedReceiptMatch?.matched && !statusBlocksApproval) {
+    shouldAllow = true;
+    // Citation surface: every auto-approval reason carries the same
+    // grep-provable citation phrase (see autoApprovalCitation) naming the
+    // action and the covering receipt.
+    allowReason = `Nogra approved this run — brief ${receipt.briefId} (GO), boundary ${cls}, scope match: ${target}; ${autoApprovalCitation(risk, receipt.runId)}`;
     review = {
       state: "approved",
       risk: "high",
       authorization: "inherited",
+      autoApproved: true,
       actionType: risk,
       mutation: "possible",
       credentials: "unknown",
@@ -1188,7 +1805,28 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
       currentActionBrief: receipt.briefId,
       currentActionNextOwner: receipt.nextOwner,
       currentActionReturnReason: receipt.returnReason,
-      reason: `${risk} is matched to a valid class-scoped dispatch receipt`
+      reason: allowReason
+    };
+  } else if (receipt && scopedReceiptMatch && scopedReceiptMatch.kind !== "unscoped" && !statusBlocksApproval) {
+    review = {
+      state: "needs confirmation",
+      risk: "high",
+      authorization: "receipt-scope-miss",
+      actionType: risk,
+      mutation: "possible",
+      credentials: "unknown",
+      currentActionReceipt: receipt.runId,
+      currentActionStatus: receipt.status,
+      currentActionAge: receipt.age,
+      currentActionBrief: receipt.briefId,
+      currentActionNextOwner: receipt.nextOwner,
+      currentActionReturnReason: receipt.returnReason,
+      scopeMissKind: scopedReceiptMatch.kind,
+      scopeMissBoundary: cls,
+      scopeMissTarget: target,
+      scopeMissAuthorizedBoundaries: scopedReceiptMatch.boundaries.join(", "),
+      scopeMissDeclaredScope: scopedReceiptMatch.patterns.join(", "),
+      reason: `${risk} does not match receipt ${receipt.runId} boundary/scope authorization`
     };
   } else {
     review = {
@@ -1226,6 +1864,9 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
     toolName: name,
     guard,
     review,
-    reviewMessage
+    shouldAllow,
+    allowReason,
+    reviewMessage,
+    gateSettings: settings
   };
 }

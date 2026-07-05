@@ -32,6 +32,7 @@ function usage() {
     "  node scripts/nogra-local.mjs init-bundle [--root <dir>] [--workspace-name <name>] [--json]",
     "  node scripts/nogra-local.mjs init --apply [--root <dir>] [--workspace-name <name>] [--json]",
     "  node scripts/nogra-local.mjs create-project <name> [--root <hub-dir>] [--workspace-id <id>] [--project-path <relative-dir>] [--apply] [--json]",
+    "  node scripts/nogra-local.mjs brain-init [--apply] [--root <dir>] [--workspace-name <name>] [--json]",
     "  node scripts/nogra-local.mjs brief-contract [--root <dir>] [--json]",
     "  node scripts/nogra-local.mjs brief-validate [--root <dir>] [--input <file>] [--json]",
     "  node scripts/nogra-local.mjs brief-sizing-preview [--root <dir>] [--input <file>] [--json]",
@@ -40,7 +41,7 @@ function usage() {
     "  node scripts/nogra-local.mjs ledger-smoke [--root <dir>] [--label <text>] [--json]",
     "  node scripts/nogra-local.mjs quality [--root <dir>] [--transcript <file>] [--write] [--json]",
     "  node scripts/nogra-local.mjs handoff-contract [--root <dir>] --kind executor|verifier [--run-id <id>] [--json]",
-    "  node scripts/nogra-local.mjs dispatch [--root <dir>] --brief-id <id> [--target executor] [--target-model <model>] [--max-turns <n>] [--json]",
+    "  node scripts/nogra-local.mjs dispatch [--root <dir>] --brief-id <id> [--target executor] [--target-model <model>] [--max-turns <n>] [--scratch-root <dir>]... [--json]",
     "  node scripts/nogra-local.mjs verify [--root <dir>] --run-id <id> [--input <file>] [--json]",
     "",
     "All commands use local plugin contracts and workspace-local records."
@@ -73,6 +74,29 @@ function parseArgs(argv) {
     index += 1;
   }
   return out;
+}
+
+// parseArgs keeps only the LAST occurrence of a flag; a few CLI flags (e.g.
+// dispatch --scratch-root) are deliberately repeatable, so this reads the raw
+// argv directly rather than depending on parseArgs' single-value map.
+function collectRepeatableFlag(argv, flagName) {
+  const values = [];
+  const prefix = `--${flagName}=`;
+  for (let index = 0; index < argv.length; index += 1) {
+    const value = argv[index];
+    if (value === `--${flagName}`) {
+      const next = argv[index + 1];
+      if (next != null && !next.startsWith("--")) {
+        values.push(next);
+        index += 1;
+      }
+      continue;
+    }
+    if (value.startsWith(prefix)) {
+      values.push(value.slice(prefix.length));
+    }
+  }
+  return values;
 }
 
 function now() {
@@ -1159,7 +1183,7 @@ function initBundlePayload(root, workspaceName = "") {
     workspaceName: cleanName,
     writeMode: "client_writes_or_local_runtime_applies_files",
     installPlan: initInstallPlan(files, "plugin"),
-    postInstallMessage: "Nogra is installed in this folder. Brief, dispatch and verification records live in .nogra/.",
+    postInstallMessage: "Nogra is installed in this folder. Brief, dispatch and verification records live in .nogra/. You also have an opt-in brain/ for deep work — never created by default; run /nogra:brain-init when you want it.",
     migration: {
       schema: "nogra.init.migration_guidance.v1",
       mode: "plugin-local",
@@ -1175,6 +1199,65 @@ function initBundlePayload(root, workspaceName = "") {
       "Preserve .claude/ files; setup writes only returned Nogra files.",
       "Use /nogra:adapt for existing projects after setup."
     ]
+  };
+}
+
+function brainInitBundlePayload(root, workspaceName = "") {
+  const generatedAt = now();
+  const cleanName = cleanInline(workspaceName) || path.basename(root) || "local";
+  const context = {
+    workspaceName: cleanName,
+    generatedAt
+  };
+  const manifest = contractJson("brain-init/manifest.json");
+  const files = [];
+  for (const item of manifest.files || []) {
+    if (!item || typeof item !== "object") continue;
+    files.push(initFileFromManifestItem(item, context));
+  }
+  const brainExists = fs.existsSync(path.join(root, "brain"));
+  return {
+    schema: "nogra.brain_init.bundle.v1",
+    status: "ready",
+    generatedAt,
+    root,
+    brainExists,
+    files,
+    postInstallMessage: brainExists
+      ? "brain/ already exists. brain-init only fills in files that are missing; nothing is overwritten."
+      : "brain/ will be scaffolded empty: raw/, wiki/, index.md and a thin brain/CLAUDE.md. Nothing is auto-loaded.",
+    next: ["Review this plan, then rerun with --apply after explicit GO."]
+  };
+}
+
+function applyBrainInit(root, workspaceName = "") {
+  const plan = brainInitBundlePayload(root, workspaceName);
+  const results = [];
+  const counts = { written: 0, preserved: 0, failed: 0 };
+  for (const file of plan.files) {
+    try {
+      const { target } = resolveWorkspacePath(root, file.path);
+      let action = "preserved";
+      if (!fs.existsSync(target)) {
+        writeTextAtomic(target, file.content.endsWith("\n") ? file.content : `${file.content}\n`);
+        action = "written";
+      }
+      counts[action] = (counts[action] || 0) + 1;
+      results.push({ path: file.path, action });
+    } catch (error) {
+      counts.failed += 1;
+      results.push({ path: file.path, action: "failed", error: error.message });
+    }
+  }
+  return {
+    schema: "nogra.brain_init.result.v1",
+    generatedAt: plan.generatedAt,
+    status: counts.failed ? "partial" : "ok",
+    root,
+    brainExisted: plan.brainExists,
+    results,
+    counts,
+    next: ["brain/ is empty by design. Fill it deliberately; nothing here auto-loads."]
   };
 }
 
@@ -2284,6 +2367,40 @@ function transportArtifactPath(root, runId, name) {
   return path.join(nograDir(root), "transport", "artifacts", safeTransportRunId(runId), name);
 }
 
+// Deterministic scratchRoots declaration for the dispatch receipt (additive
+// field). Always includes the run's own artifacts dir (the one scratch
+// location the control plane can always name deterministically at dispatch
+// time). An optional, repeatable --scratch-root flag lets the caller add
+// further roots it CAN name deterministically (e.g. the session's own
+// scratchpad path, when the control plane knows it at dispatch time) -- if a
+// root cannot be named deterministically, it is simply omitted here rather
+// than approximated. Each declared root is symlink-normalized (realpath) when
+// it already exists on disk, so downstream containment checks compare
+// against the same canonical path a symlink-escape attempt would resolve to.
+function resolveDispatchScratchRoots(root, artifactsDirRelative, extraRoots = []) {
+  const declared = [];
+  const seen = new Set();
+  const addRoot = (candidate) => {
+    const cleaned = cleanInline(candidate);
+    if (!cleaned) return;
+    const absolute = path.isAbsolute(cleaned) ? cleaned : path.resolve(root, cleaned);
+    let normalized = absolute;
+    try {
+      normalized = fs.realpathSync(absolute);
+    } catch {
+      normalized = absolute;
+    }
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    declared.push(normalized);
+  };
+  addRoot(path.join(root, artifactsDirRelative));
+  for (const extra of extraRoots) {
+    addRoot(extra);
+  }
+  return declared;
+}
+
 function transportEvent(runId, type, extra = {}) {
   const { releaseVersion: _ignoredReleaseVersion, ...safeExtra } = extra;
   const at = now();
@@ -2622,6 +2739,8 @@ function dispatch(root, options) {
   }
   const normalized = validation.normalized;
   const runId = newTransportRunId();
+  const artifactsDirRelative = `.nogra/transport/artifacts/${runId}`;
+  const scratchRoots = resolveDispatchScratchRoots(root, artifactsDirRelative, options.scratchRoots || []);
   const target = cleanInline(options.target) || "executor";
   const targetRuntimeRole = runtimeRoleForTarget(runtime, target);
   const targetRuntimeRoleName = scopedNograRole(target).split(":").pop() || "executor";
@@ -2679,11 +2798,13 @@ function dispatch(root, options) {
     sessionId: ledgerEvent.sessionId,
     transcriptId: ledgerEvent.transcriptId,
     briefId: normalized.briefId,
+    scratchRoots,
     metadata: {
       mode: "local",
       receiptType: "localDispatchReceipt",
       targetRole: target,
       targetModel,
+      scratchRoots,
       scopeFiles: normalized.scope?.files || [],
       successCriteria: normalized.successCriteria || [],
       stopCriteria: normalized.stopCriteria || [],
@@ -2702,10 +2823,10 @@ function dispatch(root, options) {
       nextOwner
     },
     paths: {
-      artifactsDir: `.nogra/transport/artifacts/${runId}`,
-      report: `.nogra/transport/artifacts/${runId}/report.md`,
-      output: `.nogra/transport/artifacts/${runId}/output.md`,
-      validation: `.nogra/transport/artifacts/${runId}/validation.json`
+      artifactsDir: artifactsDirRelative,
+      report: `${artifactsDirRelative}/report.md`,
+      output: `${artifactsDirRelative}/output.md`,
+      validation: `${artifactsDirRelative}/validation.json`
     },
     artifacts: {
       reportExists: false,
@@ -2762,6 +2883,7 @@ function dispatch(root, options) {
     ledgerWatermark: ledgerEvent.ledgerWatermark,
     sessionId: ledgerEvent.sessionId,
     transcriptId: ledgerEvent.transcriptId,
+    scratchRoots,
     hostedMcpUsed: false,
     transport: {
       armed: true,
@@ -3156,6 +3278,10 @@ function main() {
       projectPath: options["project-path"] || options.projectPath || "",
       apply: Boolean(options.apply)
     });
+  } else if (command === "brain-init") {
+    payload = options.apply
+      ? applyBrainInit(root, options["workspace-name"] || "")
+      : brainInitBundlePayload(root, options["workspace-name"] || "");
   } else if (command === "brief-contract") {
     payload = briefContract(root);
   } else if (command === "brief-validate") {
@@ -3190,7 +3316,8 @@ function main() {
       target: options.target || "executor",
       targetModel: options["target-model"] || options.targetModel || "",
       maxTurns: options["max-turns"] || options.maxTurns || "",
-      maxTurnsReason: options["max-turns-reason"] || options.maxTurnsReason || ""
+      maxTurnsReason: options["max-turns-reason"] || options.maxTurnsReason || "",
+      scratchRoots: collectRepeatableFlag(process.argv.slice(2), "scratch-root")
     });
   } else if (command === "verify") {
     payload = verifySupport(root, {

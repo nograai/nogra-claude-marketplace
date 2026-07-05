@@ -3,7 +3,7 @@
 Nogra's router is a thin intent index. It helps Claude choose the right Nogra
 skill when the user asks for Nogra, and it stays silent for ordinary work.
 
-The router is not a hook gate, prompt scorer, safety classifier or permission
+The router is not a hook gate, prompt scorer, safety filter or permission
 layer. It does not inspect tool calls, block actions, create records, spawn
 agents or decide that a normal task deserves a brief.
 
@@ -81,7 +81,7 @@ Rules:
 - Use this only at the autonomy or cost threshold, not for normal prompts.
 - Never repeat it in the same task after the user continues direct.
 - Never block on it.
-- Never turn it into prompt scoring, keyword scoring or a safety classifier.
+- Never turn it into prompt scoring, keyword scoring or a safety filter.
 - Claude Code's native permission model remains responsible for tool
   permissions.
 - The separate convergence guard may ask at deterministic git/action risk
