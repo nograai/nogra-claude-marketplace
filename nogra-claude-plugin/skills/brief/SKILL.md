@@ -316,22 +316,22 @@ The full normalized brief and its rendered overview live in `.nogra/briefs/`;
 the chat shows the compact approval artifact, never the full brief body or
 payload echoed a second time.
 
-Use the promoted runtime payload's `openBriefLink` as the primary file
-affordance when available. It must render as a bare Markdown link with the
-English-first label `Open brief`:
+Do NOT emit a clickable `[Open brief](file://...)` link: Claude Code's file
+viewer excludes hidden dot-directories, so a `file://` link into `.nogra/`
+can never open — a broken promise, not an affordance. The brief stays in
+`.nogra/briefs/` (it is trust-state, never relocated); the compact approval
+artifact in chat IS the review surface. Reference the brief by its id, and
+if a path is useful, show it as plain code text:
 
 ```md
-[Open brief](file:///absolute/path/to/brief.md)
+Brief: `<briefId>` (stored at `.nogra/briefs/<file>.md`)
 ```
 
-Do not wrap the link in backticks. Do not append `:1` or any line number to a
-`file://` URL. Build `file://` values from the runtime payload or an equivalent
-URL encoder; do not hand-write unencoded paths with spaces or special
-characters. The storage mechanism is a local markdown file, but the user-facing
-artifact name remains "brief", not "file".
+The storage mechanism is a local markdown file, but the user-facing artifact
+name remains "brief", not "file".
 
 End with:
 
 ```text
-Brief is ready: <briefId>. [Open brief](file:///absolute/path/to/brief.md). Review it, and say GO if you want me to dispatch it through Nogra.
+Brief is ready: <briefId>. Review the summary above, and say GO if you want me to dispatch it through Nogra.
 ```

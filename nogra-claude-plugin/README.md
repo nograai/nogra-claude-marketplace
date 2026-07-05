@@ -47,19 +47,21 @@ verification support use bundled plugin contracts plus the workspace `.nogra/`
 records. After the plugin has been installed, all workflow stays local
 to the workspace.
 
-### MCP layer (optional, needs uv)
+### MCP layer (zero prerequisites)
 
 The plugin also registers Nogra's own MCP server (`nogra`), launched through a
-small bundled Node launcher (`scripts/mcp-launcher.mjs`) that tries `uvx`, then
-`pipx`, and tells you exactly what's missing if neither is on PATH — it never
-installs or fetches anything itself. This layer needs
-[uv](https://docs.astral.sh/uv/) (or pipx) on your PATH; on first start `uvx`
-fetches the published `nogra-mcp` package and runs it in public mode against
-the current workspace.
+small bundled Node launcher (`scripts/mcp-launcher.mjs`) that tries `npx`
+first, then `uvx`, then `pipx` — and tells you exactly what's missing if none
+is on PATH. It never installs or fetches anything itself. Because Node (and
+therefore `npx`) is already present wherever Claude Code runs, no extra setup
+is needed: on first start `npx` fetches the published `@nograai/mcp` package
+(standalone platform binaries — no Python required) and runs it in public mode
+against the current workspace. `uvx`/`pipx` remain as fallbacks for the PyPI
+`nogra-mcp` package if you prefer that path.
 
-Without `uv`/`pipx` the MCP layer simply does not start — hooks, skills,
-commands and the local `.nogra/` workflow keep working unchanged. Nothing else
-in the plugin depends on it.
+In the near-impossible case that no runner is on PATH, the MCP layer simply
+does not start — hooks, skills, commands and the local `.nogra/` workflow keep
+working unchanged. Nothing else in the plugin depends on it.
 
 Config note: set `verifyNudge: "off"` at the top level of `.nogra/config.json`
 to silence the completion-claim verify nudge for that workspace (default: on).

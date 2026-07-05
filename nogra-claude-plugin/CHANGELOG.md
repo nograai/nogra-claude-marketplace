@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.2 - 2026-07-05
+
+- Removed the clickable `[Open brief](file://...)` link from the brief approval
+  flow: Claude Code's file viewer excludes hidden dot-directories, so a link
+  into `.nogra/` can never open — it was a promise no click could keep. The
+  brief stays in `.nogra/briefs/` (trust-state, not relocated); the inline
+  approval artifact is the review surface, and the brief is referenced by id
+  with its path as plain code text.
+- Docs: the MCP layer section now reflects the npx-first launcher (Node/npx is
+  always present, so no uv/Python is required) — matching the shipped behavior.
+
 ## 0.7.1 - 2026-07-05
 
 - Fixed: the brain-init skill + contracts (skills/brain-init/, contracts/brain-init/)

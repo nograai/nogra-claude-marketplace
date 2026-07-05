@@ -22,17 +22,16 @@ A strong approval display usually has:
 - evidence-backed success criteria;
 - max output / return shape.
 
-For local promoted briefs, prefer a single bare Markdown file link labeled
-`Open brief`:
+For local promoted briefs, reference the brief by id with the path as plain
+code text — never as a clickable `file://` link (Claude Code's file viewer
+excludes hidden dot-directories, so a link into `.nogra/` can never open):
 
 ```md
-[Open brief](file:///absolute/path/to/brief.md)
+Brief: `<briefId>` (stored at `.nogra/briefs/<file>.md`)
 ```
 
-Do not wrap that link in backticks, do not label it `Open file`, and do not add
-`:1` or any other line suffix to the `file://` URL. If the path contains spaces
-or special characters, use the runtime-provided link or an equivalent
-URL-encoded file URL.
+The inline approval artifact is the review surface; the stored file is the
+trust record.
 
 Omit any section that would be empty or fake. Add a section when the brief has a
 brief-specific concern that matters for approval.
