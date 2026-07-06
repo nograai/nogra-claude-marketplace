@@ -105,25 +105,42 @@ function assertSameSnapshot(before, after, label) {
 function main() {
   const tempDirs = [];
 
-  // (a) gate segment matches this workspace's live .nogra/config.json.
-  const repoConfig = readJsonFile(path.join(repoRoot, ".nogra", "config.json")) || {};
-  const gate = repoConfig.gate || {};
-  assert(
-    gate.mode === "advisory" && gate.autoApprove === true,
-    "expected this workspace's live gate config to match the documented fixture (mode advisory, autoApprove true) — smoke precondition out of date"
-  );
-  const expectedAuto = gate.autoApprove === true ? "auto ON" : "auto off";
+  // (a) gate segment renders from a FIXTURE workspace's gate config — fully
+  // self-contained, like case (b). No dependency on the surrounding repo's
+  // live .nogra state, so the smoke passes identically in any fresh clone.
+  const gateOnDir = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-statusline-smoke-gate-on-"));
+  tempDirs.push(gateOnDir);
+  assertNoNograAncestor(gateOnDir);
+  writeJson(path.join(gateOnDir, ".nogra", "config.json"), {
+    schema: "nogra.workspace.config.v1",
+    workspaceId: "statusline-smoke-gate-on",
+    gate: { mode: "advisory", autoApprove: true }
+  });
+  const gateOnBefore = snapshotDir(path.join(gateOnDir, ".nogra"));
+  const workspaceOutput = runStatusline("{}", gateOnDir);
+  const gateOnAfter = snapshotDir(path.join(gateOnDir, ".nogra"));
+  assertSameSnapshot(gateOnBefore, gateOnAfter, "gate-segment invocation (auto ON fixture)");
 
-  const repoNograBefore = snapshotDir(path.join(repoRoot, ".nogra"));
-  const workspaceOutput = runStatusline("{}", repoRoot);
-  const repoNograAfter = snapshotDir(path.join(repoRoot, ".nogra"));
-  assertSameSnapshot(repoNograBefore, repoNograAfter, "workspace gate-segment invocation");
-
   assert(
-    workspaceOutput.includes(`Nogra ⛩ ${expectedAuto}`),
-    `expected gate segment 'Nogra ⛩ ${expectedAuto}' in workspace statusline, got: ${workspaceOutput.trim()}`
+    workspaceOutput.includes("Nogra ⛩ auto ON"),
+    `expected gate segment 'Nogra ⛩ auto ON' in fixture statusline, got: ${workspaceOutput.trim()}`
   );
   assert(workspaceOutput.trim().startsWith("Nogra:"), "workspace statusline should still start with the base Nogra segment");
+
+  // (a2) and the auto-off variant renders the off label.
+  const gateOffDir = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-statusline-smoke-gate-off-"));
+  tempDirs.push(gateOffDir);
+  assertNoNograAncestor(gateOffDir);
+  writeJson(path.join(gateOffDir, ".nogra", "config.json"), {
+    schema: "nogra.workspace.config.v1",
+    workspaceId: "statusline-smoke-gate-off",
+    gate: { mode: "advisory", autoApprove: false }
+  });
+  const gateOffOutput = runStatusline("{}", gateOffDir);
+  assert(
+    gateOffOutput.includes("Nogra ⛩ auto off"),
+    `expected gate segment 'Nogra ⛩ auto off' in fixture statusline, got: ${gateOffOutput.trim()}`
+  );
 
   // (c) uninitialized dir output is byte-identical to the pre-change baseline.
   const uninitDir = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-statusline-smoke-uninit-"));
