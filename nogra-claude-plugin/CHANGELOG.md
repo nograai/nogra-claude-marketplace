@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.5 - 2026-07-06
+
+- The plugin is now **pure local** — removed the MCP bridge (`.mcp.json` +
+  `scripts/mcp-launcher.mjs`). Nothing in hooks, skills, contracts or the local
+  runtime depended on it; briefs, dispatch receipts and verification all run on
+  the bundled local runtime as before. One less moving part, and the privacy
+  line is now literal: the plugin makes zero network calls, full stop.
+- The scaffolded `inbox/` is now the **two-way shared desk**: `screenshots/`
+  and `drops/` (you → Nogra) and `out/` (Nogra → you — receipts, drafts,
+  "ready for GO"; a review tray, not a done tray), plus an `inbox/README.md`
+  and a workspace-CLAUDE.md section so a fresh session understands the loop.
+- README truth-sync: added the missing **Memory** section (deterministic
+  every-session load, 2200/1375 bounds, consolidate-not-hoard, self-learning
+  on correction) and updated setup/install wording to match what setup
+  actually writes.
+
 ## 0.7.4 - 2026-07-06
 
 - Closed the memory loop with self-learning: the scaffolded CLAUDE.md now instructs Claude to write a

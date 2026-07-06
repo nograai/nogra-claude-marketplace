@@ -20,8 +20,9 @@ After installing this plugin:
 2. Restart or reopen Claude Code so the plugin loads.
 3. Run `/nogra:setup` — this creates the folder's local Nogra state
    (`.nogra/config.json`, standard `.nogra/` domain folders, plus a root
-   `CLAUDE.md` only if you don't already have one), and empty `inbox/` and
-   `projects/` folders at the workspace root.
+   `CLAUDE.md` only if you don't already have one), a `projects/` folder, and
+   the two-way `inbox/` desk: `screenshots/` and `drops/` (you → Nogra) and
+   `out/` (Nogra → you — receipts, drafts, "ready for GO").
 4. For an existing codebase, also run `/nogra:adapt` so Nogra reads the project
    and records its map under `.nogra/`.
 
@@ -47,21 +48,19 @@ verification support use bundled plugin contracts plus the workspace `.nogra/`
 records. After the plugin has been installed, all workflow stays local
 to the workspace.
 
-### MCP layer (zero prerequisites)
+### Memory (bounded, deterministic)
 
-The plugin also registers Nogra's own MCP server (`nogra`), launched through a
-small bundled Node launcher (`scripts/mcp-launcher.mjs`) that tries `npx`
-first, then `uvx`, then `pipx` — and tells you exactly what's missing if none
-is on PATH. It never installs or fetches anything itself. Because Node (and
-therefore `npx`) is already present wherever Claude Code runs, no extra setup
-is needed: on first start `npx` fetches the published `@nograai/mcp` package
-(standalone platform binaries — no Python required) and runs it in public mode
-against the current workspace. `uvx`/`pipx` remain as fallbacks for the PyPI
-`nogra-mcp` package if you prefer that path.
+Nogra gives the workspace a small memory that actually loads:
+`.nogra/memory/local/MEMORY.md` (durable facts, ≤2200 chars) and `USER.md`
+(who you are, ≤1375). A SessionStart hook loads both into **every** session
+deterministically — not deprioritized like instruction files. The bound is
+enforced on read: when a file is full, the oldest content drops, so the
+discipline is to consolidate (merge deliberately), never hoard.
 
-In the near-impossible case that no runner is on PATH, the MCP layer simply
-does not start — hooks, skills, commands and the local `.nogra/` workflow keep
-working unchanged. Nothing else in the plugin depends on it.
+The memory also learns: when you correct Claude — or it catches its own
+mistake — it writes the lesson as a one-line rule to `MEMORY.md` before
+continuing. Self-learning, but bounded: lessons consolidate instead of piling
+up forever. Claude does the remembering; Nogra owns the bound.
 
 Config note: set `verifyNudge: "off"` at the top level of `.nogra/config.json`
 to silence the completion-claim verify nudge for that workspace (default: on).

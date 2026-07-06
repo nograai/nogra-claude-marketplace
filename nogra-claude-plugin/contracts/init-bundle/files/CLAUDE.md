@@ -69,6 +69,15 @@ bound makes this safe: lessons consolidate instead of piling up forever.
 There's also an opt-in `brain/` deep-work knowledge vault — never scaffolded
 by default; run `/nogra:brain-init` when you want it.
 
+## Inbox — the shared desk
+
+`inbox/` is the two-way handoff between the user and you:
+`screenshots/` and `drops/` are user -> you (screenshots, files, raw material);
+`out/` is you -> user (receipts, drafts, "ready for GO" — a review tray, not a
+done tray). "tjek inbox" works both ways: the user says it -> read the newest
+thing under `inbox/`; you say it -> the user checks `out/`. Nothing in `out/`
+acts on its own; it waits for the user's eyes or GO.
+
 ## Workspace Root Discipline
 
 `.nogra/` is authority for this workspace, not a filesystem jail. If this

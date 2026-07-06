@@ -20,7 +20,35 @@
       "path": "inbox/.gitkeep",
       "mimeType": "text/plain",
       "writePolicy": "create_if_missing",
-      "purpose": "Creates the default empty inbox lane for incoming files, screenshots and receipts."
+      "purpose": "Creates the shared inbox desk (root holds ad-hoc drops; the newest image anywhere under inbox is what 'tjek' reads)."
+    },
+    {
+      "source": "init-bundle/files/inbox/README.md",
+      "path": "inbox/README.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Explains the two-way inbox loop: screenshots/ and drops/ (you -> Nogra), out/ (Nogra -> you, a review tray)."
+    },
+    {
+      "source": "init-bundle/files/inbox/screenshots/.gitkeep",
+      "path": "inbox/screenshots/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "you -> Nogra: screenshots land here; the newest is what 'tjek' reads."
+    },
+    {
+      "source": "init-bundle/files/inbox/drops/.gitkeep",
+      "path": "inbox/drops/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "you -> Nogra: files, links and raw material for Nogra to pick up."
+    },
+    {
+      "source": "init-bundle/files/inbox/out/.gitkeep",
+      "path": "inbox/out/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Nogra -> you: receipts, drafts and 'ready for GO' — a review tray, not a done tray."
     },
     {
       "source": "init-bundle/files/projects/.gitkeep",
