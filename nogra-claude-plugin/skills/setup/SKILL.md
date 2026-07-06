@@ -22,8 +22,9 @@ the local `.nogra/index/` five-anchor files, plus empty `inbox/` and
 `.claude/`, package files, git config, hooks, presets and templates. It may
 create a minimal root `CLAUDE.md` only when the workspace does not already have
 one, so Claude has a visible local Nogra orientation on future sessions.
-There's also an opt-in `brain/` deep-work vault — never created by default;
-run `/nogra:brain-init` when you want it. Project-specific facts are refined
+The workspace also ships with a `brain/` deep-work vault (`raw/` → `wiki/` →
+`index.md`) — pull-first, never auto-loaded; `/nogra:brain-init` re-scaffolds
+it if it is ever removed. Project-specific facts are refined
 later by `/nogra:adapt`, after Nogra has actually read this workspace.
 ```
 

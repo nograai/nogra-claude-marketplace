@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.7 — 2026-07-06
+
+- **Truth-sync: brain/ ships with the workspace.** 0.7.6 folded the brain into
+  the init bundle, but five plugin strings still said "opt-in … never created
+  by default" (post-install message, setup + brain-init skills, both
+  brain/CLAUDE.md contract copies, brain-init manifest purposes). All now state
+  the shipped behavior: brain/ is scaffolded by setup, pull-first, never
+  auto-loaded; `/nogra:brain-init` re-scaffolds it if removed. Behavior
+  unchanged — copy now matches the manifest (caught by the left-lane executor
+  reading the code against the site copy).
+
 ## 0.7.6 - 2026-07-06
 
 - The complete package by default: /nogra:setup now scaffolds the full workspace form — CLAUDE.md,

@@ -6,14 +6,14 @@
       "path": "brain/raw/.gitkeep",
       "mimeType": "text/plain",
       "writePolicy": "create_if_missing",
-      "purpose": "Creates the empty raw-sources lane inside the opt-in brain vault."
+      "purpose": "Creates the empty raw-sources lane inside the brain vault."
     },
     {
       "source": "brain-init/files/brain/wiki/.gitkeep",
       "path": "brain/wiki/.gitkeep",
       "mimeType": "text/plain",
       "writePolicy": "create_if_missing",
-      "purpose": "Creates the empty compiled-pages lane inside the opt-in brain vault."
+      "purpose": "Creates the empty compiled-pages lane inside the brain vault."
     },
     {
       "source": "brain-init/files/brain/index.md",

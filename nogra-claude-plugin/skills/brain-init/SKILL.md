@@ -1,14 +1,15 @@
 ---
 name: nogra-brain-init
-description: Scaffold an empty opt-in brain/ knowledge vault. Use when the user runs /nogra:brain-init, asks to turn on the brain, or wants a raw/wiki knowledge vault created in this workspace.
+description: Re-scaffold the brain/ knowledge vault. Use when the user runs /nogra:brain-init, wants brain/ re-created after removing it, or wants the raw/wiki knowledge vault in a workspace that lacks one.
 ---
 
 # Nogra Brain Init
 
-`brain/` is an opt-in deep-work knowledge vault. It is never created by
-`/nogra:setup` and never auto-loaded. Use this skill only when the user
-explicitly asks for it — by running `/nogra:brain-init`, asking to "turn on
-the brain", or asking for a knowledge vault in this workspace.
+`brain/` is the workspace's deep-work knowledge vault. It ships with the
+workspace (`/nogra:setup` scaffolds it via the init bundle) and is never
+auto-loaded. Use this skill only when the user explicitly asks — to
+re-scaffold a removed `brain/`, or to add the vault to an older workspace
+created before the brain shipped in the bundle.
 
 ## Shape
 
@@ -77,5 +78,5 @@ missing. Never overwrite existing `brain/` content.
 - Do not wire a SessionStart hook, auto-load rule or any mechanism that reads
   `brain/` without being asked.
 - Do not edit `.nogra/`, app files, git config or `.claude/`.
-- Do not run this automatically from `/nogra:setup` or any other flow; it is
-  opt-in only.
+- Do not run this skill automatically from other flows; it runs only when the
+  user asks. (`/nogra:setup` ships `brain/` on its own via the init bundle.)

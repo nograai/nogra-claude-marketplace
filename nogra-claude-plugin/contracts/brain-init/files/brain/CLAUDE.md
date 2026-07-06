@@ -1,6 +1,6 @@
 # Brain
 
-This is the workspace's opt-in deep-work knowledge vault: `raw/` holds
+This is the workspace's pull-first deep-work knowledge vault: `raw/` holds
 immutable sources, `wiki/` holds compiled pages, `index.md` is the entry
 point.
 

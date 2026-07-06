@@ -1183,7 +1183,7 @@ function initBundlePayload(root, workspaceName = "") {
     workspaceName: cleanName,
     writeMode: "client_writes_or_local_runtime_applies_files",
     installPlan: initInstallPlan(files, "plugin"),
-    postInstallMessage: "Nogra is installed in this folder. Brief, dispatch and verification records live in .nogra/. You also have an opt-in brain/ for deep work — never created by default; run /nogra:brain-init when you want it.",
+    postInstallMessage: "Nogra is installed in this folder. Brief, dispatch and verification records live in .nogra/. Your workspace also ships with a brain/ deep-work vault — pull-first, never auto-loaded; /nogra:brain-init re-scaffolds it if you ever remove it.",
     migration: {
       schema: "nogra.init.migration_guidance.v1",
       mode: "plugin-local",
