@@ -2,13 +2,17 @@
 
 Official public Claude Code marketplace for Nogra.
 
-Nogra adds an optional workflow layer to Claude Code: approve the plan, run the
-work, then verify the result against the plan before it is called done.
+Nogra gives Claude Code a memory, a conscience, and a second brain — local-first,
+on the plan you already pay for. A bounded memory Claude keeps between sessions, a
+`brain/` knowledge vault for deep work, and a verify-before-done gate: on work with
+real scope or risk, you approve a short plan first, the work runs, then the result
+is checked against that plan before it is called done.
 
-Nogra is pull-first. Ordinary chat, code edits, debugging and implementation
-stay direct unless you ask for Nogra. When the work needs a clearer contract,
-Nogra gives you local briefs, dispatch receipts, evidence records, verification
-support and workspace continuity under `.nogra/`.
+Nogra is pull-first. Ordinary chat, code edits, debugging and implementation stay
+direct unless you ask for Nogra. When the work needs a clearer contract, Nogra
+gives you local briefs, dispatch receipts, evidence records, verification support
+and workspace continuity under `.nogra/`. Everything it knows is a file you own,
+and it never touches your credentials.
 
 ## Install
 
@@ -47,6 +51,12 @@ For a workspace that manages several projects:
 
 ## What Nogra Adds
 
+- Memory: durable memory in Claude Code's own native Auto Memory
+  (`~/.claude/projects/<slug>/memory/`) — Claude writes and loads it; Nogra keeps it
+  bounded so it stays a theory of you, not an archive, and self-learns from your
+  corrections.
+- Brain: a `brain/` knowledge vault (`raw/` → `wiki/` → `index.md`) that ships with
+  the workspace, pull-first — loaded only when you bring it in for deep work.
 - Brief: approved scope, success criteria, stop criteria and evidence shape.
 - Dispatch: execution of an approved brief after explicit GO.
 - Verify: a separate check against the brief and available evidence.
@@ -108,14 +118,19 @@ you to; plugin scope can be user, project or local.
 
 ## Workspace Shape
 
-Single project:
+A workspace Nogra sets up has the full form:
 
 ```text
 my-project/
-  .nogra/
-  CLAUDE.md
-  ...
+  CLAUDE.md        # your workspace constitution
+  .nogra/          # local trust source: state, index, briefs, evidence, receipts
+  brain/           # deep-work knowledge vault (raw/ -> wiki/ -> index.md), pull-first
+  inbox/           # two-way desk: screenshots/ drops/ (you -> Nogra), out/ (Nogra -> you)
+  projects/        # optional hub sub-projects, each with its own .nogra/
 ```
+
+Durable memory lives in Claude Code's own native store
+(`~/.claude/projects/<slug>/memory/`), kept bounded by Nogra — not copied under `.nogra/`.
 
 Workspace hub with several projects:
 
