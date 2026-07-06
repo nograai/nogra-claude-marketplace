@@ -62,6 +62,10 @@ deterministically — not deprioritized like this file. Write durable facts ther
 when a file is full the oldest content drops on read, so consolidate (merge
 deliberately) rather than hoard. Claude does the remembering; Nogra owns the bound.
 
+When the user corrects you — or you catch your own mistake — add the lesson as a
+one-line rule to `MEMORY.md` before continuing, so it never happens again. The
+bound makes this safe: lessons consolidate instead of piling up forever.
+
 There's also an opt-in `brain/` deep-work knowledge vault — never scaffolded
 by default; run `/nogra:brain-init` when you want it.
 

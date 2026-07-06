@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.4 - 2026-07-06
+
+- Closed the memory loop with self-learning: the scaffolded CLAUDE.md now instructs Claude to write a
+  one-line lesson to MEMORY.md whenever it is corrected or catches its own mistake, so the bounded
+  memory improves every session — self-learning, but bounded (lessons consolidate, never pile up).
+
 ## 0.7.3 - 2026-07-05
 
 - Added a bounded memory layer: .nogra/memory/local/MEMORY.md (<=2200 chars) and USER.md
