@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.8 — 2026-07-06
+
+- **`/nogra:authorize` can now start the intent it binds to.** The active-intent
+  standing-GO lane shipped with a complete read side (prompt-context injection,
+  gate matching, smokes) but no producer — nothing ever created
+  `.nogra/runtime/active-intent.json`, so authorize always dead-ended on "no
+  running intent" (caught by the left-lane executor hitting the deploy gate).
+  The skill now offers to start a minimal intent (user-confirmed, objective in
+  the user's words, optional scope) using the shape the gate smokes already
+  prove. Fail-closed unchanged: no intent still means the gate asks; without a
+  declared scope the class is skip-only, never auto-allowed.
+
 ## 0.7.7 — 2026-07-06
 
 - **Truth-sync: brain/ ships with the workspace.** 0.7.6 folded the brain into

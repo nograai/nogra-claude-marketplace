@@ -1,6 +1,6 @@
 ---
 name: nogra-authorize
-description: Authorize a risk boundary class for the running Nogra intent so the convergence gate treats it as an explicit standing GO. Use when the user runs /nogra:authorize, or gives a direct GO for a boundary (git-history, production-deploy, instruction-surface, etc.) without writing a full brief.
+description: Authorize a risk boundary class as a standing GO for the running Nogra intent — starting a minimal intent (user-confirmed) when none is running. Use when the user runs /nogra:authorize or gives a direct GO for a boundary (git-history, production-deploy, etc.) without a full brief.
 ---
 
 # Nogra Authorize
@@ -20,12 +20,44 @@ Read and write only `.nogra/runtime/active-intent.json`. App files, `.claude/`,
 spawning stay outside this skill.
 
 Within that file, write only `gate.authorize` and the `updatedAt` timestamp. Do
-not modify `gate.nonGoals`, `objective`, `currentPlan`, or any other field.
+not modify `gate.nonGoals`, `objective`, `currentPlan`, or any other field. The
+single exception: creating a fresh minimal intent when none exists (below),
+after the user's explicit confirmation.
 
 If `.nogra/runtime/active-intent.json` is missing or its status is not `active`,
-say there is no running intent to authorize against, suggest `/nogra:setup` or
-starting an intent, and stop. If the file is invalid JSON, stop and ask before
-replacing it.
+say there is no running intent — then offer to start a minimal one binding the
+requested boundary (see "Starting a minimal intent"). Only write it after the
+user confirms. If the file exists but is invalid JSON, stop and ask before
+replacing it — never overwrite silently.
+
+## Starting a minimal intent
+
+When the user asks to authorize a boundary and no intent is running, offer to
+start one. On explicit confirmation, write `.nogra/runtime/active-intent.json`:
+
+```json
+{
+  "schema": "nogra.activeIntent.v1",
+  "status": "active",
+  "startedAt": "<now ISO>",
+  "updatedAt": "<now ISO>",
+  "objective": "<the user's own words for what this GO is for, one line>",
+  "gate": {
+    "authorize": ["<boundary>"],
+    "scope": ["<concrete command or path patterns, only if the user named them>"]
+  }
+}
+```
+
+- `objective` comes from the user's words — ask one short question if you have
+  nothing to quote. Never invent it.
+- `scope` bounds where the authorization applies (e.g. `vercel --prod`,
+  `projects/site/**`). Leave it out rather than guess: without a declared
+  scope the gate skips the ask for that class but never auto-allows; with a
+  matching scope (and `gate.autoApprove` on in `.nogra/config.json`) it can
+  emit an allow. Say which of the two the user is getting.
+- Closing it later: set `status` to `done` (or delete the file). Mention this
+  in the receipt so the standing GO never outlives the work invisibly.
 
 ## What authorize means
 
@@ -62,7 +94,9 @@ Interpret these forms:
 
 - `/nogra:authorize` -> show the running intent's authorized boundaries and the
   recognized list. No write.
-- `/nogra:authorize <boundary>` -> add `<boundary>` to `gate.authorize`.
+- `/nogra:authorize <boundary>` -> add `<boundary>` to `gate.authorize`. If no
+  intent is running, offer to start a minimal one binding `<boundary>` (see
+  above); write only after the user confirms.
 - `/nogra:authorize revoke <boundary>` -> remove `<boundary>` from
   `gate.authorize`.
 - `/nogra:authorize clear` -> empty `gate.authorize`.
@@ -94,6 +128,13 @@ When adding, revoking or clearing:
 ## Receipt Shape
 
 Keep it short. Start with one confirmation line, then the state:
+
+When a minimal intent was just created, lead with that instead:
+
+```text
+Started a minimal intent ("<objective>") and authorized production-deploy.
+Scope: vercel --prod. Close it with status "done" when the work lands.
+```
 
 ```text
 Authorized git-history for the running intent.
