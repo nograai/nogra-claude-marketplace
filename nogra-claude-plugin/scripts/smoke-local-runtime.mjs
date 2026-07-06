@@ -19,6 +19,7 @@ const gateVisibilityCheck = path.join(pluginRoot, "scripts", "smoke-gate-visibil
 const gateArmingCheck = path.join(pluginRoot, "scripts", "smoke-gate-arming.mjs");
 const gateArmingGitCheck = path.join(pluginRoot, "scripts", "smoke-gate-arming-git.mjs");
 const gateRunScratchCheck = path.join(pluginRoot, "scripts", "smoke-gate-run-scratch.mjs");
+const gateAuthorizeLadderCheck = path.join(pluginRoot, "scripts", "smoke-gate-authorize-ladder.mjs");
 const sessionStartHook = path.join(pluginRoot, "hooks", "session-start.mjs");
 const postCompactHook = path.join(pluginRoot, "hooks", "post-compact.mjs");
 const sessionEndHook = path.join(pluginRoot, "hooks", "session-end.mjs");
@@ -307,6 +308,16 @@ function main() {
   // symlink escapes ask; both coverage classes carry the grep-provable
   // citation line. Isolated fixtures only — zero live model calls.
   execFileSync(process.execPath, [gateRunScratchCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+
+  // The authorize ladder: /nogra:authorize opens exactly the intent's boundary
+  // class — ① no intent asks, ② opt-in off skips (never allows), ③ class+scope+
+  // opt-in is the only allow, ④ neighbouring classes still ask, ⑤ scope-miss
+  // asks. Guards the standing-GO lane end-to-end against any door moving.
+  execFileSync(process.execPath, [gateAuthorizeLadderCheck], {
     cwd: pluginRoot,
     encoding: "utf8",
     stdio: "inherit"

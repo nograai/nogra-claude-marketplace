@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.9 — 2026-07-06
+
+- **The authorize ladder is now a permanent smoke** (`smoke-gate-authorize-ladder.mjs`,
+  authored by the left-lane executor, graded and integrated by SBX). Drives the real
+  PreToolUse hook against temp fixtures and proves all 13 rungs of the standing-GO
+  ladder: no intent asks, opt-in-off skips (never allows), class+scope+opt-in is the
+  only allow, neighbouring classes still ask, scope-miss asks. Registered inside
+  `smoke-local-runtime.mjs`; prints the decision table on every run. Sabotage-tested:
+  flipping any expectation turns the smoke red ("a gate door moved"). Test-only —
+  no runtime behavior change.
+
 ## 0.7.8 — 2026-07-06
 
 - **`/nogra:authorize` can now start the intent it binds to.** The active-intent
