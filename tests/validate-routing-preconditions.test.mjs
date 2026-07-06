@@ -456,29 +456,52 @@ console.log("# Stop verify-nudge:");
   assert(!result.stdout, "stop_hook_active=true: emits no output (loop guard)");
 }
 
-// (a) + (e) Active unverified run → nudge once, exact shape
+// (a) + (e) Completion claim + no verification this session → nudge once, exact
+// shipped 0.6.9+ shape: observe-only `systemMessage`, never additionalContext,
+// never a decision. (The nudge is claim-gated — an active run alone is silent.)
 {
   const root = workspaceWithRun({ runId: "run-a1", briefId: "brief-a1", status: "running" });
-  const result = runHook(stopNudgeHook, { session_id: "sn-a", cwd: root, workspace_roots: [root] });
-  assert(result.status === 0, "active unverified run: exits 0");
+  const result = runHook(stopNudgeHook, {
+    session_id: "sn-a",
+    cwd: root,
+    workspace_roots: [root],
+    last_assistant_message: "All checks pass — done, safe to merge."
+  });
+  assert(result.status === 0, "completion claim, unverified: exits 0");
   const parsed = parseHookOutput(result);
   assert(
-    parsed.hookSpecificOutput?.hookEventName === "Stop",
-    "active unverified run: hookSpecificOutput.hookEventName is Stop"
+    typeof parsed.systemMessage === "string" && parsed.systemMessage.includes("nogra:verify"),
+    "completion claim, unverified: systemMessage suggests /nogra:verify"
   );
+  assert(!parsed.decision, "completion claim, unverified: no decision field (never blocks)");
   assert(
-    typeof parsed.hookSpecificOutput?.additionalContext === "string" &&
-    parsed.hookSpecificOutput.additionalContext.includes("nogra:verify"),
-    "active unverified run: additionalContext mentions nogra:verify"
+    !parsed.hookSpecificOutput,
+    "completion claim, unverified: no hookSpecificOutput/additionalContext (observe-only systemMessage)"
   );
-  assert(!parsed.decision, "active unverified run: no decision field (never blocks)");
-  assert(!parsed.systemMessage, "active unverified run: no systemMessage (additionalContext only)");
+}
+
+// (a2) Active run but NO completion claim → silent (the claim gate)
+{
+  const root = workspaceWithRun({ runId: "run-a2", briefId: "brief-a2", status: "running" });
+  const result = runHook(stopNudgeHook, {
+    session_id: "sn-a2",
+    cwd: root,
+    workspace_roots: [root],
+    last_assistant_message: "Still working through the next step."
+  });
+  assert(result.status === 0, "no completion claim: exits 0");
+  assert(!result.stdout, "no completion claim: emits no output (claim-gated)");
 }
 
 // (c) Dedup: second call same session-id → silent
 {
   const root = workspaceWithRun({ runId: "run-c1", briefId: "brief-c1", status: "running" });
-  const input = { session_id: "sn-c", cwd: root, workspace_roots: [root] };
+  const input = {
+    session_id: "sn-c",
+    cwd: root,
+    workspace_roots: [root],
+    last_assistant_message: "Tests green — verified and done."
+  };
   const first = runHook(stopNudgeHook, input);
   assert(Boolean(first.stdout), "dedup first call: emits nudge");
   const second = runHook(stopNudgeHook, input);
