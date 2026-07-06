@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Falsifiable smoke for the memory-load SessionStart hook.
-// Proves: injects per-workspace bounded memory, ENFORCES the 2200/1375 bound (drops OLDEST,
-// keeps NEWEST), and never breaks (missing files → empty context, always valid JSON).
-// Every check can FAIL if the thing it claims were wrong.
+// Falsifiable smoke for the Path B memory-load SessionStart hook.
+// Proves: it reads Claude's NATIVE memory folder (~/.claude/projects/<slug>/memory/), injects
+// NOTHING when the folder is absent or within the bound, and injects exactly one consolidate-NUDGE
+// when it drifts over the bound (index > 200 lines, or > 16K chars total). Never breaks — always
+// valid JSON. Every check can FAIL if the claim it makes were wrong.
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -12,41 +13,40 @@ import { fileURLToPath } from "node:url";
 
 const HOOK = join(dirname(fileURLToPath(import.meta.url)), "..", "hooks", "memory-load.mjs");
 let fails = 0;
-const ok = (n, c) => {
-  console.log((c ? "  ok   " : "  FAIL ") + n);
-  if (!c) fails++;
-};
-const run = (root) =>
-  JSON.parse(
-    execFileSync("node", [HOOK], { env: { ...process.env, CLAUDE_PROJECT_DIR: root }, encoding: "utf8" }),
-  ).hookSpecificOutput.additionalContext;
-const memOf = (ctx) => {
-  const a = ctx.split("# MEMORY.md\n")[1];
-  return a ? a.replace(/\n<\/nogra-memory>\s*$/, "") : "";
-};
+const ok = (n, c) => { console.log((c ? "  ok   " : "  FAIL ") + n); if (!c) fails++; };
 
-// 1. missing memory → empty context, valid JSON, never breaks session start
-const empty = mkdtempSync(join(tmpdir(), "nogmem-"));
-ok("missing memory -> empty context (valid JSON, never breaks)", run(empty) === "");
+// The hook resolves ~/.claude/projects/<slug>/memory from homedir()+CLAUDE_PROJECT_DIR.
+// We drive a fake HOME so we own the native folder, and a fixed project dir → deterministic slug.
+function run(files) {
+  const home = mkdtempSync(join(tmpdir(), "noghome-"));
+  const projectDir = "/tmp/fake-proj"; // slug = -tmp-fake-proj
+  if (files) {
+    const memDir = join(home, ".claude", "projects", projectDir.replace(/\//g, "-"), "memory");
+    mkdirSync(memDir, { recursive: true });
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(memDir, name), content);
+  }
+  const out = execFileSync("node", [HOOK], {
+    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_PROJECT_DIR: projectDir },
+    encoding: "utf8",
+  });
+  rmSync(home, { recursive: true, force: true });
+  return JSON.parse(out).hookSpecificOutput.additionalContext;
+}
 
-// 2-4. both files present -> both injected, wrapped
-const ws = mkdtempSync(join(tmpdir(), "nogmem-"));
-mkdirSync(join(ws, ".nogra", "memory", "local"), { recursive: true });
-writeFileSync(join(ws, ".nogra/memory/local/USER.md"), "Patti — builder");
-writeFileSync(join(ws, ".nogra/memory/local/MEMORY.md"), "fact A\nfact B");
-let ctx = run(ws);
-ok("USER.md injected", ctx.includes("# USER.md") && ctx.includes("Patti — builder"));
-ok("MEMORY.md injected", ctx.includes("# MEMORY.md") && ctx.includes("fact A"));
-ok("wrapped in <nogra-memory>", ctx.startsWith("<nogra-memory>") && ctx.endsWith("</nogra-memory>"));
+// 1. absent native memory -> empty context, valid JSON, never breaks session start
+ok("absent native memory -> empty context (valid JSON)", run(null) === "");
 
-// 5-7. bound: content > 2200 -> keep NEWEST 2200, drop OLDEST (the defining bet, enforced)
-writeFileSync(join(ws, ".nogra/memory/local/MEMORY.md"), "OLDEST-MARKER " + "x".repeat(2300) + " NEWEST-MARKER");
-const mem = memOf(run(ws));
-ok("bound enforced: MEMORY <= 2200 chars", mem.length <= 2200);
-ok("bound drops OLDEST content", !mem.includes("OLDEST-MARKER"));
-ok("bound keeps NEWEST content", mem.includes("NEWEST-MARKER"));
+// 2. under-budget native -> quiet (no nudge, no double-loading what Claude already loads)
+ok("under-budget native -> no nudge", run({ "MEMORY.md": "- one small memory\n" }) === "");
 
-rmSync(empty, { recursive: true, force: true });
-rmSync(ws, { recursive: true, force: true });
+// 3. over TOTAL budget -> exactly one consolidate nudge
+const big = run({ "project-huge.md": "x".repeat(17000) });
+ok("over-budget native -> nudge injected + wrapped", big.startsWith("<nogra-memory>") && /consolidat/i.test(big));
+ok("nudge names the drift (past load window)", /past the load window/i.test(big));
+
+// 4. index over the 200-line load cutoff -> nudge (important stuff now below Claude's cutoff)
+const longIdx = run({ "MEMORY.md": Array.from({ length: 260 }, (_, i) => `- line ${i}`).join("\n") });
+ok("index > 200 lines -> nudge (below load cutoff)", /index 2\d\d lines/i.test(longIdx));
+
 console.log(fails ? `\nsmoke-memory-load: FAIL (${fails} check(s))` : "\nsmoke-memory-load: ok");
 process.exit(fails ? 1 : 0);

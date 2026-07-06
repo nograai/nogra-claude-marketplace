@@ -1,18 +1,27 @@
-# Nogra Workflow
+# Nogra
 
-Approve, run, verify in Claude Code - the work is checked against the plan
-before it is marked done.
+Give your Claude a memory, a conscience, and a second brain — local-first, on the
+plan you already pay for.
 
-Nogra is an optional discipline layer for Claude Code. On work with real scope
-or risk, it gets you to approve a short plan first, runs the approved work, then
-checks the result against that plan - so you don't have to take "done" on trust
-when it matters.
+Nogra is a memory + discipline layer for Claude Code. It gives your workspace a
+bounded memory Claude keeps across sessions, a `brain/` knowledge vault for deep
+work, and a verify-before-done gate: on work with real scope or risk, you approve a
+short plan first, the approved work runs, then the result is checked against that
+plan — so you don't have to take "done" on trust when it matters. Everything it
+knows is a file you own, and it never touches your credentials.
 
 ## Install
 
 **Requires Node.js 18+ on your PATH** — Nogra's local runtime is a small Node
 script. If `node` is not available, setup stops and tells you instead of failing
 cryptically.
+
+Install Nogra from its marketplace:
+
+```bash
+claude plugin marketplace add nograai/nogra-claude-marketplace
+claude plugin install nogra@nogra-claude
+```
 
 After installing this plugin:
 
@@ -26,8 +35,9 @@ After installing this plugin:
 4. For an existing codebase, also run `/nogra:adapt` so Nogra reads the project
    and records its map under `.nogra/`.
 
-There's also an opt-in `brain/` deep-work knowledge vault — never created by
-default; run `/nogra:brain-init` when you want one.
+Setup also scaffolds the `brain/` deep-work knowledge vault (`raw/` → `wiki/` →
+`index.md`) — pull-first: loaded only when you deliberately bring it in for deep
+work, never every session. `/nogra:brain-init` re-creates it if you ever remove it.
 
 You can also ask Claude:
 
@@ -48,19 +58,18 @@ verification support use bundled plugin contracts plus the workspace `.nogra/`
 records. After the plugin has been installed, all workflow stays local
 to the workspace.
 
-### Memory (bounded, deterministic)
+### Memory (bounded, native)
 
-Nogra gives the workspace a small memory that actually loads:
-`.nogra/memory/local/MEMORY.md` (durable facts, ≤2200 chars) and `USER.md`
-(who you are, ≤1375). A SessionStart hook loads both into **every** session
-deterministically — not deprioritized like instruction files. The bound is
-enforced on read: when a file is full, the oldest content drops, so the
-discipline is to consolidate (merge deliberately), never hoard.
+Your durable memory is Claude Code's own Auto Memory — `~/.claude/projects/<slug>/memory/`
+(a `MEMORY.md` index plus typed topic files). Claude writes it and loads it every session
+natively; Nogra keeps no second copy. Nogra owns the **bound**: when the memory grows past
+what Claude actually loads (~the first 200 lines of the index), Nogra flags you at session
+start to consolidate — merge duplicates, prune stale — so what matters stays in view. A
+theory of you, not an archive.
 
-The memory also learns: when you correct Claude — or it catches its own
-mistake — it writes the lesson as a one-line rule to `MEMORY.md` before
-continuing. Self-learning, but bounded: lessons consolidate instead of piling
-up forever. Claude does the remembering; Nogra owns the bound.
+It also learns: when you correct Claude — or it catches its own mistake — the lesson goes in
+as a one-line rule, so it never repeats. Bounded, so lessons consolidate instead of piling up
+forever. Claude does the remembering; Nogra owns the bound.
 
 Config note: set `verifyNudge: "off"` at the top level of `.nogra/config.json`
 to silence the completion-claim verify nudge for that workspace (default: on).

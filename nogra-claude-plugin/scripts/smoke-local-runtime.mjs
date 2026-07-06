@@ -409,7 +409,6 @@ function main() {
     ".nogra/reports/.gitkeep",
     ".nogra/checkpoints/.gitkeep",
     ".nogra/ledger/.gitkeep",
-    ".nogra/memory/local/MEMORY.md",
     ".nogra/memory/sync/.gitkeep",
     ".nogra/index/workspaces.jsonl",
     ".nogra/index/README.md",
@@ -417,7 +416,11 @@ function main() {
     ".nogra/index/behavior-score.md",
     ".nogra/index/risk-registry.md",
     ".nogra/index/EXPANSIONS.md",
-    ".nogra/transport/.gitkeep"
+    ".nogra/transport/.gitkeep",
+    "brain/CLAUDE.md",
+    "brain/index.md",
+    "brain/raw/.gitkeep",
+    "brain/wiki/.gitkeep"
   ]) {
     assert(fs.existsSync(path.join(temp, expectedPath)), `init should create ${expectedPath}`);
   }
@@ -427,6 +430,8 @@ function main() {
     ".nogra/DECISIONS.md",
     ".nogra/PROJECT-STRUCTURE.md",
     ".nogra/events/.gitkeep",
+    ".nogra/memory/local/MEMORY.md",
+    ".nogra/memory/local/USER.md",
   ]) {
     assert(!fs.existsSync(path.join(temp, legacyPath)), `init should not create legacy loose path ${legacyPath}`);
   }

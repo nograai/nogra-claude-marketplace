@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.6 - 2026-07-06
+
+- The complete package by default: /nogra:setup now scaffolds the full workspace form — CLAUDE.md,
+  .nogra/, the two-way inbox/, projects/, AND the brain/ knowledge vault (raw/ -> wiki/ -> index.md).
+  Brain stays pull-first (loaded only when you bring it in); it just ships with the structure now
+  instead of a separate command.
+- Path B memory: durable memory lives in Claude Code'''s own native Auto Memory
+  (~/.claude/projects/<slug>/memory/) — Claude writes and loads it; Nogra keeps no parallel copy.
+  The SessionStart hook is now a read-only bound-check that flags you to consolidate only when memory
+  drifts past what Claude actually loads. The deprecated .nogra/memory/local/ store is no longer scaffolded.
+- README rewritten to the full package (memory + brain + verify) with the marketplace install command.
+- Pure-local confirmed (no MCP bridge, carried from 0.7.5).
+
 ## 0.7.5 - 2026-07-06
 
 - The plugin is now **pure local** — removed the MCP bridge (`.mcp.json` +

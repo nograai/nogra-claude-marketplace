@@ -48,26 +48,28 @@ reference docs, not here — use `/nogra:help`.
 
 `.nogra/` is the local trust source: `state/` (checkpoint, tasks, decisions),
 `index/` (risk, behavior score, workspace map), `briefs/`, `transport/`,
-`evidence/`, `reports/` and `memory/local/` (advisory continuity, not project
-truth). `/nogra:adapt` reads an existing project into `.nogra/` after setup;
+`evidence/`, `reports/` and `memory/sync/` (sync metadata; durable memory lives in
+Claude's native store, not here). `/nogra:adapt` reads an existing project into `.nogra/` after setup;
 brief and run records are created lazily by their commands. Keep these files
 compact and factual — behavior is verified against evidence, not file
 presence.
 
 ## Memory
 
-`.nogra/memory/local/MEMORY.md` (durable facts, ≤2200 chars) and `USER.md` (who
-the user is, ≤1375) are your bounded memory. Nogra loads both into every session,
-deterministically — not deprioritized like this file. Write durable facts there;
-when a file is full the oldest content drops on read, so consolidate (merge
-deliberately) rather than hoard. Claude does the remembering; Nogra owns the bound.
+Your durable memory is Claude Code's own Auto Memory — `~/.claude/projects/<slug>/memory/`
+(a `MEMORY.md` index plus typed topic files). Claude writes it and loads it every session
+natively; Nogra keeps no second copy. Nogra owns the BOUND: when it grows past what Claude
+actually loads (~the first 200 lines of the index), consolidate it — merge duplicates, prune
+stale — so what matters stays in view. A theory of you, not an archive. Nogra flags it at
+session start when it drifts over the bound.
 
-When the user corrects you — or you catch your own mistake — add the lesson as a
-one-line rule to `MEMORY.md` before continuing, so it never happens again. The
-bound makes this safe: lessons consolidate instead of piling up forever.
+When the user corrects you — or you catch your own mistake — add the lesson as a one-line
+rule to your memory before continuing, so it never happens again. Keep it bounded:
+consolidate rather than hoard.
 
-There's also an opt-in `brain/` deep-work knowledge vault — never scaffolded
-by default; run `/nogra:brain-init` when you want it.
+The `brain/` deep-work knowledge vault ships with the workspace (`raw/` → `wiki/` →
+`index.md`) but stays pull-first — loaded only when you deliberately pull it in for deep
+work, never every session. `/nogra:brain-init` re-scaffolds it if you ever remove it.
 
 ## Inbox — the shared desk
 

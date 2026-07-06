@@ -100,20 +100,6 @@
       "purpose": "Workspace paths and state boundaries."
     },
     {
-      "source": "init-bundle/files/.nogra/memory/local/MEMORY.md",
-      "path": ".nogra/memory/local/MEMORY.md",
-      "mimeType": "text/markdown",
-      "writePolicy": "create_if_missing",
-      "purpose": "Local advisory memory index."
-    },
-    {
-      "source": "init-bundle/files/.nogra/memory/local/USER.md",
-      "path": ".nogra/memory/local/USER.md",
-      "mimeType": "text/markdown",
-      "writePolicy": "create_if_missing",
-      "purpose": "Local bounded user profile — loaded into every session."
-    },
-    {
       "source": "init-bundle/files/.nogra/index/workspaces.jsonl",
       "path": ".nogra/index/workspaces.jsonl",
       "mimeType": "application/x-jsonlines",
@@ -217,6 +203,34 @@
       "mimeType": "text/plain",
       "writePolicy": "create_if_missing",
       "purpose": "Creates the transport lane."
+    },
+    {
+      "source": "init-bundle/files/brain/CLAUDE.md",
+      "path": "brain/CLAUDE.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "The brain vault's schema + identity (Karpathy LLM-wiki). Pull-first — loaded only when you deliberately pull it in for deep work."
+    },
+    {
+      "source": "init-bundle/files/brain/index.md",
+      "path": "brain/index.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "The brain content catalog — updated on every ingest."
+    },
+    {
+      "source": "init-bundle/files/brain/raw/.gitkeep",
+      "path": "brain/raw/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Immutable source drops for the brain (raw -> wiki compile)."
+    },
+    {
+      "source": "init-bundle/files/brain/wiki/.gitkeep",
+      "path": "brain/wiki/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Compiled brain wiki pages."
     }
   ],
   "optionalFeatures": []

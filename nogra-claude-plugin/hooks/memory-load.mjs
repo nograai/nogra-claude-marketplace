@@ -1,21 +1,20 @@
 #!/usr/bin/env node
-// Nogra — load the bounded, per-workspace memory into Claude Code at session start.
+// Nogra Path B — Claude Code's NATIVE Auto Memory is the store, and Claude loads it itself.
 //
-// Reads .nogra/memory/local/{USER,MEMORY}.md (created by /nogra:setup) and injects them as
-// SessionStart additionalContext, so they ride in Claude's context EVERY session —
-// deterministically, not deprioritized like CLAUDE.md. This deterministic load is the difference.
+// Claude writes + loads its own memory at ~/.claude/projects/<slug>/memory/ (a MEMORY.md index plus
+// typed topic files). Nogra does NOT keep a second copy and does NOT re-inject what Claude already
+// loads. Nogra owns the BOUND: at session start this read-only checks the native folder and, ONLY
+// when it has grown past what Claude actually loads, injects one small nudge to consolidate.
 //
-// The defining bound: USER.md 1375 chars, MEMORY.md 2200. Over the bound, the OLDEST content is
-// dropped on read — "consolidate or lose it". Claude does the remembering (writes the files);
-// Nogra owns the bound (enforces it here).
-//
-// Self-contained: node built-ins only, no deps, no Python. Fail-safe: any error → empty context,
-// never breaks session start.
+// Read-only here — the folder is Claude's own state; the consolidate WRITE is a separate, deliberate
+// step. Self-contained (node built-ins only). Fail-safe: any error → empty context, never breaks start.
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 
-const LIMITS = { "USER.md": 1375, "MEMORY.md": 2200 };
+const LOAD_WINDOW_LINES = 200; // Claude auto-loads ~the first 200 lines of the native MEMORY.md index
+const TOTAL_BUDGET = 16000;    // curated ceiling across the folder — a theory of you, not an archive
 
 function emit(context) {
   process.stdout.write(
@@ -27,22 +26,33 @@ function emit(context) {
 
 try {
   const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  const dir = join(root, ".nogra", "memory", "local");
+  const dir = join(homedir(), ".claude", "projects", root.replace(/\//g, "-"), "memory");
 
-  const read = (name) => {
-    try {
-      const p = join(dir, name);
-      if (!existsSync(p)) return "";
-      let t = readFileSync(p, "utf8").trim();
-      if (t.length > LIMITS[name]) t = t.slice(-LIMITS[name]); // enforce the bound on read (drop oldest)
-      return t ? `# ${name}\n${t}` : "";
-    } catch {
-      return "";
+  if (!existsSync(dir)) {
+    emit(""); // no native memory yet — nothing to bound
+  } else {
+    const files = readdirSync(dir).filter((f) => f.endsWith(".md"));
+    let total = 0;
+    for (const f of files) {
+      try { total += readFileSync(join(dir, f), "utf8").length; } catch {}
     }
-  };
+    let indexLines = 0;
+    try {
+      if (existsSync(join(dir, "MEMORY.md"))) {
+        indexLines = readFileSync(join(dir, "MEMORY.md"), "utf8").split("\n").length;
+      }
+    } catch {}
 
-  const blocks = ["USER.md", "MEMORY.md"].map(read).filter(Boolean);
-  emit(blocks.length ? `<nogra-memory>\n${blocks.join("\n\n")}\n</nogra-memory>` : "");
+    const over = files.length > 0 && (indexLines > LOAD_WINDOW_LINES || total > TOTAL_BUDGET);
+    emit(
+      over
+        ? `<nogra-memory>\nYour memory has grown past the load window — ${(total / 1000).toFixed(0)}K across ${files.length} files` +
+            `${indexLines > LOAD_WINDOW_LINES ? `, index ${indexLines} lines (Claude loads ~${LOAD_WINDOW_LINES})` : ""}.` +
+            ` What matters may now sit below the cutoff. Consolidate it — merge duplicates, prune stale —` +
+            ` so the theory of you stays in view, not an archive.\n</nogra-memory>`
+        : "",
+    );
+  }
 } catch {
   emit(""); // never break session start
 }
