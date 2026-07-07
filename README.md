@@ -107,8 +107,11 @@ you to; plugin scope can be user, project or local.
 - `/nogra:setup`: enable the current folder for Nogra.
 - `/nogra:adapt`: read an existing project and write Nogra's local project map.
 - `/nogra:create <name>`: create a project-local Nogra workspace under a hub.
+- `/nogra:brain-init`: re-scaffold the `brain/` knowledge vault if it was removed.
 - `/nogra:brief`: shape scoped work into an approved brief.
 - `/nogra:dispatch`: dispatch an approved brief after GO.
+- `/nogra:authorize <boundary>`: record a standing GO for a risk boundary class
+  on the running intent — starting a minimal intent (user-confirmed) when none is running.
 - `/nogra:verify`: check a claim or result against evidence.
 - `/nogra:status`: show plugin, workspace, ledger and recent run state.
 - `/nogra:settings`: inspect or update runtime/language settings.
@@ -136,16 +139,18 @@ Workspace hub with several projects:
 
 ```text
 my-workspace/
-  .nogra/
   CLAUDE.md
+  .nogra/          # hub records own the project index
+  brain/           # one central vault at the hub — never copied per project
+  inbox/
   projects/
     project-a/
-      .nogra/
       CLAUDE.md
+      .nogra/      # each project owns its own state
       ...
     project-b/
-      .nogra/
       CLAUDE.md
+      .nogra/
       ...
 ```
 
@@ -158,6 +163,9 @@ records own the project index; each project owns its own `.nogra/` state.
 - Agent guide: https://nogra.ai/agent
 - LLM index: https://nogra.ai/llms.txt
 - Public marketplace source: https://github.com/nograai/nogra-claude-marketplace
+- MCP server (separate, optional — not bundled in the plugin):
+  [`io.github.nograai/nogra-mcp`](https://registry.modelcontextprotocol.io/?q=nogra) on the
+  official MCP Registry · [`@nograai/mcp`](https://www.npmjs.com/package/@nograai/mcp) on npm
 
 ## License
 
