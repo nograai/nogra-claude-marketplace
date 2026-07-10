@@ -1,0 +1,237 @@
+{
+  "schema": "nogra.init.manifest.v1",
+  "files": [
+    {
+      "source": "init-bundle/files/.nogra/config.json",
+      "path": ".nogra/config.json",
+      "mimeType": "application/json",
+      "writePolicy": "create_or_update",
+      "purpose": "Workspace-level Nogra configuration."
+    },
+    {
+      "source": "init-bundle/files/CLAUDE.md",
+      "path": "CLAUDE.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Public-safe Nogra workspace orientation. Plugin mode creates this only when missing and never overwrites an existing project CLAUDE.md."
+    },
+    {
+      "source": "init-bundle/files/inbox/.gitkeep",
+      "path": "inbox/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the shared inbox desk (root holds ad-hoc drops; the newest image anywhere under inbox is what 'tjek' reads)."
+    },
+    {
+      "source": "init-bundle/files/inbox/README.md",
+      "path": "inbox/README.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Explains the two-way inbox loop: screenshots/ and drops/ (you -> Nogra), out/ (Nogra -> you, a review tray)."
+    },
+    {
+      "source": "init-bundle/files/inbox/screenshots/.gitkeep",
+      "path": "inbox/screenshots/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "you -> Nogra: screenshots land here; the newest is what 'tjek' reads."
+    },
+    {
+      "source": "init-bundle/files/inbox/drops/.gitkeep",
+      "path": "inbox/drops/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "you -> Nogra: files, links and raw material for Nogra to pick up."
+    },
+    {
+      "source": "init-bundle/files/inbox/out/.gitkeep",
+      "path": "inbox/out/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Nogra -> you: receipts, drafts and 'ready for GO' — a review tray, not a done tray."
+    },
+    {
+      "source": "init-bundle/files/projects/.gitkeep",
+      "path": "projects/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the default empty projects lane for hub sub-projects created by /nogra:create."
+    },
+    {
+      "source": "init-bundle/files/.nogra/.gitignore",
+      "path": ".nogra/.gitignore",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Keeps local runtime noise out of source control while preserving shareable Nogra records."
+    },
+    {
+      "source": "init-bundle/files/.nogra/README.md",
+      "path": ".nogra/README.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Explains the local Nogra state layout."
+    },
+    {
+      "source": "init-bundle/files/.nogra/state/SESSION-CHECKPOINT.md",
+      "path": ".nogra/state/SESSION-CHECKPOINT.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Current resume point for this workspace."
+    },
+    {
+      "source": "init-bundle/files/.nogra/state/CURRENT-TASKS.md",
+      "path": ".nogra/state/CURRENT-TASKS.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Current active and parked work."
+    },
+    {
+      "source": "init-bundle/files/.nogra/state/DECISIONS.md",
+      "path": ".nogra/state/DECISIONS.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Decisions that should survive sessions."
+    },
+    {
+      "source": "init-bundle/files/.nogra/state/PROJECT-STRUCTURE.md",
+      "path": ".nogra/state/PROJECT-STRUCTURE.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Workspace paths and state boundaries."
+    },
+    {
+      "source": "init-bundle/files/.nogra/index/workspaces.jsonl",
+      "path": ".nogra/index/workspaces.jsonl",
+      "mimeType": "application/x-jsonlines",
+      "writePolicy": "create_if_missing",
+      "purpose": "Workspace index used by boot and project focus."
+    },
+    {
+      "source": "init-bundle/files/.nogra/index/README.md",
+      "path": ".nogra/index/README.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Explains Nogra's local five-anchor index."
+    },
+    {
+      "source": "init-bundle/files/.nogra/index/risk-intake.md",
+      "path": ".nogra/index/risk-intake.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Workspace intent, GO, risk and evidence intake."
+    },
+    {
+      "source": "init-bundle/files/.nogra/index/behavior-score.md",
+      "path": ".nogra/index/behavior-score.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Behavior scenario grading record."
+    },
+    {
+      "source": "init-bundle/files/.nogra/index/risk-registry.md",
+      "path": ".nogra/index/risk-registry.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Connections and action-risk registry."
+    },
+    {
+      "source": "init-bundle/files/.nogra/index/EXPANSIONS.md",
+      "path": ".nogra/index/EXPANSIONS.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "Guidance for adding Nogra surfaces only when needed."
+    },
+    {
+      "source": "init-bundle/files/.nogra/briefs/.gitkeep",
+      "path": ".nogra/briefs/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the briefs lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/runs/.gitkeep",
+      "path": ".nogra/runs/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the runs lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/evidence/.gitkeep",
+      "path": ".nogra/evidence/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the evidence lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/receipts/.gitkeep",
+      "path": ".nogra/receipts/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the receipts lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/reports/.gitkeep",
+      "path": ".nogra/reports/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the reports lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/checkpoints/.gitkeep",
+      "path": ".nogra/checkpoints/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the checkpoints lane."
+    },
+    {
+      "source": "init-bundle/files/.nogra/ledger/.gitkeep",
+      "path": ".nogra/ledger/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the ledger lane for append-only checkpoint freshness facts."
+    },
+    {
+      "source": "init-bundle/files/.nogra/memory/sync/.gitkeep",
+      "path": ".nogra/memory/sync/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the sync metadata lane without enabling sync."
+    },
+    {
+      "source": "init-bundle/files/.nogra/transport/.gitkeep",
+      "path": ".nogra/transport/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Creates the transport lane."
+    },
+    {
+      "source": "init-bundle/files/brain/CLAUDE.md",
+      "path": "brain/CLAUDE.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "The brain vault's schema + identity (Karpathy LLM-wiki). Pull-first — loaded only when you deliberately pull it in for deep work."
+    },
+    {
+      "source": "init-bundle/files/brain/index.md",
+      "path": "brain/index.md",
+      "mimeType": "text/markdown",
+      "writePolicy": "create_if_missing",
+      "purpose": "The brain content catalog — updated on every ingest."
+    },
+    {
+      "source": "init-bundle/files/brain/raw/.gitkeep",
+      "path": "brain/raw/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Immutable source drops for the brain (raw -> wiki compile)."
+    },
+    {
+      "source": "init-bundle/files/brain/wiki/.gitkeep",
+      "path": "brain/wiki/.gitkeep",
+      "mimeType": "text/plain",
+      "writePolicy": "create_if_missing",
+      "purpose": "Compiled brain wiki pages."
+    }
+  ],
+  "optionalFeatures": []
+}

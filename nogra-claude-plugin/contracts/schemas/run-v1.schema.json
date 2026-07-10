@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/run-v1.schema.json",
+  "title": "Nogra Run v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "runId",
+    "workspaceId",
+    "briefId",
+    "status",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nogra.run.v1"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_.-]+$"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "briefId": {
+      "type": "string",
+      "pattern": "^brief-[A-Za-z0-9_.-]+$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "blocked",
+        "returned",
+        "accepted",
+        "failed",
+        "archived"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nextOwner": {
+      "type": "string",
+      "description": "Next role or Manager return owner for the run lifecycle."
+    },
+    "targetRole": {
+      "type": "string"
+    },
+    "targetModel": {
+      "type": "string",
+      "default": "anthropic:sonnet"
+    },
+    "startedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "endedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "stopReason": {
+      "type": "string",
+      "description": "Internal adapter/runtime stop reason when a role return is not a normal completion; not operator-facing copy."
+    },
+    "returnReason": {
+      "type": "string",
+      "description": "Plain-language reason Manager can use to continue or explain a non-normal return without exposing internal runtime labels."
+    },
+    "pendingState": {
+      "type": "object",
+      "description": "Continuation state such as pending tool requests when a role loop stops before normal completion.",
+      "additionalProperties": true
+    },
+    "artifactUris": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidenceLevel": {
+      "type": "string",
+      "enum": [
+        "reported",
+        "edited",
+        "tested",
+        "verified"
+      ],
+      "default": "reported"
+    },
+    "redactions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Secret-pattern category labels detected in this record at write time."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

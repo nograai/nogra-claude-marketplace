@@ -1,0 +1,22 @@
+{
+  "schema": "nogra.run.v1",
+  "runId": "run-slug",
+  "workspaceId": "local",
+  "briefId": "brief-slug",
+  "status": "queued",
+  "createdAt": "2026-05-04T00:00:00Z",
+  "updatedAt": "2026-05-04T00:00:00Z",
+  "owner": "Manager",
+  "nextOwner": "nogra:executor",
+  "targetRole": "executor",
+  "targetModel": "anthropic:sonnet",
+  "startedAt": null,
+  "endedAt": null,
+  "summary": "",
+  "stopReason": "",
+  "returnReason": "",
+  "pendingState": {},
+  "artifactUris": [],
+  "evidenceLevel": "reported",
+  "metadata": {}
+}

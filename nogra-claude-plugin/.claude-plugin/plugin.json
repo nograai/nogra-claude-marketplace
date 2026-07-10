@@ -1,0 +1,23 @@
+{
+  "name": "nogra",
+  "displayName": "nogra workflow",
+  "version": "0.8.0",
+  "description": "Approve, run, verify in Claude Code - the work is checked against the plan before it is marked done.",
+  "author": {
+    "name": "Patrick Larsen",
+    "email": "patrick@nogra.ai",
+    "url": "https://nogra.ai"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://nogra.ai",
+  "repository": "https://github.com/nograai/nogra-claude-marketplace",
+  "keywords": [
+    "nogra",
+    "claude-code",
+    "agents",
+    "discipline",
+    "verification",
+    "brief-driven",
+    "agent-orchestration"
+  ]
+}
