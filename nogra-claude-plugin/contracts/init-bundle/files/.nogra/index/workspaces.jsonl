@@ -1,2 +1,2 @@
-{"schema":"nogra.workspace.index.entry.v1","workspaceId":"{{workspaceId}}","workspaceName":"{{workspaceName}}","path":"{{workspacePath}}","stateRoot":".nogra/state","memoryIndex":".nogra/memory/local/MEMORY.md","lastSeenAt":"{{generatedAt}}","lastCheckpointSummary":"Nogra initialized locally; no project work recorded yet.","source":"nogra-setup"}
+{"schema":"nogra.workspace.index.entry.v1","workspaceId":"{{workspaceId}}","workspaceName":"{{workspaceName}}","path":"{{workspacePath}}","stateRoot":".nogra/state","lastSeenAt":"{{generatedAt}}","lastCheckpointSummary":"Nogra initialized locally; no project work recorded yet.","source":"nogra-setup"}
 

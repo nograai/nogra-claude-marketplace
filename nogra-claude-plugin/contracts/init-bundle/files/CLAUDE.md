@@ -63,6 +63,12 @@ actually loads (~the first 200 lines of the index), consolidate it — merge dup
 stale — so what matters stays in view. A theory of you, not an archive. Nogra flags it at
 session start when it drifts over the bound.
 
+**USER.md — the pinned profile.** Keep one `USER.md` in that same memory folder: who the user
+is, distilled — identity, language, working rules, hard guards — bounded to 1375 chars. Nogra
+pins it into context every session (native loads the index; topic files surface on recall — the
+profile must never be one recall away). Maintain it like a projection: when you learn something
+durable about the user, fold it in and keep it under the bound; the consolidator keeps it honest.
+
 When the user corrects you — or you catch your own mistake — add the lesson as a one-line
 rule to your memory before continuing, so it never happens again. Keep it bounded:
 consolidate rather than hoard.

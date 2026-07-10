@@ -7,8 +7,8 @@ plugin setup bundle:
 - server mode is plugin-local
 - connection mode is local
 - setup came from the local plugin runtime, not a remote setup path
-- the only allowed root non-`.nogra/` paths are `CLAUDE.md`, `inbox/.gitkeep`
-  and `projects/.gitkeep`
+- the only allowed root non-`.nogra/` paths are `CLAUDE.md` and paths under
+  `inbox/`, `projects/` or `brain/` — nothing else at the root
 - root `CLAUDE.md` uses `writePolicy=create_if_missing`
 - no returned file path starts with `.claude/`
 

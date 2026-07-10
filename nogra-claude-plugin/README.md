@@ -67,6 +67,11 @@ what Claude actually loads (~the first 200 lines of the index), Nogra flags you 
 start to consolidate — merge duplicates, prune stale — so what matters stays in view. A
 theory of you, not an archive.
 
+It also pins: a `USER.md` in that same folder is the bounded who-you-are profile (≤1375
+chars) — Nogra loads it into context **every** session, so who you are is never one recall
+away. Claude maintains it as a distilled projection of the topic files; the consolidator
+creates it if missing and keeps it under the bound.
+
 It also learns: when you correct Claude — or it catches its own mistake — the lesson goes in
 as a one-line rule, so it never repeats. Bounded, so lessons consolidate instead of piling up
 forever. Claude does the remembering; Nogra owns the bound.
@@ -82,8 +87,10 @@ network calls. There is nothing to collect, store, or share.
 Pull-first does not mean no hooks ever run. When the plugin is enabled in an
 initialized workspace, Claude Code may run Nogra's local lifecycle and
 convergence hooks at session or permanent-risk boundaries. Those hooks read and
-write local `.nogra/` state, stay silent for ordinary work, and do not replace
-Claude Code's permission model.
+write local `.nogra/` state and stay silent for ordinary work. They narrow
+within Claude Code's permission model — asking one extra time at risk
+boundaries, and approving only receipt-matched calls under the explicit
+`gate.autoApprove` opt-in — and never widen it.
 
 For support, contact `support@nogra.ai`.
 
@@ -303,8 +310,12 @@ clearly selects an indexed project from a workspace hub. `PreToolUse` is a
 narrow deterministic git/action convergence gate: it asks when a permanent-risk
 tool call has no current dispatch receipt, and it may add a visible Nogra
 match review for receipt-matched actions or conservative read-only public
-fetches. Match reviews add context only; they do not send
-`permissionDecision: allow` or replace Claude Code permissions. Hooks do not
+fetches. By default the gate only adds context and asks — it never approves on
+its own. With the explicit `gate.autoApprove` opt-in, a receipt-matched call
+inside an authorized boundary class and scope is allowed through
+(`permissionDecision: allow`), and hard mode can deny out-of-contract calls;
+without that opt-in, no allow is ever sent. The gate narrows within Claude
+Code's permission model; it never widens it. Hooks do not
 score prompts, emit proactive brief prompts, change config, draft briefs,
 dispatch, verify or spawn agents. Skills own all `.nogra/` writes, brief
 drafting, dispatch, verification and agent spawning. Claude transcript and
@@ -358,10 +369,12 @@ Nogra. Natural-language intent belongs to Claude's judgment. Irreversible,
 production, billing, data, permissions, secrets and git-history work still use
 Claude Code's native permission model and current-task judgment. Nogra's
 convergence gate adds one extra ask when those boundaries are reached without a
-current dispatch receipt. When a current dispatch receipt exists, Nogra can
-surface the receipt in an approval review while leaving the underlying Claude
-Code permission decision untouched. Nogra dispatch starts only after the user
-accepts the workflow.
+current dispatch receipt. When a current dispatch receipt exists, Nogra
+surfaces the receipt in an approval review; by default the underlying Claude
+Code permission decision is left untouched, and only the explicit
+`gate.autoApprove` opt-in lets a receipt-matched, in-scope call through without
+a second prompt. Nogra dispatch starts only after the user accepts the
+workflow.
 
 Extension plugins own their own `/nogra-*` commands and hooks. If an installed
 Nogra extension handles a prompt or command, that request stays with the

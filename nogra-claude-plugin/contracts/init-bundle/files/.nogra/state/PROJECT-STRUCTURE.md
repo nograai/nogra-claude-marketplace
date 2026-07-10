@@ -19,8 +19,8 @@ Generated: {{generatedAt}}
 - `.nogra/checkpoints/` - dated checkpoint snapshots.
 - `.nogra/index/` - workspace/project index, risk intake, behavior score,
   connections/risk registry and expansion guidance.
-- `.nogra/memory/local/` - local continuity notes.
-- `.nogra/memory/sync/` - sync metadata only when sync is enabled.
+- `.nogra/memory/sync/` - sync metadata lane. Durable memory lives in
+  Claude Code's native Auto Memory store, not under `.nogra/`.
 - `.nogra/transport/` - dispatch artifacts.
 
 ## Hub Shape

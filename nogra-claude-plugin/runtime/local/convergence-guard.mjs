@@ -1002,6 +1002,26 @@ function hasCurlSegment(segment) {
   return shellWords(segment).some((word) => path.basename(word).toLowerCase() === "curl");
 }
 
+function interpreterExecutesStdin(segment) {
+  // A bare interpreter (no inline script and no script-file argument) reads its
+  // piped stdin AS the program to run — genuine remote code execution when fed
+  // from curl (e.g. `curl … | sh`). An interpreter given an inline script
+  // (-c/-e/--command/--eval) or a local script-file argument instead runs LOCAL
+  // code and treats the piped bytes as plain DATA on stdin
+  // (e.g. `curl … | python3 -c 'json.load(sys.stdin)'`) — data parsing, not
+  // remote execution. Only the former is a "remote execution pipe".
+  const rest = shellWords(segment).slice(1);
+  const inlineScriptFlags = new Set(["-c", "-e", "--command", "--eval"]);
+  for (const word of rest) {
+    if (inlineScriptFlags.has(word)) return false;
+    if (word.startsWith("-c") && word.length > 2) return false;
+    if (word.startsWith("-e") && word.length > 2) return false;
+    if (word === "-") return true;
+    if (!word.startsWith("-")) return false;
+  }
+  return true;
+}
+
 function curlPipelineRisk(command) {
   const segments = splitShellPipeline(command);
   if (!segments || segments.length < 2 || !hasCurlSegment(segments[0])) return "";
@@ -1010,7 +1030,7 @@ function curlPipelineRisk(command) {
   for (const segment of segments.slice(1)) {
     const commandName = firstCommand(segment);
     if (writeSinks.has(commandName)) return "shell write sink";
-    if (executors.has(commandName)) return "remote execution pipe";
+    if (executors.has(commandName) && interpreterExecutesStdin(segment)) return "remote execution pipe";
   }
   return "";
 }

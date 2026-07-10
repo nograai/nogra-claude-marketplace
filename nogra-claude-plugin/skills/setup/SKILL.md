@@ -80,8 +80,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init-bundle --root "<absolu
    - server mode is `plugin-local`;
    - connection mode is `local`;
    - setup came from the local plugin runtime, not a remote setup path;
-   - the only allowed root non-`.nogra/` paths are `CLAUDE.md`,
-     `inbox/.gitkeep` and `projects/.gitkeep`;
+   - the only allowed root non-`.nogra/` paths are `CLAUDE.md` and paths
+     under `inbox/`, `projects/` or `brain/` — nothing else at the root;
    - root `CLAUDE.md` uses `writePolicy=create_if_missing`;
    - no returned file path starts with `.claude/`.
    If any check fails, stop immediately and do not write files.
@@ -93,8 +93,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" init-bundle --root "<absolu
    - the number of files to create, merge, preserve or skip;
    - the fact that plugin-mode setup creates `.nogra/config.json`, standard
      `.nogra/` domain folders, state files and `.nogra/index/` five-anchor
-     files, plus root `CLAUDE.md` when missing and empty root `inbox/` and
-     `projects/` folders;
+     files, plus root `CLAUDE.md` when missing, the two-way `inbox/` desk
+     (`screenshots/`, `drops/`, `out/`), a `projects/` folder, and the
+     `brain/` knowledge vault (`CLAUDE.md`, `index.md`, `raw/`, `wiki/`);
    - any existing files that will be preserved or merged.
 9. For `.nogra/config.json`, use merge-preserve behavior:
    - If the file does not exist, create it from the returned content.

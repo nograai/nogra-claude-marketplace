@@ -20,6 +20,7 @@ const gateArmingCheck = path.join(pluginRoot, "scripts", "smoke-gate-arming.mjs"
 const gateArmingGitCheck = path.join(pluginRoot, "scripts", "smoke-gate-arming-git.mjs");
 const gateRunScratchCheck = path.join(pluginRoot, "scripts", "smoke-gate-run-scratch.mjs");
 const gateAuthorizeLadderCheck = path.join(pluginRoot, "scripts", "smoke-gate-authorize-ladder.mjs");
+const consolidatorCheck = path.join(pluginRoot, "scripts", "smoke-consolidator.mjs");
 const sessionStartHook = path.join(pluginRoot, "hooks", "session-start.mjs");
 const postCompactHook = path.join(pluginRoot, "hooks", "post-compact.mjs");
 const sessionEndHook = path.join(pluginRoot, "hooks", "session-end.mjs");
@@ -323,6 +324,17 @@ function main() {
     stdio: "inherit"
   });
 
+  // Write-loop v1 (memory housekeeping): the shipped detector (memory-load.mjs)
+  // drives the Manager-middleman ask + delegate to the nogra:consolidator agent
+  // (over-window) and stays silent (under-window); the agent contract holds its
+  // non-negotiables (no self-start, promote-before-prune, move-not-delete,
+  // scope-fence, receipt). Sabotage-tested; isolated fixtures, zero model calls.
+  execFileSync(process.execPath, [consolidatorCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-local-runtime-smoke-"));
   const managerRoot = resolveManagerRoot();
   const hooksConfig = JSON.parse(pluginText("hooks/hooks.json"));
@@ -443,10 +455,18 @@ function main() {
     ".nogra/events/.gitkeep",
     ".nogra/memory/local/MEMORY.md",
     ".nogra/memory/local/USER.md",
+    ".nogra/memory/local",
   ]) {
     assert(!fs.existsSync(path.join(temp, legacyPath)), `init should not create legacy loose path ${legacyPath}`);
   }
   const freshConfig = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "config.json"), "utf8"));
+  assert(!Object.hasOwn(freshConfig.paths || {}, "memoryLocal"), "fresh config should not point at the retired memory/local store");
+  assert(!Object.hasOwn(freshConfig.paths || {}, "memoryIndex"), "fresh config should not carry a memoryIndex path (durable memory is native)");
+  assert(!Object.hasOwn(freshConfig.paths || {}, "memorySummaries"), "fresh config should not carry memorySummaries");
+  assert(
+    !(freshConfig.bootPolicy?.hintSources || []).some((s) => String(s).includes("memory/local")),
+    "fresh bootPolicy hintSources should not reference the retired memory/local store"
+  );
   assert(freshConfig.connectionMode === "local", "fresh config should declare local mode");
   assert(freshConfig.releaseVersion === "v1.0.0", "fresh config should persist workspace config release identity");
   assert(!Object.hasOwn(freshConfig, "version"), "fresh config should not write root version");
@@ -1533,6 +1553,13 @@ function main() {
   assert(createdProject.status === "ok", "create-project apply should succeed");
   assert(createdProject.configContract?.status === "ok", "create-project result should include a passing workspace config contract check");
   assert(fs.existsSync(path.join(temp, "projects", "smoke-child", ".nogra", "config.json")), "create-project should initialize project-local config");
+  assert(!fs.existsSync(path.join(temp, "projects", "smoke-child", ".nogra", "memory", "local")), "create-project should not scaffold the retired memory/local store in the project");
+  assert(!fs.existsSync(path.join(temp, ".nogra", "memory", "local")), "create-project should not scaffold the retired memory/local store at the hub root");
+  const hubIndexLines = fs.readFileSync(path.join(temp, ".nogra", "index", "workspaces.jsonl"), "utf8").split(/\r?\n/u).filter(Boolean);
+  assert(
+    hubIndexLines.every((line) => !line.includes("memory/local")),
+    "workspace index entries should not point at the retired memory/local store"
+  );
   assert(fs.existsSync(path.join(temp, ".nogra", "index", "workspaces.jsonl")), "create-project should write hub workspace index");
   assert(fs.existsSync(path.join(temp, "projects", "smoke-child", ".nogra", "index", "workspaces.jsonl")), "create-project should write project self-index");
   const hubConfig = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "config.json"), "utf8"));

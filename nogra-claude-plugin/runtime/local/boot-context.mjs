@@ -204,7 +204,7 @@ function bootHintForWorkspace(root, config, source, fallbackSummary = "") {
     workspaceId: cleanInline(config?.workspaceId || name),
     workspaceRoot: root,
     stateRoot: config?.paths?.stateRoot || ".nogra/state",
-    memoryIndex: config?.paths?.memoryIndex || ".nogra/memory/local/MEMORY.md",
+    memoryIndex: config?.paths?.memoryIndex || null,
     checkpointSummary: summary,
     ...freshness,
     writes: [],

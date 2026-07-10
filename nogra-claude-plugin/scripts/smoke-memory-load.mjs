@@ -48,5 +48,26 @@ ok("nudge names the drift (past load window)", /past the load window/i.test(big)
 const longIdx = run({ "MEMORY.md": Array.from({ length: 260 }, (_, i) => `- line ${i}`).join("\n") });
 ok("index > 200 lines -> nudge (below load cutoff)", /index 2\d\d lines/i.test(longIdx));
 
+// 5. THE PIN (Layer 1): USER.md in the native home -> pinned into context every session
+const pinned = run({ "MEMORY.md": "- small\n", "USER.md": "Prefers Danish. Direct tone. Verify with facts." });
+ok("USER.md present -> profile pinned", pinned.startsWith("<nogra-user-profile>") && pinned.includes("Prefers Danish"));
+ok("pin without drift -> no nudge attached", !pinned.includes("<nogra-memory>"));
+
+// 6. no USER.md -> no pin block invented (native index alone stays quiet)
+ok("no USER.md -> no pin block", !run({ "MEMORY.md": "- small\n" }).includes("<nogra-user-profile>"));
+
+// 7. over-bound profile -> still pinned WHOLE (forcing function, not a shredder) + flagged
+const overPin = run({ "USER.md": "u".repeat(1500) });
+ok("over-bound USER.md -> pinned whole", overPin.includes("u".repeat(1500)));
+ok("over-bound USER.md -> flagged for consolidation", /over its 1375-char bound/i.test(overPin));
+
+// 8. pin + drift together -> both blocks, pin first
+const both = run({ "USER.md": "The user profile.", "project-huge.md": "x".repeat(17000) });
+ok("pin + over-budget -> profile first, then nudge",
+  both.indexOf("<nogra-user-profile>") === 0 && both.indexOf("<nogra-memory>") > both.indexOf("</nogra-user-profile>"));
+
+// 9. empty USER.md -> no empty pin block
+ok("empty USER.md -> no pin block", !run({ "USER.md": "   \n" }).includes("<nogra-user-profile>"));
+
 console.log(fails ? `\nsmoke-memory-load: FAIL (${fails} check(s))` : "\nsmoke-memory-load: ok");
 process.exit(fails ? 1 : 0);

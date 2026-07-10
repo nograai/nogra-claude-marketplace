@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.8.0 — 2026-07-10
+
+The memory release: the full Layer-1 loop (a bounded `USER.md` profile, pinned every session,
+maintained by the consolidator) plus the write-loop that keeps durable memory under the load
+window. Graded jointly before release (2 HIGH + 5 minor defects, all found and fixed below).
+
+- **The Layer-1 pin: USER.md loads every session.** If the native memory home holds a `USER.md`
+  (the bounded user profile), the SessionStart hook now pins it into context every session — on
+  top of native auto-memory, never a second copy (the file lives IN the native home). The 1375-char
+  bound is a forcing function, not a shredder: an over-bound profile is pinned whole and flagged
+  for consolidation. 8 new smoke checks (`smoke-memory-load.mjs`), sabotage-tested.
+  **And the write side:** the consolidator contract now MAINTAINS the profile (creates `USER.md`
+  by distilling the user/feedback topic files if missing; keeps it under the bound on every pass),
+  and the workspace CLAUDE.md + README teach Claude to fold durable user facts into it. Read side
+  + write side together = the full Layer-1 loop, smoke-asserted.
+- **The retired `.nogra/memory/local/` store is fully unwired.** Path B (0.7.6) moved durable
+  memory to Claude's native store but left pointers behind: the init-bundle config
+  (`memoryLocal`/`memoryIndex`/`memorySummaries` + a `bootPolicy` hint), the workspaces index
+  template, `boot-context.mjs`'s fallback, and — the sharp edge — `/nogra:create` still scaffolding
+  the dead directory and re-pointing hub configs at it. All retired; 0.7.6's "no longer scaffolded"
+  claim is now true on every path. New negative smokes assert init AND create-project never
+  scaffold or reference it. Sabotage-tested.
+- **Consolidator: archive-full before in-place rewrites.** The role contract now requires copying
+  the untouched original to `memory/archive/<name>-<date>.md` before trimming or merging into any
+  file that stays in the root — compression is never the only surviving copy. Smoke-asserted.
+- **Setup self-check truth-synced (grade catch).** The setup skill's root allow-list still named
+  only `CLAUDE.md`, `inbox/.gitkeep`, `projects/.gitkeep` — predating the two-way inbox (0.7.5) and
+  the bundled brain (0.7.6) — so a literal reading aborted every fresh setup. The rule is now
+  structural (`CLAUDE.md` plus paths under `inbox/`, `projects/`, `brain/` — nothing else at the
+  root) so it cannot drift when a lane gains a file, and the setup preview now names the full
+  package.
+- **README gate copy truth-synced (grade catch).** The hooks section still claimed match reviews
+  "do not send `permissionDecision: allow`" — stale since the 0.7.8/0.7.9 standing-GO ladder. All
+  three gate passages now state the shipped behavior: default = context + one extra ask, the
+  explicit `gate.autoApprove` opt-in is the only allow lane (class + scope + receipt), hard mode
+  can deny, and the gate narrows within Claude Code's permission model, never widens it.
+- **Honest failure messages (grade catches).** A corrupt `.nogra/config.json` now reports
+  "invalid local config (…)" in text status instead of the misleading "not initialized" (the JSON
+  payload already knew). A well-formed but unknown brief id gets a domain message ("no brief with
+  that id — save or promote one first") instead of a raw ENOENT. The README's Node.js 18+ promise
+  is now enforced in code with a clear stop instead of prose-only.
+
+- **The write-loop: bounded memory consolidation, Manager-in-the-middle.** The SessionStart
+  memory bound-check no longer only flags drift — when durable memory grows past what Claude
+  actually loads, it nudges an explicit, bounded consolidation the user approves. On GO the
+  Manager dispatches a new **`nogra:consolidator`** agent that promotes-before-pruning, *moves*
+  (never deletes) superseded notes to `memory/archive/`, and stays scope-fenced (never the
+  money-lane). Never silent, never a hoard — a theory of you, kept under the bound. Smoke-covered
+  (`smoke-consolidator.mjs`, `smoke-memory-load.mjs`), sabotage-tested.
+- **`/nogra:ground` — the re-anchor ritual.** A skill for when a session has drifted: read the
+  plan and state, verify claims against facts (never guess — an absence stated as fact is a lie),
+  put the hat on, match the operator's register, then hand the next decision back. Ground before
+  you propose; the projection is not the truth.
+
 ## 0.7.9 — 2026-07-06
 
 - **The authorize ladder is now a permanent smoke** (`smoke-gate-authorize-ladder.mjs`,

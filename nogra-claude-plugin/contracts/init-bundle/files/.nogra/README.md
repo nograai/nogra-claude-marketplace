@@ -7,6 +7,6 @@ runtime config file in this root; everything else lives in domain folders:
 - `briefs/`, `runs/`, `evidence/`, `receipts/`, `reports/` - workflow records.
 - `checkpoints/` - dated snapshots. `ledger/` - checkpoint-freshness facts.
 - `index/` - workspace map, risk intake, behavior score, expansion guidance.
-- `memory/local/` - advisory continuity. `memory/sync/` - sync metadata,
-  only when sync is enabled.
+- `memory/sync/` - sync metadata lane (durable memory lives in Claude's
+  native store, not under `.nogra/`).
 - `transport/` - dispatch artifacts.

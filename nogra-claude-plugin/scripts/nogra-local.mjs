@@ -10,6 +10,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { activeIntentPath, readActiveIntent } from "../runtime/local/active-intent.mjs";
 import { analyzeSessionQuality, sessionQualityLatestPath, writeSessionQualityReceipt } from "../runtime/local/session-quality.mjs";
 
+const NODE_MAJOR = Number.parseInt(process.versions.node.split(".")[0], 10);
+if (!Number.isFinite(NODE_MAJOR) || NODE_MAJOR < 18) {
+  console.error(`nogra-local: Node.js 18+ is required (found ${process.versions.node}). Upgrade Node and re-run; no files were written.`);
+  process.exit(1);
+}
+
 const BRIEF_SCHEMA = "nogra.brief.v1";
 const INIT_BUNDLE_SCHEMA = "nogra.init.bundle.v1";
 const WORKSPACE_CONFIG_RELEASE_VERSION = "v1.0.0";
@@ -1401,7 +1407,6 @@ const NOGRA_DOMAIN_DIRS = [
   "checkpoints",
   "ledger",
   "index",
-  "memory/local",
   "memory/sync",
   "memory/runtime",
   "transport"
@@ -1414,7 +1419,6 @@ function workspaceIndexEntry(values) {
     workspaceName: values.workspaceName,
     path: values.workspacePath,
     stateRoot: ".nogra/state",
-    memoryIndex: ".nogra/memory/local/MEMORY.md",
     lastSeenAt: values.generatedAt,
     lastCheckpointSummary: values.lastCheckpointSummary || "Nogra project created locally; no project work recorded yet.",
     source: values.source || "nogra-create"
@@ -1473,8 +1477,7 @@ function defaultManagerHubBootPolicy(existing = {}) {
       ? existing.hintSources
       : [
           ".nogra/index/workspaces.jsonl",
-          ".nogra/state/SESSION-CHECKPOINT.md",
-          ".nogra/memory/local/MEMORY.md"
+          ".nogra/state/SESSION-CHECKPOINT.md"
         ],
     never: Array.isArray(existing.never)
       ? existing.never
@@ -1508,8 +1511,7 @@ function ensureManagerHubConfig(root) {
       currentTasks: ".nogra/state/CURRENT-TASKS.md",
       decisions: ".nogra/state/DECISIONS.md",
       projectStructure: ".nogra/state/PROJECT-STRUCTURE.md",
-      workspaceIndex: ".nogra/index/workspaces.jsonl",
-      memoryIndex: ".nogra/memory/local/MEMORY.md"
+      workspaceIndex: ".nogra/index/workspaces.jsonl"
     }
   });
   next.bootPolicy = defaultManagerHubBootPolicy(
@@ -1811,6 +1813,14 @@ function draftPath(root, briefId) {
   return path.join(nograDir(root), "briefs", "drafts", `${safeBriefId(briefId)}.json`);
 }
 
+function readBriefDraft(root, briefId) {
+  const file = draftPath(root, briefId);
+  if (!fs.existsSync(file)) {
+    throw new Error(`no brief with id ${safeBriefId(briefId)} under .nogra/briefs/drafts/ — save or promote one first (/nogra:brief)`);
+  }
+  return readJson(file);
+}
+
 function promotedPath(root, briefId) {
   return path.join(nograDir(root), "briefs", `${safeBriefId(briefId)}.md`);
 }
@@ -1981,7 +1991,7 @@ function promoteBrief(root, options) {
   const config = readWorkspaceConfig(root) || {};
   let input = options.inputPayload || null;
   if (!input && options.briefId) {
-    input = readJson(draftPath(root, options.briefId));
+    input = readBriefDraft(root, options.briefId);
   }
   if (!input) throw new Error("brief-promote requires --brief-id or JSON input");
   if (options.briefId) {
@@ -2416,7 +2426,7 @@ function transportEvent(runId, type, extra = {}) {
 }
 
 function readDraftBrief(root, briefId) {
-  return readJson(draftPath(root, briefId));
+  return readBriefDraft(root, briefId);
 }
 
 function positiveIntegerOrNull(value) {
@@ -3201,7 +3211,11 @@ function printText(payload) {
   if (payload.schema === "nogra.local.status.v1") {
     console.log("Nogra local status");
     console.log(`- Plugin: ${payload.plugin.name} ${payload.plugin.version}`);
-    console.log(`- Workspace: ${payload.workspace.initialized ? payload.workspace.workspaceId || "local" : "not initialized"}`);
+    if (payload.workspace.mode === "invalid-config") {
+      console.log(`- Workspace: invalid local config${payload.workspace.error ? ` (${payload.workspace.error})` : ""} — fix .nogra/config.json; re-running setup will not repair broken JSON`);
+    } else {
+      console.log(`- Workspace: ${payload.workspace.initialized ? payload.workspace.workspaceId || "local" : "not initialized"}`);
+    }
     console.log(`- Control plane: ${payload.hostedMcpUsed ? "connected" : "local"}`);
     console.log(`- Bridge: ${payload.bridge?.status || "unknown"}${payload.bridge?.version ? ` ${payload.bridge.version}` : ""}`);
     console.log(`- Git: ${payload.git?.status || "unknown"}${Number.isFinite(Number(payload.git?.dirtyCount)) ? ` (${payload.git.dirtyCount})` : ""}`);

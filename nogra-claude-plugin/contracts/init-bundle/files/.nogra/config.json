@@ -41,7 +41,6 @@
     "receipts": ".nogra/receipts",
     "reports": ".nogra/reports",
     "checkpoints": ".nogra/checkpoints",
-    "memoryLocal": ".nogra/memory/local",
     "memorySync": ".nogra/memory/sync",
     "transport": ".nogra/transport",
     "workspaceIndex": ".nogra/index/workspaces.jsonl",
@@ -50,8 +49,6 @@
     "behaviorScore": ".nogra/index/behavior-score.md",
     "riskRegistry": ".nogra/index/risk-registry.md",
     "expansions": ".nogra/index/EXPANSIONS.md",
-    "memoryIndex": ".nogra/memory/local/MEMORY.md",
-    "memorySummaries": ".nogra/memory/local/summaries",
     "runtimeMetadata": ".nogra/memory/runtime"
   },
   "bootPolicy": {
@@ -65,8 +62,7 @@
     "maxRecentProjects": 5,
     "hintSources": [
       ".nogra/index/workspaces.jsonl",
-      ".nogra/state/SESSION-CHECKPOINT.md",
-      ".nogra/memory/local/MEMORY.md"
+      ".nogra/state/SESSION-CHECKPOINT.md"
     ],
     "never": [
       "load-full-memory-on-session-start",

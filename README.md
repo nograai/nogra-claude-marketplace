@@ -113,6 +113,8 @@ you to; plugin scope can be user, project or local.
 - `/nogra:authorize <boundary>`: record a standing GO for a risk boundary class
   on the running intent — starting a minimal intent (user-confirmed) when none is running.
 - `/nogra:verify`: check a claim or result against evidence.
+- `/nogra:ground`: re-anchor a drifted session, verify claims against facts,
+  then hand the next decision back.
 - `/nogra:status`: show plugin, workspace, ledger and recent run state.
 - `/nogra:settings`: inspect or update runtime/language settings.
 - `/nogra:update`: refresh local Nogra guidance.
