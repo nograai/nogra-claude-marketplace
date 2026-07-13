@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.8.1 — 2026-07-13
+
+The sync release: the hosted-brain edges ship as a whole — hooks, client and the human
+handle — so wiring a seat is one command, never a hand-built bridge. Proven the day it
+was cut: the first machine to move in this way was our own (nogra-house, 13/07, its own
+hooks pulling the brain on their very first run, 6/6 green).
+
+- **`/nogra:sync` — sync as a function, not a terminal incantation.** One skill, five
+  verbs, all backed by `scripts/sync-cli.mjs`: `status` (enabled, endpoint, token
+  PRESENCE, last pull/push, cursor, inbox depth, recent receipts — facts, not vibes),
+  `pull` / `push` on demand (fail-open, receipt per run, never re-run to "make it
+  green"), `bind <endpoint>` (wires a seat: enables sync, HTTPS-only with refusal,
+  preserves every foreign config key, leaves a receipt), and `off` (disable, keep the
+  endpoint). The binding contract: **the token never passes through the model** — not
+  as an argument, not in output, not in chat; status reports presence only, and storing
+  the value is the operator's own hand. If the last push says over-budget, the skill
+  says what it means (the home consolidates; remote surfaces only remember) instead of
+  hiding it. 22 offline smoke checks (`smoke-sync-cli.mjs`) incl. the negatives:
+  plain-http refusal, uninitialized workspace, token-silence under both env and file.
+
+- **The boot order, bound.** A new `boot-order` SessionStart hook: any workspace with existing
+  Nogra state now gets the ground order injected at every session start, regardless of which
+  model answers — checkpoint + tasks, then the ledger tail, then the pinned profile, then THE
+  STANDING AGREEMENT for whatever is about to be touched. Yesterday's agreement is law until the
+  operator changes it; a GO inherits the plan and never authorizes shortcuts around the drawing.
+  Silent on fresh workspaces, static and cache-safe, fail-open. (The covenant's own rule applied
+  to booting: a partner that boots right cannot be a session's mood.)
+
+- **Nogra Sync: the local edges (pull at session start, push at session end).** When
+  `.nogra/config.json` carries `sync.enabled` and a token exists (env `NOGRA_SYNC_TOKEN` or the
+  gitignored `.nogra/memory/sync/token`), the SessionStart hook pulls the hosted brain and
+  union-merges it into the native memory home BEFORE the profile pin reads it, and the SessionEnd
+  hook pushes the two bounded files back — only when they changed (never pay for unchanged
+  state). Remote turns land cursor-gated in `.nogra/memory/sync/inbox.jsonl` as raw material for
+  the next consolidation: remote surfaces may remember; only the home cleans up. OFF by default,
+  TLS-only endpoints, fail-open always (a broken network never breaks a session), and every run
+  — success, skip or failure — leaves a receipt in `.nogra/memory/sync/log.jsonl`. The client
+  mirrors the cloud's union-merge semantics exactly so both sides converge. 21 smoke checks over
+  a stub cloud (`smoke-sync-client.mjs`), including the negatives (bad token, offline, disabled,
+  plain-http refusal), sabotage-tested.
+
 ## 0.8.0 — 2026-07-10
 
 The memory release: the full Layer-1 loop (a bounded `USER.md` profile, pinned every session,

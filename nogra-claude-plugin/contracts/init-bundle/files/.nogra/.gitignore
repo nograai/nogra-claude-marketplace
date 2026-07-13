@@ -2,3 +2,4 @@ runtime/
 memory/runtime/
 transport/logs/
 *.tmp
+memory/sync/

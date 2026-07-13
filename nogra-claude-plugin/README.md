@@ -1,18 +1,18 @@
 # Nogra
 
-Give your Claude a memory, a conscience, and a second brain — local-first, on the
+Give your Claude a memory, a conscience, and a second brain: local-first, on the
 plan you already pay for.
 
 Nogra is a memory + discipline layer for Claude Code. It gives your workspace a
 bounded memory Claude keeps across sessions, a `brain/` knowledge vault for deep
 work, and a verify-before-done gate: on work with real scope or risk, you approve a
 short plan first, the approved work runs, then the result is checked against that
-plan — so you don't have to take "done" on trust when it matters. Everything it
+plan, so you don't have to take "done" on trust when it matters. Everything it
 knows is a file you own, and it never touches your credentials.
 
 ## Install
 
-**Requires Node.js 18+ on your PATH** — Nogra's local runtime is a small Node
+**Requires Node.js 18+ on your PATH.** Nogra's local runtime is a small Node
 script. If `node` is not available, setup stops and tells you instead of failing
 cryptically.
 
@@ -27,16 +27,16 @@ After installing this plugin:
 
 1. In Claude Code, go to the project folder where you want Nogra active.
 2. Restart or reopen Claude Code so the plugin loads.
-3. Run `/nogra:setup` — this creates the folder's local Nogra state
+3. Run `/nogra:setup`. This creates the folder's local Nogra state
    (`.nogra/config.json`, standard `.nogra/` domain folders, plus a root
    `CLAUDE.md` only if you don't already have one), a `projects/` folder, and
    the two-way `inbox/` desk: `screenshots/` and `drops/` (you → Nogra) and
-   `out/` (Nogra → you — receipts, drafts, "ready for GO").
+   `out/` (Nogra → you: receipts, drafts, "ready for GO").
 4. For an existing codebase, also run `/nogra:adapt` so Nogra reads the project
    and records its map under `.nogra/`.
 
 Setup also scaffolds the `brain/` deep-work knowledge vault (`raw/` → `wiki/` →
-`index.md`) — pull-first: loaded only when you deliberately bring it in for deep
+`index.md`). Pull-first: loaded only when you deliberately bring it in for deep
 work, never every session. `/nogra:brain-init` re-creates it if you ever remove it.
 
 You can also ask Claude:
@@ -60,19 +60,19 @@ to the workspace.
 
 ### Memory (bounded, native)
 
-Your durable memory is Claude Code's own Auto Memory — `~/.claude/projects/<slug>/memory/`
+Your durable memory is Claude Code's own Auto Memory: `~/.claude/projects/<slug>/memory/`
 (a `MEMORY.md` index plus typed topic files). Claude writes it and loads it every session
 natively; Nogra keeps no second copy. Nogra owns the **bound**: when the memory grows past
 what Claude actually loads (~the first 200 lines of the index), Nogra flags you at session
-start to consolidate — merge duplicates, prune stale — so what matters stays in view. A
+start to consolidate (merge duplicates, prune stale) so what matters stays in view. A
 theory of you, not an archive.
 
 It also pins: a `USER.md` in that same folder is the bounded who-you-are profile (≤1375
-chars) — Nogra loads it into context **every** session, so who you are is never one recall
+chars). Nogra loads it into context **every** session, so who you are is never one recall
 away. Claude maintains it as a distilled projection of the topic files; the consolidator
 creates it if missing and keeps it under the bound.
 
-It also learns: when you correct Claude — or it catches its own mistake — the lesson goes in
+It also learns: when you correct Claude, or it catches its own mistake, the lesson goes in
 as a one-line rule, so it never repeats. Bounded, so lessons consolidate instead of piling up
 forever. Claude does the remembering; Nogra owns the bound.
 
@@ -88,9 +88,9 @@ Pull-first does not mean no hooks ever run. When the plugin is enabled in an
 initialized workspace, Claude Code may run Nogra's local lifecycle and
 convergence hooks at session or permanent-risk boundaries. Those hooks read and
 write local `.nogra/` state and stay silent for ordinary work. They narrow
-within Claude Code's permission model — asking one extra time at risk
+within Claude Code's permission model: asking one extra time at risk
 boundaries, and approving only receipt-matched calls under the explicit
-`gate.autoApprove` opt-in — and never widen it.
+`gate.autoApprove` opt-in. They never widen it.
 
 For support, contact `support@nogra.ai`.
 
@@ -225,7 +225,7 @@ what you want to do next.
 
 The marketplace publishes versioned plugin packages. Claude Code caches the
 marketplace catalog when the marketplace is added, so refresh the marketplace
-before updating the plugin — otherwise the update serves the cached snapshot:
+before updating the plugin; otherwise the update serves the cached snapshot:
 
 ```bash
 claude plugin marketplace update <marketplace-name>
@@ -259,6 +259,9 @@ preserves or merges existing Nogra files according to the bundled write policy.
 - `/nogra:watch`: show recent local hook events from
   `.nogra/runtime/live-hooks.log`; live follow is opt-in via Claude Code
   Monitor or a manual tail command.
+- `/nogra:sync`: show sync state with receipts, pull/push the hosted brain on
+  demand, `bind <endpoint>` to wire this seat, or turn sync off. The token
+  never passes through the model; status reports presence only.
 - `/nogra:update`: pull current Nogra contract/guidance on demand.
 - `/nogra:help`: explain Nogra and choose the right Nogra flow.
 
@@ -293,6 +296,7 @@ intent to the matching skill:
 - Nogra ledger/state, checkpoint, version or recent records -> `/nogra:status`
 - live hook or transcript activity visibility -> `/nogra:watch`
 - runtime/language configuration -> `/nogra:settings`
+- sync state, pull/push the hosted brain, wire a seat -> `/nogra:sync`
 - guidance refresh -> `/nogra:update`
 - help choosing a flow -> `/nogra:help`
 
@@ -310,7 +314,7 @@ clearly selects an indexed project from a workspace hub. `PreToolUse` is a
 narrow deterministic git/action convergence gate: it asks when a permanent-risk
 tool call has no current dispatch receipt, and it may add a visible Nogra
 match review for receipt-matched actions or conservative read-only public
-fetches. By default the gate only adds context and asks — it never approves on
+fetches. By default the gate only adds context and asks; it never approves on
 its own. With the explicit `gate.autoApprove` opt-in, a receipt-matched call
 inside an authorized boundary class and scope is allowed through
 (`permissionDecision: allow`), and hard mode can deny out-of-contract calls;
