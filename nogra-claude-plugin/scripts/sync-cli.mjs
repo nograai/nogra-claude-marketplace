@@ -18,7 +18,9 @@ import { join } from "node:path";
 import { syncPull, syncPush, syncDir } from "../runtime/local/sync-client.mjs";
 
 const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-const [verb = "status", arg] = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const homeFlag = rawArgs.includes("--home");
+const [verb = "status", arg] = rawArgs.filter((a) => a !== "--home");
 const configPath = join(root, ".nogra", "config.json");
 const dir = syncDir(root);
 
@@ -101,6 +103,10 @@ async function main() {
     const state = readJson(join(dir, "state.json"), {});
     console.log(`enabled:  ${sync && sync.enabled === true ? "yes" : "no (off by default)"}`);
     console.log(`endpoint: ${sync && sync.endpoint ? sync.endpoint : "(not set)"}`);
+    let seatMode = "";
+    try { seatMode = readFileSync(join(dir, "mode"), "utf8").trim(); } catch {}
+    const effectiveMode = seatMode ? seatMode : (sync && sync.mode === "replace" ? "replace" : "union");
+    console.log(`mode:     ${effectiveMode === "replace" ? "home (replace — this seat's push hands the cloud its consolidated state)" : "remote (union — append-safe)"}${seatMode ? " · seat file" : sync && sync.mode ? " · LEGACY config (move to seat file: bind --home)" : ""}`);
     console.log(`token:    ${tokenPresence()}`);
     console.log(`lastPull: ${state.lastPullAt || "never"}${typeof state.lastCursor === "number" ? ` · cursor ${state.lastCursor}` : ""}`);
     console.log(`lastPush: ${state.lastPushAt || "never"}`);
@@ -143,10 +149,12 @@ async function main() {
       return 1;
     }
     config.sync = { ...(config.sync || {}), enabled: true, endpoint };
+    delete config.sync.mode; // mode is seat-local (gitignored seat file), never in the shared config
     writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
     mkdirSync(dir, { recursive: true });
-    receipt({ op: "bind", ok: true, endpoint });
-    console.log(`bind: sync enabled → ${endpoint}`);
+    if (homeFlag) writeFileSync(join(dir, "mode"), "replace\n");
+    receipt({ op: "bind", ok: true, endpoint, ...(homeFlag ? { mode: "replace" } : {}) });
+    console.log(`bind: sync enabled → ${endpoint}${homeFlag ? " [HOME seat: replace mode via seat file — requires a memory:replace token]" : ""}`);
     const presence = tokenPresence();
     if (presence === "MISSING") {
       console.log(

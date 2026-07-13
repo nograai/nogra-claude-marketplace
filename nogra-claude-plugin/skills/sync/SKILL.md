@@ -49,11 +49,18 @@ turns landed, skipped:unchanged, or the failure + "session continues on local
 state"). Both are fail-open and leave their own receipts — never re-run to "make it
 green"; report what the receipt says.
 
-### `/nogra:sync bind <endpoint>`
+### `/nogra:sync bind <endpoint>` (add `--home` for the home seat)
 
 Wires THIS seat to a sync endpoint: enables sync in `.nogra/config.json`, creates
 the sync directory, and reports token presence. HTTPS only (loopback http allowed
 for tests) — the CLI refuses anything else; do not work around a refusal.
+
+`--home` marks this seat as the HOME: its push uses the replace verb (the cloud is
+handed the consolidated state verbatim instead of union-merged), which is what lets
+a consolidation actually stick — union-only clouds never forget. Exactly ONE seat
+per user is home, and it needs a token minted with the `memory:replace` scope; the
+server refuses replace on append-only tokens with an honest 403 receipt. All other
+seats stay union (remote surfaces may remember; only the home cleans up).
 
 If the token is missing, relay the CLI's instructions and stop there: storing the
 token is the operator's own hand (their shell profile, or the gitignored token

@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.8.2 — 2026-07-13
+
+The home release: one seat owns consolidation, and the cloud finally learns to forget.
+Both changes were proven in production the day they were built — the first replace-push
+landed 11:05:54Z and made a consolidation durable for the first time, and the seat-file
+fix closed a real incident where "home" traveled to a second machine via git.
+
+- **The home verb: replace.** One seat per user — the HOME, where consolidation lives — may
+  now hand the cloud its consolidated state verbatim instead of union-merging. Union-only
+  clouds never forget (proven 13/07: a consolidation removed three resurrected index lines,
+  one pointing at retired infrastructure — and the next pull would have brought them all
+  back). Client: `sync.mode: "replace"` in config routes the session-end push to
+  `/sync/replace` (no turns ride along); `bind <endpoint> --home` sets it; status names the
+  seat (`home (replace)` vs `remote (union)`); re-bind without the flag never demotes a home.
+  Server-side the verb is scope-gated (`memory:replace`, minted with `--home`, never on an
+  append token) with a wipe-guard: replacing non-empty state with empty is refused whole,
+  with a receipt. Memory bound raised 2200 → 3000 (operator decision, ledger #123 — 2200
+  left 5 chars of headroom after a clean consolidation). Smokes: +11 checks across
+  client/cli (27+27 green), 9 new server tests (49 green).
+
+- **The seat file: "home" can never travel via git.** Learned live the same day it shipped:
+  the home mode briefly lived in `.nogra/config.json`, which is committed — so it traveled
+  by git to a second machine and marked THAT seat home too (only the `memory:replace` scope
+  fence caught it). The mode now lives in `.nogra/memory/sync/mode` — a gitignored SEAT FILE
+  — and where a seat file exists it always wins over any pulled config (tested invariant).
+  A seat with NO seat file still honors a legacy config-mode — but the server-side
+  `memory:replace` scope fence refuses that push without a home token (403, fail-open
+  receipt), and every `bind` strips the mode from the shared config, so the legacy path
+  drains itself. `bind --home` writes the seat file and keeps the shared config mode-free;
+  status names the effective mode and its source. Smokes: cli 28, client 29, all green.
+
 ## 0.8.1 — 2026-07-13
 
 The sync release: the hosted-brain edges ship as a whole — hooks, client and the human
