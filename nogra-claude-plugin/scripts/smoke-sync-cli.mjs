@@ -97,6 +97,21 @@ check("pull while disabled reports, exit 0", r.code === 0 && /disabled|no change
 r = run(root, ["push"]);
 check("push while disabled reports skipped", r.code === 0 && /skipped \(disabled\)/.test(r.out));
 
+// 9) the home seat: bind --home writes the SEAT FILE (never the shared config), status names
+//    it, re-bind preserves it. The config must stay mode-free — it travels to every seat via git.
+r = run(root, ["bind", "https://sync.example.com", "--home"]);
+check("bind --home ok and announces the home seat", r.code === 0 && /HOME seat: replace mode/.test(r.out));
+cfg = JSON.parse(readFileSync(join(root, ".nogra", "config.json"), "utf8"));
+const seatFile = join(root, ".nogra", "memory", "sync", "mode");
+check("bind --home writes the seat file", existsSync(seatFile) && readFileSync(seatFile, "utf8").trim() === "replace");
+check("shared config NEVER carries mode (it travels via git)", !("mode" in cfg.sync) && cfg.sync.enabled === true);
+check("bind --home receipt carries the mode", /"mode":"replace"/.test(readFileSync(logPath, "utf8")));
+r = run(root, ["status"]);
+check("status names the home seat via seat file", /mode: {4,5}home \(replace/.test(r.out) && /seat file/.test(r.out));
+r = run(root, ["bind", "https://sync.example.com"]);
+cfg = JSON.parse(readFileSync(join(root, ".nogra", "config.json"), "utf8"));
+check("re-bind without --home preserves the seat file (no accidental demotion)", readFileSync(seatFile, "utf8").trim() === "replace" && !("mode" in cfg.sync));
+
 rmSync(root, { recursive: true, force: true });
 console.log(`\nsmoke-sync-cli: ${pass} ok, ${fail} failed`);
 process.exit(fail ? 1 : 0);

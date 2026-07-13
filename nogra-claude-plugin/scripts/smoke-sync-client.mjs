@@ -27,7 +27,7 @@ function freshDirs() {
 }
 
 // ---- stub cloud ------------------------------------------------------------
-const state = { memory: "- cloud line one\n", user: "cloud user fact\n", turns: [{ rowid: 1, ts: "t", role: "user", text: "hello from chat" }], cursor: 1, hits: [], pushes: [] };
+const state = { memory: "- cloud line one\n", user: "cloud user fact\n", turns: [{ rowid: 1, ts: "t", role: "user", text: "hello from chat" }], cursor: 1, hits: [], pushes: [], replaces: [] };
 const server = createServer((req, res) => {
   state.hits.push(req.url);
   const auth = req.headers.authorization || "";
@@ -46,6 +46,16 @@ const server = createServer((req, res) => {
       state.pushes.push(JSON.parse(body));
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ imported_turns: 0, memory_chars: 10, user_chars: 5, over_budget: ["MEMORY.md"] }));
+    });
+    return;
+  }
+  if (req.url === "/sync/replace") {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      state.replaces.push(JSON.parse(body));
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ changed: true, memory_chars: 20, user_chars: 0, imported_turns: 0, over_budget: [] }));
     });
     return;
   }
@@ -162,6 +172,46 @@ const good = { endpoint, token: "good-token" };
   ok("well-formed pull still fine while malformed is covered by unit merge below", typeof note === "string");
   ok("unionMerge mirrors the worker: dedupes trimmed lines, keeps order, trailing newline",
     unionMerge("- a\n- b\n", "- b\n- c\n") === "- a\n- b\n\n- c\n" && unionMerge("", "") === "");
+}
+
+// 10. the home verb: mode "replace" routes to /sync/replace, no turns ride along
+{
+  const d = freshDirs();
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: true, endpoint, mode: "replace" } }));
+  writeFileSync(join(d.base, "token"), "good-token");
+  const ctx = resolveSyncContext(d.base, { configPath: join(d.base, "config.json"), tokenPath: join(d.base, "token") });
+  ok("config mode:replace resolves to a home-seat context", ctx && ctx.mode === "replace");
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- consolidated truth\n");
+  const before = state.hits.length;
+  const res = await syncPush(d.base, { ctx, memoryDir: d.memoryDir, syncDir: d.sync });
+  ok("home push hits /sync/replace, never /sync/push", state.hits.slice(before).includes("/sync/replace") && !state.hits.slice(before).includes("/sync/push"));
+  ok("replace body carries the two files and NO turns", state.replaces.length === 1 && state.replaces[0].memory === "- consolidated truth\n" && !("turns" in state.replaces[0]));
+  ok("home push reports its mode in the result", res.pushed === true && res.mode === "replace");
+  const log = readFileSync(join(d.sync, "log.jsonl"), "utf8");
+  ok("home push receipt names the mode", log.includes('"mode":"replace"') || log.includes('"mode": "replace"'));
+}
+
+// 11. default mode stays union — no accidental homes
+{
+  const d = freshDirs();
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: true, endpoint } }));
+  writeFileSync(join(d.base, "token"), "good-token");
+  const ctx = resolveSyncContext(d.base, { configPath: join(d.base, "config.json"), tokenPath: join(d.base, "token") });
+  ok("no mode in config resolves to union (off-by-default for the strong verb)", ctx && ctx.mode === "union");
+}
+
+// 12. the seat file is canonical: it grants home without config, and DEMOTES a legacy config-home
+{
+  const d = freshDirs();
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: true, endpoint } }));
+  writeFileSync(join(d.base, "token"), "good-token");
+  writeFileSync(join(d.base, "mode"), "replace\n");
+  let ctx = resolveSyncContext(d.base, { configPath: join(d.base, "config.json"), tokenPath: join(d.base, "token"), modePath: join(d.base, "mode") });
+  ok("seat file alone marks the home seat (config stays clean for git)", ctx && ctx.mode === "replace");
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: true, endpoint, mode: "replace" } }));
+  writeFileSync(join(d.base, "mode"), "union\n");
+  ctx = resolveSyncContext(d.base, { configPath: join(d.base, "config.json"), tokenPath: join(d.base, "token"), modePath: join(d.base, "mode") });
+  ok("seat file OVERRIDES a legacy config mode (a pulled config can never make a seat home)", ctx && ctx.mode === "union");
 }
 
 server.close();
