@@ -3,7 +3,7 @@
 // freshly merged home. OFF unless .nogra/config.json has sync.enabled + a token exists.
 // Fail-open: any error emits a one-line note and never blocks the session.
 
-import { syncPull } from "../runtime/local/sync-client.mjs";
+import { syncPull, syncNudge } from "../runtime/local/sync-client.mjs";
 
 function emit(context) {
   process.stdout.write(
@@ -15,8 +15,15 @@ function emit(context) {
 
 try {
   const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  // Knock BEFORE the pull: "diff" must mean lines a previous session never pushed,
+  // not the noise of the merge that is about to happen. Facts only — the Manager
+  // turns them into the operator's register.
+  let nudge = "";
+  try {
+    nudge = syncNudge(root);
+  } catch {}
   const note = await syncPull(root);
-  emit(note);
+  emit([nudge, note].filter(Boolean).join("\n"));
 } catch {
   emit(""); // never break session start
 }

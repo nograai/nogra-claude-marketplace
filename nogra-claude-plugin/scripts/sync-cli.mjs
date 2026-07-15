@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Nogra Sync CLI — the human handle on the sync edges (backs the /nogra:sync skill).
 //
-// Verbs: status (default) · pull · push · bind <endpoint> · off
+// Verbs: status (default) · run · pull · push · bind <endpoint> · off
 //
 // Contract (binding):
 // - The token NEVER passes through this tool: not as an argument, not in output. Status
@@ -121,6 +121,22 @@ async function main() {
     return 0;
   }
 
+  if (verb === "run") {
+    // The single door: pull → push in ONE call — the function you CALL. Same engine as the
+    // hooks and the tick; one aggregate receipt on top of the client's own.
+    const note = await syncPull(root);
+    console.log(note || "pull: no changes (or sync disabled — run status)");
+    const res = await syncPush(root);
+    if (res.skipped) console.log(`push: skipped (${res.skipped})`);
+    else if (res.error) console.log(`push: FAILED — ${res.error} (receipt logged; session state untouched)`);
+    else
+      console.log(
+        `push: ok${res.overBudget && res.overBudget.length ? ` · OVER BUDGET: ${res.overBudget.join(" + ")} — the home should consolidate` : ""}`,
+      );
+    receipt({ op: "run", ok: !res.error, push: res.skipped ? `skipped:${res.skipped}` : res.error ? "FAIL" : "ok" });
+    return res.error ? 1 : 0;
+  }
+
   if (verb === "pull") {
     const note = await syncPull(root);
     console.log(note || "pull: no changes (or sync disabled — run status)");
@@ -152,8 +168,19 @@ async function main() {
     delete config.sync.mode; // mode is seat-local (gitignored seat file), never in the shared config
     writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
     mkdirSync(dir, { recursive: true });
+    // The law "home never travels via git": token and seat file live under .nogra/memory/sync/,
+    // so bind GUARANTEES the ignore entry instead of assuming the init bundle wrote it
+    // (retrofit for workspaces initialized before sync existed).
+    const giPath = join(root, ".nogra", ".gitignore");
+    let gi = "";
+    try { gi = readFileSync(giPath, "utf8"); } catch {}
+    let gitignored = false;
+    if (!gi.split("\n").some((l) => l.trim() === "memory/sync/")) {
+      writeFileSync(giPath, gi + (gi && !gi.endsWith("\n") ? "\n" : "") + "memory/sync/\n");
+      gitignored = true;
+    }
     if (homeFlag) writeFileSync(join(dir, "mode"), "replace\n");
-    receipt({ op: "bind", ok: true, endpoint, ...(homeFlag ? { mode: "replace" } : {}) });
+    receipt({ op: "bind", ok: true, endpoint, ...(gitignored ? { gitignored: true } : {}), ...(homeFlag ? { mode: "replace" } : {}) });
     console.log(`bind: sync enabled → ${endpoint}${homeFlag ? " [HOME seat: replace mode via seat file — requires a memory:replace token]" : ""}`);
     const presence = tokenPresence();
     if (presence === "MISSING") {
@@ -180,7 +207,7 @@ async function main() {
     return 0;
   }
 
-  console.error(`unknown verb: ${verb} — use status | pull | push | bind <endpoint> | off`);
+  console.error(`unknown verb: ${verb} — use status | run | pull | push | bind <endpoint> | off`);
   return 1;
 }
 

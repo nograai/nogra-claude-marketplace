@@ -68,6 +68,16 @@ check("config sync block written", cfg.sync && cfg.sync.enabled === true && cfg.
 check("foreign config keys preserved", cfg.other && cfg.other.keep === true && cfg.workspaceId === "smoke");
 const logPath = join(root, ".nogra", "memory", "sync", "log.jsonl");
 check("bind left a receipt", existsSync(logPath) && /"op":"bind"/.test(readFileSync(logPath, "utf8")));
+const giPath = join(root, ".nogra", ".gitignore");
+check(
+  "bind guarantees the memory/sync/ gitignore entry",
+  existsSync(giPath) && readFileSync(giPath, "utf8").split("\n").some((l) => l.trim() === "memory/sync/"),
+);
+r = run(root, ["bind", "https://sync.example.com/"]);
+check(
+  "re-bind never duplicates the gitignore entry",
+  readFileSync(giPath, "utf8").split("\n").filter((l) => l.trim() === "memory/sync/").length === 1,
+);
 
 // 5) status after bind: enabled + endpoint + receipt visible
 r = run(root, ["status"]);
@@ -111,6 +121,14 @@ check("status names the home seat via seat file", /mode: {4,5}home \(replace/.te
 r = run(root, ["bind", "https://sync.example.com"]);
 cfg = JSON.parse(readFileSync(join(root, ".nogra", "config.json"), "utf8"));
 check("re-bind without --home preserves the seat file (no accidental demotion)", readFileSync(seatFile, "utf8").trim() === "replace" && !("mode" in cfg.sync));
+
+// 10) run — the single door is honest when disabled, and the usage names it
+const runRoot = mkdtempSync(join(tmpdir(), "nogra-sync-cli-run-"));
+r = run(runRoot, ["run"]);
+check("run on a disabled workspace: honest no-op, exit 0", r.code === 0 && /skipped \(disabled\)/.test(r.out));
+r = run(runRoot, ["definitely-bogus-verb"]);
+check("usage names the run verb", r.code === 1 && /status \| run \| pull \| push/.test(r.out));
+rmSync(runRoot, { recursive: true, force: true });
 
 rmSync(root, { recursive: true, force: true });
 console.log(`\nsmoke-sync-cli: ${pass} ok, ${fail} failed`);
