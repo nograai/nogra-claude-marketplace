@@ -9,7 +9,7 @@ import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { unionMerge, resolveSyncContext, syncPull, syncPush } from "../runtime/local/sync-client.mjs";
+import { unionMerge, resolveSyncContext, syncPull, syncPush, syncTick } from "../runtime/local/sync-client.mjs";
 
 let passed = 0;
 function ok(name, cond) {
@@ -36,6 +36,11 @@ const server = createServer((req, res) => {
     return res.end(JSON.stringify({ error: "unauthorized" }));
   }
   if (req.url === "/sync/pull") {
+    if (state.malformNext) {
+      state.malformNext = false; // one-shot: the NEXT pull gets garbage, everything after heals
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end("this is not json");
+    }
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify({ memory: state.memory, user: state.user, turns: state.turns, cursor: state.cursor }));
   }
@@ -163,13 +168,15 @@ const good = { endpoint, token: "good-token" };
   ok("offline cloud fails open on push", typeof res.error === "string");
 }
 
-// 9. malformed reply fails open
+// 9. malformed reply fails open — the stub REALLY serves garbage for one pull
 {
   const d = freshDirs();
-  const bad = { endpoint: endpoint + "/sync/malformed?", token: "good-token" };
-  // point pull at a path that returns non-JSON by abusing the endpoint join
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- local stays\n");
+  state.malformNext = true;
   const note = await syncPull(d.base, { ctx: { endpoint, token: "good-token" }, memoryDir: d.memoryDir, syncDir: d.sync });
-  ok("well-formed pull still fine while malformed is covered by unit merge below", typeof note === "string");
+  ok("malformed reply fails open: note admits the malformed reply", note.includes("failed") && note.includes("malformed reply"));
+  ok("malformed reply never mutates local files", readFileSync(join(d.memoryDir, "MEMORY.md"), "utf8") === "- local stays\n");
+  ok("malformed reply leaves an error receipt", /"op":"pull","ok":false/.test(readFileSync(join(d.sync, "log.jsonl"), "utf8")));
   ok("unionMerge mirrors the worker: dedupes trimmed lines, keeps order, trailing newline",
     unionMerge("- a\n- b\n", "- b\n- c\n") === "- a\n- b\n\n- c\n" && unionMerge("", "") === "");
 }
@@ -212,6 +219,65 @@ const good = { endpoint, token: "good-token" };
   writeFileSync(join(d.base, "mode"), "union\n");
   ctx = resolveSyncContext(d.base, { configPath: join(d.base, "config.json"), tokenPath: join(d.base, "token"), modePath: join(d.base, "mode") });
   ok("seat file OVERRIDES a legacy config mode (a pulled config can never make a seat home)", ctx && ctx.mode === "union");
+}
+
+// 13. the RAMMEN tick — debounced, write-beats-debounce, converged is cheap, receipts on all
+{
+  const d = freshDirs();
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: true, endpoint } }));
+  writeFileSync(join(d.base, "token"), "good-token");
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- local truth\n");
+  const ov = { configPath: join(d.base, "config.json"), tokenPath: join(d.base, "token"), syncDir: d.sync, memoryDir: d.memoryDir, minIntervalMs: 60_000 };
+  let r = await syncTick(d.base, ov);
+  ok("first tick fires (fresh files beat the debounce — push-on-write)", r.ticked === true && r.trigger === "write");
+  r = await syncTick(d.base, ov);
+  ok("converged re-tick is cheap (pull merged at tick 1 → push skips unchanged)", r.ticked === true && r.push && r.push.skipped === "unchanged");
+  r = await syncTick(d.base, ov);
+  ok("third tick debounces (no writes since stamp, interval not passed)", r.skipped === "debounced");
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), readFileSync(join(d.memoryDir, "MEMORY.md"), "utf8") + "- a brand new line\n");
+  r = await syncTick(d.base, ov);
+  ok("a bounded-file write beats the debounce (push-on-write, trigger named)", r.ticked === true && r.trigger === "write" && r.push && r.push.pushed === true);
+  const log = readFileSync(join(d.sync, "log.jsonl"), "utf8");
+  ok("the tick leaves its own receipt (op:tick, trigger named)", log.includes('"op":"tick"') && log.includes('"trigger":"write"'));
+  const disabled = await syncTick(d.base, { ...ov, configPath: join(d.base, "missing.json") });
+  ok("tick is off-by-default (no sync config → skipped:disabled)", disabled.skipped === "disabled");
+}
+
+// 14. the knock-knock — facts only, no noise, silent when off/converged
+{
+  const d = freshDirs();
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: true, endpoint } }));
+  writeFileSync(join(d.base, "token"), "good-token");
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- converged truth\n");
+  const ov = { configPath: join(d.base, "config.json"), tokenPath: join(d.base, "token"), syncDir: d.sync, memoryDir: d.memoryDir };
+  const { syncNudge } = await import("../runtime/local/sync-client.mjs");
+  await syncPush(d.base, ov); // converge the seat first
+  ok("converged seat gets NO knock (silence is the default)", syncNudge(d.base, ov) === "");
+  const behindKnock = syncNudge(d.base, { ...ov, readTreeState: () => ({ upstream: "origin/main", behind: 3, ahead: 0 }) });
+  ok("a tree BEHIND its upstream earns the knock (stale ground named, pull offered)",
+    behindKnock.includes("BEHIND origin/main") && behindKnock.includes("git pull"));
+  const aheadKnock = syncNudge(d.base, { ...ov, readTreeState: () => ({ upstream: "origin/main", behind: 0, ahead: 2 }) });
+  ok("a tree AHEAD earns the knock — and git hands stay the operator's",
+    aheadKnock.includes("AHEAD") && aheadKnock.includes("operator's call") && aheadKnock.includes("Never pull or push git yourself"));
+  ok("a converged tree stays silent", syncNudge(d.base, { ...ov, readTreeState: () => ({ upstream: "origin/main", behind: 0, ahead: 0 }) }) === "");
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- converged truth\n- a line the cloud never saw\n");
+  const diffKnock = syncNudge(d.base, ov);
+  ok("unpushed local changes earn the knock (brain says diff)", diffKnock.includes("nogra-sync-nudge") && diffKnock.includes("UNPUSHED"));
+  ok("the knock hands the door to the OPERATOR (register + call are theirs)", diffKnock.includes("/nogra:sync run") && diffKnock.includes("their call"));
+  await syncPush(d.base, ov); // converge again
+  // change memory FIRST — otherwise the hash-gate skips before the network can fail
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- converged truth\n- a line the cloud never saw\n- and one more\n");
+  const res = await syncPush(d.base, { ...ov, ctx: { endpoint: "http://127.0.0.1:1", token: "good-token" } });
+  ok("(setup) offline push failed and left a FAIL receipt", typeof res.error === "string");
+  const failKnock = syncNudge(d.base, ov);
+  ok("a failing last receipt earns the knock with the op named", failKnock.includes("FAILED") && failKnock.includes("push"));
+  const staleKnock = syncNudge(d.base, { ...ov, now: () => Date.now() + 30 * 60 * 60 * 1000 });
+  ok("a long-silent seat earns the knock with the hours named", staleKnock.includes("not synced for"));
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: true, endpoint } }));
+  const tokenless = syncNudge(d.base, { ...ov, tokenPath: join(d.base, "no-such-token") });
+  ok("bound-but-tokenless seat earns the wiring knock", tokenless.includes("token is MISSING"));
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: false, endpoint } }));
+  ok("sync OFF stays silent (off is a choice, not a fault)", syncNudge(d.base, ov) === "");
 }
 
 server.close();

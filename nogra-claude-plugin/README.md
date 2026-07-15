@@ -259,9 +259,10 @@ preserves or merges existing Nogra files according to the bundled write policy.
 - `/nogra:watch`: show recent local hook events from
   `.nogra/runtime/live-hooks.log`; live follow is opt-in via Claude Code
   Monitor or a manual tail command.
-- `/nogra:sync`: show sync state with receipts, pull/push the hosted brain on
-  demand, `bind <endpoint>` to wire this seat, or turn sync off. The token
-  never passes through the model; status reports presence only.
+- `/nogra:sync`: show sync state with receipts, `run` the full pull→push cycle
+  in one call, pull/push the hosted brain on demand, `bind <endpoint>` to wire
+  this seat, or turn sync off. The token never passes through the model; status
+  reports presence only.
 - `/nogra:update`: pull current Nogra contract/guidance on demand.
 - `/nogra:help`: explain Nogra and choose the right Nogra flow.
 
@@ -296,7 +297,7 @@ intent to the matching skill:
 - Nogra ledger/state, checkpoint, version or recent records -> `/nogra:status`
 - live hook or transcript activity visibility -> `/nogra:watch`
 - runtime/language configuration -> `/nogra:settings`
-- sync state, pull/push the hosted brain, wire a seat -> `/nogra:sync`
+- sync state, sync now (run), pull/push the hosted brain, wire a seat -> `/nogra:sync`
 - guidance refresh -> `/nogra:update`
 - help choosing a flow -> `/nogra:help`
 

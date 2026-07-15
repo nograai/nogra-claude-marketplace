@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.8.3 — 2026-07-14
+
+The pulse release: sync stops being an act and becomes a heartbeat — push/pull is
+never a manual step again.
+
+- **The tick — RAMMEN's third trigger, live.** `syncTick` runs mid-session on
+  `PostToolBatch` (async, zero added latency): debounced to one tick per 20 minutes,
+  except a write to either bounded file beats the debounce (push-on-write). The stamp
+  is written BEFORE the network calls, so a failing endpoint debounces too — no hot
+  loop, and every tick leaves its own receipt (`op:"tick"`, trigger named).
+- **Write-detection is clock-skew-proof (grade catch).** The tick's fast-path never
+  compares file mtime to the wall clock — they are different clocks and they skew
+  (measured live: tmpfs mtime ~4ms behind `Date.now()`, which silently swallowed
+  push-on-write). Each tick remembers the bounded files' fingerprints (mtime + size);
+  a write is any fingerprint not seen before.
+- **The run verb — the one door.** `sync-cli.mjs run` does pull→push in a single
+  call with an aggregate receipt (`op:"run"`), honest exit (1 on push failure). The
+  same engine the automatic edges and the tick use; "sync now" is now one word.
+- **bind guarantees the gitignore law.** `bind` retrofits `memory/sync/` into
+  `.nogra/.gitignore` when missing (idempotent, receipted) — the seat file and token
+  can never travel via git, even on workspaces initialized before sync existed.
+- **The malformed-reply smoke is real now (grade catch).** The stub cloud actually
+  serves garbage for one pull; the smoke proves fail-open: note admits the failure,
+  local files untouched, error receipt logged. (The old check was a tautology.)
+- **The knock-knock (operator's design, verdict "DONE" on the spot) — and it watches
+  the WHOLE workspace.** Sync is one system with two legs: the BRAIN rides the hosted
+  clock (automatic — pull/push/tick), the TREE rides git (curated commits, operator-
+  gated). When either leg couldn't keep its promise — unpushed memory, a failing
+  receipt, a bound-but-tokenless seat, a silent seat, **or a tree behind/ahead of its
+  upstream (as of the last fetch)** — session start gets ONE honest fact-line
+  (`<nogra-sync-nudge>`) offering the matching move: `/nogra:sync run`, a git pull, or
+  a curated push that stays the operator's call. The hook emits facts; the Manager
+  delivers them in the operator's own register. Nothing here ever pulls or pushes git
+  by itself. Knocks BEFORE the pull so "diff" means truth, not fresh-merge noise.
+  Silent when sync is off (off is a choice, not a fault) and when everything converged.
+- **Ground reads the drawings first (operator's correction, made law).** The ground
+  skill gains a step: before proposing on a domain, list and read the workspace's
+  canonical drawings for it (a `tegninger/`/`drawings/` registry, or one named in the
+  map) — the operator may already HAVE the thing you are about to invent. And a rule:
+  a wall is a STOP, never a detour — an unreachable source (403, missing file) means
+  stop, say so, hunt local copies; never substitute inference for the drawing.
+- **Docs truth-synced.** The sync skill and README now name `run`; skill description
+  fits the trigger-metadata bound.
+
 ## 0.8.2 — 2026-07-13
 
 The home release: one seat owns consolidation, and the cloud finally learns to forget.

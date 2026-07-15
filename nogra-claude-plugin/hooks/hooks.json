@@ -146,6 +146,11 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observe-event.mjs\"",
             "async": true
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sync-tick.mjs\"",
+            "async": true
           }
         ]
       }

@@ -1,6 +1,6 @@
 ---
 name: nogra-sync
-description: Show, run or configure Nogra Sync (the hosted-brain edges) — status with receipts, pull/push on demand, bind a seat to an endpoint, or turn sync off. Use only when the user runs /nogra:sync or explicitly asks about Nogra sync state, pulling/pushing the brain, or connecting this machine to their sync endpoint.
+description: Show, run or configure Nogra Sync (the hosted-brain edges) — status with receipts, run the full pull→push cycle, pull/push on demand, bind a seat, or turn sync off. Use only when the user runs /nogra:sync or explicitly asks about Nogra sync state, syncing now, pulling/pushing the brain, or connecting this machine to their sync endpoint.
 ---
 
 # Nogra Sync
@@ -41,6 +41,14 @@ If the last push receipt carries `OVER-BUDGET`, say what it means: the bounded
 files exceed the cloud bound, and the HOME seat should consolidate (remote surfaces
 may remember; only the home cleans up). Suggest the consolidation flow; do not
 start it from here.
+
+### `/nogra:sync run`
+
+The never-manual door: ONE call that runs the full cycle — pull, then push — and
+leaves an aggregate receipt (`op:"run"`) on top of the edges' own. This is the same
+engine the automatic edges and the mid-session tick use, and the verb to reach for
+when someone says "sync now". Exit is honest: 1 when the push failed. Relay both
+result lines faithfully, exactly as with pull/push below.
 
 ### `/nogra:sync pull` · `/nogra:sync push`
 
