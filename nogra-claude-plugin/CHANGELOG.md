@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.8.4 — 2026-07-16 "the seat release" (seat-awareness, built on the D1-D5 verdicts 15/07; konge-beviset stod samme dag, URET #196)
+
+Sync learns WHO: the clock keeps a seat board, and a seat can never again believe
+it is in sync when it is not.
+
+- **The stall-signal (the knock's third leg).** Every pull carries the sæde-tavle home
+  (seats' last_seen · last_pushed · dirty — metadata only, never content). When ANOTHER
+  seat is active with unpushed state, session start knocks: facts name the seat and the
+  Manager weaves an honest staleness line into answers it touches — never blocks, never
+  waits. Born from the ghost-war 15/07: three live races this board would have called out.
+- **Replace consumes history (server, ghost-front 4 — 16/07).** An accepted `replace` now
+  CLEARS the cloud turn log: consolidation ate that history, and leaving it made every
+  fresh-cursor pull resurrect the pre-consolidation past into a clean seat (caught live:
+  a re-minted seat's first pull replayed two fat old turns straight into a just-cleaned
+  brain). Rowids stay monotonic, old cursors stay valid; a refused wipe clears nothing.
+  Receipt says how many turns were consumed. Server suite 64/64.
+- **The seat reports honestly.** The pull sends one bit — `dirty` — computed from the
+  fingerprint machinery that already knows. A landed push clears it on the board.
+- **Identity is mint-forged (D1).** The seat's name lives ONLY in the token's `seat`
+  claim; tokens minted before seat-awareness read as "ukendt" — visible, never invisible.
+  (Server side: `mint-token.mjs --seat <navn>`, seat_board in the user-DO, board on
+  /sync/pull, /sync/status and the MCP sync_status tool — the chat surface is a seat too.)
+- Process laws booked the hard way: after consolidation = pure push, never pull-first ·
+  clean the CLOUD first, empty the seats after (union can never clean).
+
 ## 0.8.3 — 2026-07-14
 
 The pulse release: sync stops being an act and becomes a heartbeat — push/pull is

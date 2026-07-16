@@ -27,7 +27,7 @@ function freshDirs() {
 }
 
 // ---- stub cloud ------------------------------------------------------------
-const state = { memory: "- cloud line one\n", user: "cloud user fact\n", turns: [{ rowid: 1, ts: "t", role: "user", text: "hello from chat" }], cursor: 1, hits: [], pushes: [], replaces: [] };
+const state = { memory: "- cloud line one\n", user: "cloud user fact\n", turns: [{ rowid: 1, ts: "t", role: "user", text: "hello from chat" }], cursor: 1, hits: [], pushes: [], replaces: [], pullDirty: [], board: null, you: null };
 const server = createServer((req, res) => {
   state.hits.push(req.url);
   const auth = req.headers.authorization || "";
@@ -35,14 +35,18 @@ const server = createServer((req, res) => {
     res.writeHead(401, { "content-type": "application/json" });
     return res.end(JSON.stringify({ error: "unauthorized" }));
   }
-  if (req.url === "/sync/pull") {
+  if (req.url.startsWith("/sync/pull")) {
+    state.pullDirty.push(new URL(req.url, "http://x").searchParams.get("dirty")); // record the seat's honest report
     if (state.malformNext) {
       state.malformNext = false; // one-shot: the NEXT pull gets garbage, everything after heals
       res.writeHead(200, { "content-type": "application/json" });
       return res.end("this is not json");
     }
     res.writeHead(200, { "content-type": "application/json" });
-    return res.end(JSON.stringify({ memory: state.memory, user: state.user, turns: state.turns, cursor: state.cursor }));
+    return res.end(JSON.stringify({
+      memory: state.memory, user: state.user, turns: state.turns, cursor: state.cursor,
+      ...(state.board ? { seat_board: state.board, you: state.you } : {}), // seat-aware server when configured
+    }));
   }
   if (req.url === "/sync/push") {
     let body = "";
@@ -278,6 +282,44 @@ const good = { endpoint, token: "good-token" };
   ok("bound-but-tokenless seat earns the wiring knock", tokenless.includes("token is MISSING"));
   writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: false, endpoint } }));
   ok("sync OFF stays silent (off is a choice, not a fault)", syncNudge(d.base, ov) === "");
+}
+
+// 15. SÆDE-TAVLEN + STALL-SIGNALET (D1-D5, 15/07) — the seat reports honestly, the board
+// rides home, and the knock calls out another seat's unpushed thoughts. Facts only.
+{
+  const d = freshDirs();
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: true, endpoint } }));
+  writeFileSync(join(d.base, "token"), "good-token");
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- fresh local thought\n");
+  const ov = { configPath: join(d.base, "config.json"), tokenPath: join(d.base, "token"), syncDir: d.sync, memoryDir: d.memoryDir };
+  const { syncNudge } = await import("../runtime/local/sync-client.mjs");
+
+  state.board = { sbx: { last_seen: "t9", last_pushed: null, dirty: true }, "stub-seat": { last_seen: "t9", last_pushed: "t8", dirty: false } };
+  state.you = "stub-seat";
+  const before = state.pullDirty.length;
+  await syncPull(d.base, ov);
+  ok("pull reports dirty=1 honestly (unpushed local, no lastPushHash yet)", state.pullDirty[before] === "1");
+  const st = JSON.parse(readFileSync(join(d.sync, "state.json"), "utf8"));
+  ok("the sæde-tavle + you persisted from the pull response", st.you === "stub-seat" && st.seatBoard && st.seatBoard.sbx.dirty === true);
+
+  const knock = syncNudge(d.base, ov);
+  ok("STALL-signalet fires: another seat is dirty — named, with the honest-line move",
+    knock.includes('STALL: seat "sbx"') && knock.includes("UNPUSHED") && knock.includes("weave an honest staleness line"));
+  ok("own seat's flag never knocks itself (stub-seat clean in board)", !knock.includes('seat "stub-seat"'));
+
+  await syncPush(d.base, ov); // converge → next pull reports clean
+  const b2 = state.pullDirty.length;
+  await syncPull(d.base, ov);
+  ok("pull reports dirty=0 after a landed push (converged is honest too)", state.pullDirty[b2] === "0");
+
+  state.board.sbx.dirty = false; // sbx pushed elsewhere; board comes home clean on next pull
+  await syncPull(d.base, ov);
+  const calm = syncNudge(d.base, ov);
+  ok("stall clears when the other seat's push lands — no stall-fact remains", !calm.includes("STALL:"));
+
+  state.board = null; state.you = null; // old server without a board
+  await syncPull(d.base, ov);
+  ok("a board-less (older) server degrades gracefully — pull fine, no crash", true);
 }
 
 server.close();
