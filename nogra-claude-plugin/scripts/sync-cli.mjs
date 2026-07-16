@@ -14,10 +14,28 @@
 // - Fail-open, informative: a missing config is a report, not a crash.
 
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { syncPull, syncPush, syncDir } from "../runtime/local/sync-client.mjs";
 
-const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// S-A (16/07, cwd-fælden): roden findes OPAD — nærmeste .nogra/ fra cwd og op. Kørt fra en
+// undermappe virker alt; kørt UDENFOR workspacet siger vi det HØJT i stedet for det stille
+// "no changes" der kostede operatøren en runde i dag. CLAUDE_PROJECT_DIR vinder altid.
+function findRoot(start) {
+  let d = start;
+  while (true) {
+    if (existsSync(join(d, ".nogra"))) return d;
+    const parent = dirname(d);
+    if (parent === d) return null; // nåede filsystemets rod uden fund
+    d = parent;
+  }
+}
+const root = process.env.CLAUDE_PROJECT_DIR || findRoot(process.cwd());
+if (!root) {
+  console.error(
+    `sync: ingen .nogra/ fundet fra ${process.cwd()} og opad — stå i workspacet (fx cd ~/y26dev) eller sæt CLAUDE_PROJECT_DIR.`,
+  );
+  process.exit(1);
+}
 const rawArgs = process.argv.slice(2);
 const homeFlag = rawArgs.includes("--home");
 const [verb = "status", arg] = rawArgs.filter((a) => a !== "--home");
@@ -43,6 +61,50 @@ function tokenPresence() {
   if (process.env.NOGRA_SYNC_TOKEN) return "env NOGRA_SYNC_TOKEN";
   if (existsSync(join(dir, "token"))) return "file .nogra/memory/sync/token";
   return "MISSING";
+}
+
+// S-B (16/07, den stille tomme fil): tokenet INSPICERES — metadata, aldrig værdien. En tom eller
+// malformet token-fil får et NAVN og en KUR i stedet for at ligne succes; det stille "no changes"
+// kostede operatøren to runder i dag. Værdien printes ALDRIG (hegnet: tokens rører aldrig modellen).
+function b64urlJson(s) {
+  const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
+  return JSON.parse(Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/") + pad, "base64").toString("utf8"));
+}
+function tokenInspect() {
+  let raw = "";
+  let source = "";
+  let bytes = 0;
+  if (process.env.NOGRA_SYNC_TOKEN) {
+    source = "env NOGRA_SYNC_TOKEN";
+    raw = process.env.NOGRA_SYNC_TOKEN.trim();
+    bytes = Buffer.byteLength(process.env.NOGRA_SYNC_TOKEN);
+  } else if (existsSync(join(dir, "token"))) {
+    source = "file .nogra/memory/sync/token";
+    try {
+      const fileRaw = readFileSync(join(dir, "token"), "utf8");
+      bytes = Buffer.byteLength(fileRaw);
+      raw = fileRaw.trim();
+    } catch {
+      return { ok: false, problem: "unreadable", line: `${source} kan ikke læses — tjek rettigheder (chmod 600)` };
+    }
+  } else {
+    return { ok: false, problem: "missing", line: "MISSING — mint (operatørens hånd) og placér i .nogra/memory/sync/token" };
+  }
+  if (!raw) return { ok: false, problem: "empty", line: `${source} er TOM (${bytes} bytes) — placeringen fejlede; mint og placér igen (scp slår clipboard)` };
+  const m = /^nst_([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/.exec(raw);
+  if (!m) return { ok: false, problem: "malformed", line: `${source} er MALFORMET (${bytes} bytes, ligner ikke nst_…) — placér et ægte token` };
+  try {
+    const p = b64urlJson(m[1]);
+    const expired = typeof p.exp === "number" && p.exp * 1000 < Date.now();
+    return {
+      ok: !expired,
+      problem: expired ? "expired" : null,
+      meta: p,
+      line: `${source} · seat=${p.seat ?? "(intet — stempler 'ukendt')"} · scopes=${(p.scopes || []).join("+")} · exp=${typeof p.exp === "number" ? new Date(p.exp * 1000).toISOString() : "?"}${expired ? " ⚠ UDLØBET — mint nyt" : ""}`,
+    };
+  } catch {
+    return { ok: false, problem: "malformed", line: `${source}: payload kan ikke afkodes — placér et ægte token` };
+  }
 }
 
 function readJson(path, fallback) {
@@ -94,6 +156,18 @@ function fmtReceipt(r) {
 async function main() {
   const config = readConfig();
 
+  // S-B: kaldte verber fejler HØJT på et brudt token — CLI'en er operatørens hånd, og hånden skal
+  // have sandheden med kur, aldrig et stille "no changes" (16/07-læren: 0 bytes lignede succes).
+  // Hookenes/tickens edges forbliver fail-open — en session må aldrig blokeres af sync.
+  if (["run", "pull", "push"].includes(verb) && config && config.sync && config.sync.enabled === true) {
+    const ti = tokenInspect();
+    if (!ti.ok) {
+      console.error(`sync ${verb}: ${ti.line}`);
+      receipt({ op: verb, ok: false, error: `token:${ti.problem}` });
+      return 1;
+    }
+  }
+
   if (verb === "status") {
     if (!config) {
       console.log(`sync: Nogra is not initialized here (no .nogra/config.json at ${root})`);
@@ -107,7 +181,25 @@ async function main() {
     try { seatMode = readFileSync(join(dir, "mode"), "utf8").trim(); } catch {}
     const effectiveMode = seatMode ? seatMode : (sync && sync.mode === "replace" ? "replace" : "union");
     console.log(`mode:     ${effectiveMode === "replace" ? "home (replace — this seat's push hands the cloud its consolidated state)" : "remote (union — append-safe)"}${seatMode ? " · seat file" : sync && sync.mode ? " · LEGACY config (move to seat file: bind --home)" : ""}`);
-    console.log(`token:    ${tokenPresence()}`);
+    const ti = tokenInspect();
+    console.log(`token:    ${ti.line}`);
+    // S-B: sædet ved selv HVEM det er og HVEM de andre er — bekræftelsen operatøren lavede i
+    // hånden hele 16/07 (rå himmel-kald ×9) bor nu i status. Tavlen er fra SIDSTE pull (ærligt dateret).
+    console.log(`you:      ${state.you || "(ukendt endnu — første pull stempler)"}`);
+    const board = state.seatBoard || {};
+    const seats = Object.entries(board);
+    if (seats.length) {
+      console.log(`tavlen (pr. sidste pull ${state.lastPullAt || "?"}):`);
+      for (const [n, s] of seats) console.log(`  ${n}: set ${s.last_seen || "?"} · pushed ${s.last_pushed || "aldrig"} · dirty=${!!s.dirty}`);
+    }
+    if (ti.meta) {
+      const hasReplace = (ti.meta.scopes || []).includes("memory:replace");
+      if (effectiveMode === "replace" && !hasReplace)
+        console.log(`kohærens: ⚠ FEJL — sædet er HOME (replace-mode) men tokenet MANGLER memory:replace; replace-push får 403. Kur: mint --home, eller sæt sædet til union`);
+      else if (effectiveMode !== "replace" && hasReplace)
+        console.log(`kohærens: ⚠ tokenet bærer replace-magt men sædet er union — én krone pr. bruger: flyt kronen eller mint et union-token`);
+      else console.log(`kohærens: rolle og token matcher ✓`);
+    }
     console.log(`lastPull: ${state.lastPullAt || "never"}${typeof state.lastCursor === "number" ? ` · cursor ${state.lastCursor}` : ""}`);
     console.log(`lastPush: ${state.lastPushAt || "never"}`);
     console.log(`inbox:    ${inboxCount()} remote turn(s) awaiting consolidation`);
@@ -119,6 +211,94 @@ async function main() {
       console.log("receipts: none yet");
     }
     return 0;
+  }
+
+  if (verb === "doctor") {
+    // S-C (16/07): DOKTOREN — dagens to-timers jagter som ÉT kald. Otte falsificérbare tjek,
+    // hver med sin kur; læser alt, ændrer intet; token-VÆRDIEN forlader aldrig processen.
+    // Født af 401-jagten (svaret lå i authz.ts hele tiden) og tavle-bekræftelserne i hånden.
+    const lines = [];
+    let fejl = 0;
+    const ok = (t) => lines.push(`  ✓ ${t}`);
+    const warn = (t) => lines.push(`  ⚠ ${t}`);
+    const bad = (t, kur) => { fejl++; lines.push(`  ✗ ${t}${kur ? `\n    kur: ${kur}` : ""}`); };
+
+    // 1 · roden (cwd-fælden var dagens første runde)
+    ok(`rod: ${root}${process.env.CLAUDE_PROJECT_DIR ? " (CLAUDE_PROJECT_DIR)" : " (fundet opad fra cwd)"}`);
+    // 2 · enabled
+    const sync = config && config.sync;
+    if (!config) bad("ingen .nogra/config.json ved roden", "kør /nogra:setup, eller stå i det rigtige workspace");
+    else if (!sync || sync.enabled !== true) warn("sync er OFF (et valg, ikke en fejl) — `bind <endpoint>` tænder");
+    else ok("sync: enabled");
+    // 3 · endpoint
+    const endpoint = sync && sync.endpoint ? String(sync.endpoint).replace(/\/+$/, "") : "";
+    if (sync && sync.enabled === true) {
+      if (!endpoint) bad("endpoint mangler", "bind <endpoint>");
+      else ok(`endpoint: ${endpoint}`);
+    }
+    // 4 · token (metadata, aldrig værdien)
+    const ti = tokenInspect();
+    if (ti.ok) ok(`token: ${ti.line}`);
+    else if (sync && sync.enabled === true) bad(`token: ${ti.line}`);
+    else warn(`token: ${ti.line}`);
+    // 5 · aud-bindingen (lokal aflæsning — 403-klassen fanget FØR himlen)
+    if (ti.meta && endpoint) {
+      if (ti.meta.aud && String(ti.meta.aud).replace(/\/+$/, "") !== endpoint)
+        bad(`aud-mismatch: tokenet er bundet til ${ti.meta.aud}`, "mint mod DETTE endpoint, eller ret bind");
+      else ok("aud: tokenet er bundet til dette endpoint");
+    }
+    // 6 · rolle-kohærens (D5: én krone pr. bruger)
+    let dSeatMode = "";
+    try { dSeatMode = readFileSync(join(dir, "mode"), "utf8").trim(); } catch {}
+    const dMode = dSeatMode || (sync && sync.mode === "replace" ? "replace" : "union");
+    if (ti.meta) {
+      const hasReplace = (ti.meta.scopes || []).includes("memory:replace");
+      if (dMode === "replace" && !hasReplace) bad("kohærens: HOME-sæde uden memory:replace-scope — replace-push får 403", "mint --home, eller sæt sædet til union");
+      else if (dMode !== "replace" && hasReplace) warn("kohærens: union-sæde med replace-magt — én krone pr. bruger; flyt kronen eller mint et union-token");
+      else ok(`kohærens: rolle (${dMode}) og token matcher`);
+    }
+    // 7 · LIVE-proben (svarer himlen DENNE hånd? 401=signatur, 403=aud/scope — authz.ts' egen lov)
+    if (sync && sync.enabled === true && endpoint && ti.ok) {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 6000);
+        const t0 = Date.now();
+        const rawToken = process.env.NOGRA_SYNC_TOKEN ? process.env.NOGRA_SYNC_TOKEN.trim() : readFileSync(join(dir, "token"), "utf8").trim();
+        const res = await fetch(`${endpoint}/sync/status`, { headers: { authorization: `Bearer ${rawToken}` }, signal: ctrl.signal });
+        clearTimeout(timer);
+        if (res.status === 200) {
+          const d = await res.json().catch(() => ({}));
+          const seats = d.seat_board ? Object.keys(d.seat_board) : [];
+          ok(`himlen svarer: wm=${d.wm} · turns=${d.turns} · tavle: ${seats.length ? seats.join(", ") : "(tom)"} · ${Date.now() - t0}ms`);
+        } else if (res.status === 401) bad("himlen afviser: 401 invalid_token = SIGNATUREN (eller udløb)", "mint med den rigtige signing-secret — 401 KAN kun være signatur/udløb (aud/scope giver 403)");
+        else if (res.status === 403) bad("himlen afviser: 403 = aud eller scope", "se aud- og kohærens-linjerne ovenfor");
+        else bad(`himlen svarer uventet: HTTP ${res.status}`);
+      } catch (e) {
+        bad(`himlen kan ikke nås: ${e && e.name === "AbortError" ? "timeout (6s)" : (e && e.message) || e}`, "tjek net og endpoint");
+      }
+    } else if (sync && sync.enabled === true) warn("live-probe sprunget over — løs token-linjen først");
+    else warn("live-probe sprunget over (sync off)");
+    // 8 · bounds (serverens egen måling: streng-length) + receipts-halen
+    const slug = "-" + root.replace(/^\/+/, "").replace(/\//g, "-");
+    const memHome = join(process.env.HOME || "", ".claude", "projects", slug, "memory");
+    if (existsSync(join(memHome, "MEMORY.md"))) {
+      let mb = "";
+      let ub = "";
+      try { mb = readFileSync(join(memHome, "MEMORY.md"), "utf8"); } catch {}
+      try { ub = readFileSync(join(memHome, "USER.md"), "utf8"); } catch {}
+      const over = mb.length > 3000 || ub.length > 1375;
+      (over ? warn : ok)(`bounds: MEMORY ${mb.length}/3000 · USER ${ub.length}/1375${over ? " — OVER: himlen gemmer IKKE et over-budget replace; konsolidér først" : ""}`);
+    } else warn("bounds: native memory ikke fundet for denne rod (ok på et tomt sæde)");
+    const rec = tailReceipts(5);
+    const recFails = rec.filter((r) => r.ok === false);
+    if (rec.length) (recFails.length ? warn : ok)(`receipts: ${rec.length} seneste · ${recFails.length} FAIL${recFails.length ? " — " + recFails.map((r) => `${r.op}:${r.error || "?"}`).join(", ") : ""}`);
+    else warn("receipts: ingen endnu");
+
+    console.log(`doctor · ${root}`);
+    for (const l of lines) console.log(l);
+    console.log(fejl ? `\ndiagnose: ${fejl} FEJL — kuren står ved hver linje` : "\ndiagnose: 0 FEJL — sædet er rask (⚠ er observationer, ikke fejl)");
+    receipt({ op: "doctor", ok: !fejl, fejl });
+    return fejl ? 1 : 0;
   }
 
   if (verb === "run") {
@@ -182,15 +362,37 @@ async function main() {
     if (homeFlag) writeFileSync(join(dir, "mode"), "replace\n");
     receipt({ op: "bind", ok: true, endpoint, ...(gitignored ? { gitignored: true } : {}), ...(homeFlag ? { mode: "replace" } : {}) });
     console.log(`bind: sync enabled → ${endpoint}${homeFlag ? " [HOME seat: replace mode via seat file — requires a memory:replace token]" : ""}`);
-    const presence = tokenPresence();
-    if (presence === "MISSING") {
+    // S-D (16/07): bind bekræfter SIG SELV. Dagen krævede 9 manuelle tavle-bekræftelser af
+    // operatøren og Fable — nu er beviset indbygget: er tokenet raskt, kører bind selv den
+    // første pull (som STEMPLER tavlen) og siger sort på hvidt om sædet står i himlen.
+    const ti = tokenInspect();
+    if (ti.problem === "missing") {
       console.log(
         "token: MISSING — store it with YOUR OWN hand (never through the assistant):\n" +
           "  either export NOGRA_SYNC_TOKEN in your shell profile,\n" +
-          "  or write it to .nogra/memory/sync/token (chmod 600; the directory is gitignored).",
+          "  or write it to .nogra/memory/sync/token (chmod 600; the directory is gitignored).\n" +
+          "self-verify: kør `bind` igen når tokenet er placeret — så beviser sædet sig selv.",
       );
+      return 0;
+    }
+    if (!ti.ok) {
+      console.log(`token: ${ti.line}`);
+      console.log("self-verify: venter — løs token-linjen og kør `bind` igen.");
+      return 0;
+    }
+    console.log(`token: ${ti.line}`);
+    const note = await syncPull(root);
+    const st = readJson(join(dir, "state.json"), {});
+    const you = st.you;
+    const board = st.seatBoard || {};
+    if (you && board[you]) {
+      console.log(`self-verify: sædet '${you}' står på tavlen ✓ (set ${board[you].last_seen})`);
+    } else if (note && /failed|FAIL/i.test(note)) {
+      console.log(`self-verify: proben fejlede — ${note.replace(/<[^>]+>/g, "").trim()}`);
+      console.log("kur: kør `doctor` for fuld diagnose (401=signatur · 403=aud/scope · tom fil=placering)");
+      return 1;
     } else {
-      console.log(`token: ${presence}`);
+      console.log("self-verify: pull ok, men tavlen bærer ikke sædet endnu — er himlen ældre end sæde-bevidsthed? Kør `doctor`.");
     }
     return 0;
   }
@@ -207,7 +409,7 @@ async function main() {
     return 0;
   }
 
-  console.error(`unknown verb: ${verb} — use status | run | pull | push | bind <endpoint> | off`);
+  console.error(`unknown verb: ${verb} — use status | run | pull | push | doctor | bind <endpoint> | off`);
   return 1;
 }
 

@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.8.5 — 2026-07-16 "the doctor release" (the seat closes its own loop)
+
+Born the same day as 0.8.4, from the same war: every manual step the operator had
+to take to verify a seat was a product gap wearing a task costume. Four stones,
+built one GO at a time; no operator is ever the sync engine again.
+
+- **The root is found upward (S-A).** `sync-cli` walks up from cwd to the nearest
+  `.nogra/`; run it from any subdirectory and it binds to the right truth. OUTSIDE
+  a workspace it says so LOUDLY and exits 1 — the silent "no changes" that cost a
+  round on 16/07 (running from `~`) cannot happen again. `CLAUDE_PROJECT_DIR` still wins.
+- **The honest seat (S-B).** The token is INSPECTED, never printed: `status` shows
+  seat · scopes · exp (metadata only — the value never leaves the process, smoke-
+  enforced). An empty (1 byte!), malformed or expired token fails LOUD on called
+  verbs (run/pull/push) with its name, its byte count and its cure — 0 bytes looked
+  exactly like success on 16/07, twice. Status now also carries `you`, the full
+  seat board (dated "as of last pull") and ROLE COHERENCE: a home-mode seat without
+  `memory:replace` gets its 403 foretold, with the cure. Hook edges stay fail-open.
+- **The doctor (S-C).** `sync-cli doctor` — the day's two-hour hunts as ONE call:
+  eight falsifiable checks, each with its cure. Root(+source) · enabled · endpoint ·
+  token metadata · aud binding (the 403 class caught locally) · role coherence · a
+  LIVE authorized probe (200 = wm + turns + the seat board by name + latency; 401 =
+  "can only be signature/expiry" — authz law quoted in the cure; 403 = aud/scope;
+  6s timeout) · bounds in the server's own measure + the receipt tail with verdicts.
+- **bind proves itself (S-D).** With a healthy token, `bind` runs the first pull
+  itself (which stamps the board) and answers in writing: "seat 'x' is on the board
+  (set <ts>)". Missing/empty tokens get honest instructions and a promise: run
+  `bind` again after placing it. A dead sky points to `doctor`, exit 1. The nine
+  manual board confirmations of 16/07 are dead.
+- Smokes: cli 32 -> 52 (+20 guards, incl. "the value is never printed" and a
+  deterministic dead-sky probe via loopback). Client suite untouched, 55/55.
+
 ## 0.8.4 — 2026-07-16 "the seat release" (seat-awareness, built on the D1-D5 verdicts 15/07; konge-beviset stod samme dag, URET #196)
 
 Sync learns WHO: the clock keeps a seat board, and a seat can never again believe
