@@ -1,7 +1,7 @@
 {
   "name": "nogra",
   "displayName": "nogra workflow",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "Approve, run, verify in Claude Code - the work is checked against the plan before it is marked done.",
   "author": {
     "name": "Patrick Larsen",
