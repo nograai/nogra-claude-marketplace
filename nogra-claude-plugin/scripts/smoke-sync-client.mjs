@@ -392,5 +392,52 @@ const good = { endpoint, token: "good-token" };
   state.wm = undefined;
 }
 
+// 18. RACE-STREGEN (17/07, GO på tegningen): "Skriver kronen, taler kronen. Lytter kronen,
+// kun når den intet har at sige." Home-sædets write-tick pusher ALENE (intet pull i samme
+// tick — kuren når himlen urørt); stille tick puller alene. Union-sæder uændrede (front 6).
+// Accept-testene følger tegningens fem punkter, inkl. 16/07-scenariet ordret.
+{
+  const d = freshDirs();
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: true, endpoint } }));
+  writeFileSync(join(d.base, "token"), "good-token");
+  writeFileSync(join(d.base, "mode"), "replace\n"); // HOME-sædet
+  const ov = { configPath: join(d.base, "config.json"), tokenPath: join(d.base, "token"), modePath: join(d.base, "mode"), syncDir: d.sync, memoryDir: d.memoryDir, minIntervalMs: 60_000 };
+
+  // (4) 16/07-SCENARIET ORDRET: beskidt himmel + frisk kur + write-tick → KUREN skal vinde.
+  state.memory = "- cured truth\n- ghost line the cure removed\n"; // himlen er beskidt
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- cured truth\n"); // kuren, nyskrevet lokalt
+  const pullsBefore = state.hits.filter((h) => h.startsWith("/sync/pull")).length;
+  const r1 = await syncTick(d.base, ov);
+  ok("(1) home write-tick: NUL pull før pushen — kronen taler", state.hits.filter((h) => h.startsWith("/sync/pull")).length === pullsBefore && r1.trigger === "write");
+  ok("(1b) pushen er REPLACE, aldrig union", state.hits.at(-1) === "/sync/replace");
+  ok("(4) 16/07-scenariet: himlen ender med KUREN, aldrig mergen", state.replaces.at(-1).memory === "- cured truth\n");
+  ok("(4b) den lokale fil forblev uberørt af ticken (intet pull-merge ind i kuren)", readFileSync(join(d.memoryDir, "MEMORY.md"), "utf8") === "- cured truth\n");
+
+  // (2) Stille tick: kronen lytter — pull alene, intet push. (now-override forbi debouncen,
+  // så ticket fyrer som interval-tick, ikke som write.)
+  state.memory = "- cured truth\n- a bench thought via union\n"; // bænken bidrog i skyen
+  const pushesBefore = state.replaces.length + state.pushes.length;
+  const r2 = await syncTick(d.base, { ...ov, now: () => Date.now() + 120_000 });
+  ok("(2) home stille tick: PULL alene (push skipped:home-listens)", r2.trigger === "interval" && r2.push && r2.push.skipped === "home-listens");
+  ok("(2b) intet push afgik på det stille tick", state.replaces.length + state.pushes.length === pushesBefore);
+  ok("(2c) bænkens bidrag landede lokalt til næste konsolidering", readFileSync(join(d.memoryDir, "MEMORY.md"), "utf8").includes("a bench thought"));
+  const log18 = readFileSync(join(d.sync, "log.jsonl"), "utf8");
+  ok("(5) receipts bærer kronens stemme (crown:speaks + crown:listens)", log18.includes('"crown":"speaks"') && log18.includes('"crown":"listens"'));
+}
+
+// (3) Union-sæder: HELT uændret — write-tick kører stadig pull → push (front 6-loven).
+{
+  const d = freshDirs();
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: true, endpoint } }));
+  writeFileSync(join(d.base, "token"), "good-token");
+  const ov = { configPath: join(d.base, "config.json"), tokenPath: join(d.base, "token"), syncDir: d.sync, memoryDir: d.memoryDir, minIntervalMs: 60_000 };
+  state.memory = "- sky line\n";
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- union seat thought\n");
+  const pullsBefore = state.hits.filter((h) => h.startsWith("/sync/pull")).length;
+  const r = await syncTick(d.base, ov);
+  ok("(3) union write-tick: pull-før-push UÆNDRET (front 6-loven består)", r.ticked === true && state.hits.filter((h) => h.startsWith("/sync/pull")).length === pullsBefore + 1 && state.hits.at(-1) === "/sync/push");
+  ok("(3b) union-receipten bærer INGEN crown-markør", !readFileSync(join(d.sync, "log.jsonl"), "utf8").includes('"crown"'));
+}
+
 server.close();
 console.log(`\n${passed} checks passed — sync edges hold. EXIT=0`);

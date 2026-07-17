@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.7 — 2026-07-17 "the crown release" (the crown never rebases)
+
+- **The crown never rebases — the home-seat tick race closed structurally.** Proven three
+  times by receipts (16/07 "replace 3098c -> 3098c": a pull union-merged ghosts back 104ms
+  before replace read the file; the home seat's two failed cure attempts on 17/07 — the
+  tick's write-trigger fired on every save and pulled the dirty sky back into the freshly
+  cleaned file; the bench's 12-minute re-infection): the tick ran pull→push identically on
+  every seat, but the HOME seat has no base to rebase against — the crown IS the base.
+  The law, one sentence: "When the crown writes, the crown speaks. The crown listens only
+  when it has nothing to say." In code: on replace-mode seats a write-triggered tick pushes
+  ALONE (replace, no pull in the same tick — the cure reaches the sky untouched), and a
+  quiet interval tick pulls ALONE (ingesting union seats' contributions for the next
+  consolidation — safe now that the stale and budget guards keep the sky clean). Union
+  seats are byte-identically unchanged: pull-before-push remains their law (front 6).
+  Tick receipts on the home seat carry the crown's voice: `crown: speaks` / `crown: listens`.
+  Evidence: 10 new smoke checks including the 16/07 scenario verbatim ("dirty sky + fresh
+  cure + write-tick → the cure must win"), client smoke 75/75 ×3, full suite green.
+  House dogfood (operator's hand: one consolidation, receipt showing push without pull)
+  completes the drawing's acceptance.
+
 ## 0.8.6 — 2026-07-17 "the guard release" (the walls hold — for every seat)
 
 - **The budget guard — the last ghost hole closed: a union may never RESULT in over-budget
