@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.8.6 — 2026-07-17 "the guard release" (the walls hold — for every seat)
+
+- **The budget guard — the last ghost hole closed: a union may never RESULT in over-budget
+  state.** The server now refuses (409 `over_budget`) any union push that would grow a bounded
+  file past its limit — the morning ghost of 17/07 (06:29) was exactly such a merge: a legacy
+  seat union-pushed its old 3098-char brain into a cleaned 2743-char sky, and the merge was
+  STORED with only a warning. The refusal is whole (no partial merge, no turns, no seat-board
+  stamp) and receipted with sizes and the cure: "union can add but never clean — consolidate at
+  the home and replace." A file already over budget from before never blocks the OTHER file's
+  honest growth, and the home's `replace` remains the one cure verb. Side effect that matters:
+  this guard also catches pre-0.8.6 seats WITHOUT `base_wm` — a ghost payload is by definition
+  the old big brain, so the wall holds even before every seat upgrades. Client side (this
+  release): a 409 `over_budget` is an honest STOP, never a retry (a pull only makes the local
+  union bigger) — receipt carries `refused: over_budget`, the return names the cure, and the
+  session-start knock surfaces it to the operator. Guard chain hardened: `stale_base` still
+  self-heals with exactly one rebase retry, and if the REBASED push hits the budget wall the
+  client stops honestly (front6 → budget chain proven in smoke). The MCP `memory_append` names
+  the refusal the same way. Narrowed on purpose: unknown 409s no longer blind-retry — only
+  `stale_base` does. Evidence: server 89/89 ×3 (7 new guard tests incl. the morning scenario
+  verbatim), client smoke 65/65 ×3 (+5).
+
+- **Ground hardened: docs are drawings (hard block).** The ground skill gains a mandatory
+  step: read the platform's own documentation and namespace BEFORE building on or naming
+  anything that touches a platform surface. Born from a real naming defect: the 0.8.5
+  `doctor` verb collides in conversation with Claude Code's own `claude doctor` / `/doctor`
+  — no technical collision, but the operator had to ask which one was meant, and that
+  question is the defect. Ruled a hard block by the operator, not a guideline.
+
+- **The door for the windows — a real OAuth 2.1 authorization server, self-hosted in the
+  worker (trin 02 complete).** claude.ai and the phone can now become windows onto the one
+  clock: RFC 8414 discovery, dynamic client registration (RFC 7591), authorization-code +
+  PKCE S256 (required, never optional), and a consent page where approval is the OPERATOR'S
+  HAND — a 10-minute `--approve` token from the mint script whose only power is opening the
+  door (scope `oauth:approve`, reads nothing). The whole AS is stateless: client-ids and
+  codes are HMAC-signed blobs — no client table, no code table, signatures ARE the state.
+  Issued connector tokens are ordinary seat-forged sync tokens (read+append, NEVER replace
+  — a window never holds the crown) so the existing fence verifies them unchanged, and the
+  seat board NAMES the window. Every opened door stamps an `oauth` receipt in the clock.
+  Fail-closed line moved to where it belongs: no signing secret, no AS (501).
+
+- **The pulse lives in the brain — the clock breathes on its own (trin 03 complete).** The
+  user DO now schedules its own heartbeat (a DO alarm every 30 minutes — the drawing's own
+  economy line): each beat stamps a receipt, looks at the seat board and NAMES stalled seats
+  — the stall signal born in the clock itself, not only at a seat's pull. `go_armed` ships
+  as the episode's socket (trin 04 plugs in here): a receipted switch behind the crown's
+  scope (`memory:replace`), and nothing acts on it yet, by design. New surface:
+  `POST /sync/heartbeat` (append scope) · `POST /sync/go` (crown) · status carries the pulse
+  home, and `doctor` reads it aloud. Watermark law: breathing is not a change of mind.
+
+- **The stale-base guard — ghost front 6 closed in code, not just in law.** Every pull now
+  remembers the watermark it saw (`lastSeenWm`); every union push carries it as `base_wm`.
+  A push built on a sky the seat never looked at gets a 409 `stale_base` from the server and
+  self-heals: pull, rebase, exactly one retry. Born from the night of 16/07, where a cure was
+  overwritten by its own step order ("replace 3098c -> 3098c"). Legacy seats without `base_wm`
+  still pass (fail-open for compatibility). Client fix in the same cut: `syncPush` re-reads
+  state at write time so a retry's fresh pull is never clobbered by a stale in-memory object.
+
+- **The decide skill — a ruling becomes law, receipted.** `/nogra:decide` records an operator
+  decision in the workspace decision log using the drawn shape (Date · Decision · Why ·
+  Alternatives considered · Owner · Linked brief/run/evidence) and leaves one ledger receipt.
+  Append-only; superseding rulings name what they replace. Claude offers candidate wordings and
+  names (English first) — the operator rules and names, always. Born from the operator's own
+  design: "intent + source = truth, PLUS N decisions with WHY and HOW."
+
 ## 0.8.5 — 2026-07-16 "the doctor release" (the seat closes its own loop)
 
 Born the same day as 0.8.4, from the same war: every manual step the operator had

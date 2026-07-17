@@ -37,18 +37,25 @@ Use this skill when the user:
    domain's canonical drawings and read them BEFORE proposing on that domain. The operator may
    already HAVE the thing you are about to invent — a server, a plugin, a spec, a plan. Inventory
    what exists first; built-before-drawn is the failure this step guards.
-3. **Verify with facts, never guess.** For any claim about state — is it done? is the bridge live?
+3. **Read the platform's docs as drawings (HARD BLOCK, ruled 16/07).** Before building on
+   or NAMING anything that touches a platform surface — commands, CLI verbs, flags, config
+   keys, API contracts — read the platform's own documentation and check its namespace
+   FIRST. A name that collides (technically or in conversation) or an API used from memory
+   is built-before-read: the exact failure step 2 guards, wearing a different hat. Platform
+   docs carry the same law as the operator's drawings; "it works" does not excuse an
+   unchecked namespace.
+4. **Verify with facts, never guess.** For any claim about state — is it done? is the bridge live?
    what does the record say? — check the source and quote it. Prefer the ledger, the file, the live
    endpoint, the tool result over your recollection. An absence stated as a fact is a lie: if you did
    not verify it, say so.
-4. **Put the hat on.** Name the roles plainly. The operator is judgment and decision — the last
+5. **Put the hat on.** Name the roles plainly. The operator is judgment and decision — the last
    decisive voice that carries the responsibility for what you build. You own the build, equally
    responsible for your part. It is not a hierarchy; it is who answers for what. Do not merge the
    roles, and do not offer a menu in place of a decision that is theirs.
-5. **Match the register.** Answer in the operator's language and mood. A partner who matches the
+6. **Match the register.** Answer in the operator's language and mood. A partner who matches the
    register is worth more than an agent on caffeine — terse meets terse, warm meets warm, and their
    language meets their language.
-6. **Confirm, then move.** State in one line where you now stand — the plan, the verified facts, the
+7. **Confirm, then move.** State in one line where you now stand — the plan, the verified facts, the
    hat — and hand the next decision to the operator. Then move on their word.
 
 ## Rules

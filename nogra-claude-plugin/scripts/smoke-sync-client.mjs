@@ -45,6 +45,7 @@ const server = createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify({
       memory: state.memory, user: state.user, turns: state.turns, cursor: state.cursor,
+      ...(typeof state.wm === "number" ? { wm: state.wm } : {}), // wm-aware server when configured
       ...(state.board ? { seat_board: state.board, you: state.you } : {}), // seat-aware server when configured
     }));
   }
@@ -53,6 +54,16 @@ const server = createServer((req, res) => {
     req.on("data", (c) => (body += c));
     req.on("end", () => {
       state.pushes.push(JSON.parse(body));
+      if (state.staleNext) {
+        state.staleNext = false; // one-shot: front 6-vagten bites ONCE, the rebase heals
+        res.writeHead(409, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error: "stale_base", error_description: "pull first (front 6-vagten)" }));
+      }
+      if (state.overBudgetNext) {
+        state.overBudgetNext = false; // one-shot: budget-vagten refuses ONCE per arm
+        res.writeHead(409, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error: "over_budget", error_description: "consolidate at the home and replace (budget-vagten)", over_budget: ["MEMORY.md"] }));
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ imported_turns: 0, memory_chars: 10, user_chars: 5, over_budget: ["MEMORY.md"] }));
     });
@@ -320,6 +331,65 @@ const good = { endpoint, token: "good-token" };
   state.board = null; state.you = null; // old server without a board
   await syncPull(d.base, ov);
   ok("a board-less (older) server degrades gracefully — pull fine, no crash", true);
+}
+
+// 16. FRONT 6-VAGTEN (16/07 aften): the seat remembers the sky it saw, pushes carry it,
+// and a 409 stale_base heals itself — pull, rebase, ONE retry. Born from the night's
+// receipt: "replace 3098c -> 3098c" — the cure overwritten by its own step order.
+{
+  const d = freshDirs();
+  const ov = { ctx: good, memoryDir: d.memoryDir, syncDir: d.sync };
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- fresh insight\n");
+  state.wm = 7; // wm-aware sky
+  await syncPull(d.base, ov);
+  const st1 = JSON.parse(readFileSync(join(d.sync, "state.json"), "utf8"));
+  ok("pull remembers the sky it saw (lastSeenWm persisted)", st1.lastSeenWm === 7);
+
+  const before = state.pushes.length;
+  await syncPush(d.base, ov);
+  ok("push carries base_wm — the guard's food travels", state.pushes[before] && state.pushes[before].base_wm === 7);
+
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- fresh insight\n- another line\n");
+  state.wm = 9; state.staleNext = true; // the sky moved; guard will bite once
+  const b2 = state.pushes.length;
+  const res = await syncPush(d.base, ov);
+  ok("409 stale_base self-heals: pull -> rebase -> exactly one retry", state.pushes.length === b2 + 2 && res.pushed === true);
+  ok("the retry carries the FRESH base (rebased, not stubborn)", state.pushes[b2 + 1].base_wm === 9);
+
+  state.wm = undefined; // wm-less (older) server
+  await syncPull(d.base, ov);
+  const st2 = JSON.parse(readFileSync(join(d.sync, "state.json"), "utf8"));
+  ok("a wm-less server never corrupts the memory of the sky (lastSeenWm kept)", st2.lastSeenWm === 9);
+}
+
+// 17. BUDGET-VAGTEN (17/07 morgen): the sky refuses a union that would grow a bounded file
+// past its limit (the 06:29 ghost was exactly such a merge, stored with only a warning).
+// The client must STOP honestly — never retry (a pull only makes the local union bigger),
+// receipt the refusal by name, and let the knock carry the cure to the operator.
+{
+  const d = freshDirs();
+  const ov = { ctx: good, memoryDir: d.memoryDir, syncDir: d.sync };
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- a thought the sky has no room for\n");
+  state.overBudgetNext = true;
+  const before = state.pushes.length;
+  const res = await syncPush(d.base, ov);
+  ok("over_budget 409 is a REFUSAL, not a retry loop (exactly one push attempt)", state.pushes.length === before + 1);
+  ok("the client stops honestly and names the refusal", res.refused === "over_budget" && String(res.note || "").includes("consolidate at the home"));
+  const log = readFileSync(join(d.sync, "log.jsonl"), "utf8");
+  ok("the refusal leaves a named receipt (op:push, refused:over_budget)", /"refused":"over_budget"/.test(log));
+  const { syncNudge } = await import("../runtime/local/sync-client.mjs");
+  const knock = syncNudge(d.base, ov);
+  ok("the knock carries the refusal to the operator (failing last receipt leg)", knock.includes("FAILED") || knock.includes("UNPUSHED"));
+
+  // stale_base still self-heals — and if the REBASED push then hits the budget wall,
+  // the client stops honestly instead of looping (guard-chain: front 6 -> budget).
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- a thought the sky has no room for\n- second line\n");
+  state.wm = (state.wm || 0) + 1; state.staleNext = true; state.overBudgetNext = true;
+  const b2 = state.pushes.length;
+  const chained = await syncPush(d.base, ov);
+  ok("front6 -> budget chain: one rebase retry, then honest budget stop (two attempts, no loop)",
+    state.pushes.length === b2 + 2 && chained.refused === "over_budget");
+  state.wm = undefined;
 }
 
 server.close();

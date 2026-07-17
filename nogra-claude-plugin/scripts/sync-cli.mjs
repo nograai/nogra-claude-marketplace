@@ -270,6 +270,13 @@ async function main() {
           const d = await res.json().catch(() => ({}));
           const seats = d.seat_board ? Object.keys(d.seat_board) : [];
           ok(`himlen svarer: wm=${d.wm} · turns=${d.turns} · tavle: ${seats.length ? seats.join(", ") : "(tom)"} · ${Date.now() - t0}ms`);
+          // Pulsen (trin 03): en himmel der ånder, fortæller hvornår. Ældre servere har
+          // ingen puls i svaret — det er en observation, aldrig en fejl.
+          if (d.pulse && typeof d.pulse === "object") {
+            const pl = d.pulse;
+            if (pl.last_beat) ok(`pulsen: slag ${pl.beats} · sidst ${pl.last_beat}${pl.go_armed ? " · go_armed" : ""}`);
+            else warn("pulsen: endnu intet slag — hjertet armeres ved første berøring efter deploy");
+          } else warn("pulsen: himlen kender den ikke endnu (server før puls-sømmen) — deploy bringer åndedrættet");
         } else if (res.status === 401) bad("himlen afviser: 401 invalid_token = SIGNATUREN (eller udløb)", "mint med den rigtige signing-secret — 401 KAN kun være signatur/udløb (aud/scope giver 403)");
         else if (res.status === 403) bad("himlen afviser: 403 = aud eller scope", "se aud- og kohærens-linjerne ovenfor");
         else bad(`himlen svarer uventet: HTTP ${res.status}`);
