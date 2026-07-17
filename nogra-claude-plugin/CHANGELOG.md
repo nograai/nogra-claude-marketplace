@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.8.8 — 2026-07-17 "the adopt release" (the house's truth wins)
+
+- **Union seats now ADOPT the home's consolidated truth on pull — they no longer union-grow it.**
+  `unionMerge` is add-only by construction: it can append an unseen line but can never propagate a
+  line the home *removed*. So when the home consolidated (dropped stale lines, replaced the sky), a
+  union seat pulling it kept its own stale copy and merged the home's new lines on top — growing
+  monotonically past budget, never converging. Proven live (URET #260): a union seat pulled a
+  2849-char home consolidation and ended at 3653 chars with the same checkpoint line three times.
+- **The fix, client-only, on the drawn law** (DECISIONS #43 "the bench is a projection that must
+  adopt the house's truth", #57 "bench seats only clean their local copy and never re-push a line
+  the cloud has discarded", #127 the RAMMEN watermark motor). `syncPull` gains an adopt branch
+  behind a conservative gate: when the sky's watermark has advanced past the seat's last-seen mark
+  and the seat is a union seat (never the home, which IS the truth), it adopts —
+  - **clean seat:** takes the home's memory/user verbatim (line-removals finally land);
+  - **diverged seat** (dirty + advanced): a three-way `adoptMerge(base, local, remote)` = the home's
+    truth plus the seat's *genuine* additions (local minus the last adopted base), so a home-discarded
+    line is never revived and a real unpushed line is never lost;
+  - **first contact / no stored base yet:** an honest one-time union-merge that records the base, so
+    the next advanced pull adopts cleanly — a named, self-healing gap, not a silent one.
+  On adopt the sky's content becomes the seat's push-baseline, so a clean adopt never spuriously
+  re-pushes, and the `stale_base` cure now flows through adopt for free.
+- **Untouched by design:** the server, `unionMerge` itself, the budget/front-6/race-streg guards,
+  the replace verb, and the home seat. Line-level tombstones remain drawn for a later release
+  (DECISIONS #59). Verified independently at the bench: client-smoke 87/87 ×3, sync-cli 52/52,
+  server 89/89, and today's 3653 ghost as an ordret FAIL→PASS test (URET #262).
+
 ## 0.8.7 — 2026-07-17 "the crown release" (the crown never rebases)
 
 - **The crown never rebases — the home-seat tick race closed structurally.** Proven three

@@ -439,5 +439,115 @@ const good = { endpoint, token: "good-token" };
   ok("(3b) union-receipten bærer INGEN crown-markør", !readFileSync(join(d.sync, "log.jsonl"), "utf8").includes('"crown"'));
 }
 
+// 20. ADOPT — acceptance 1 + 4 (sync-adopt-2026-07-17): a union seat ADOPTS the home's
+// consolidation instead of union-growing. This is TODAY'S 3653 ghost as an ordret FAIL->PASS:
+// unionMerge is add-only and can never drop the home's removed line, so the old path keeps the
+// stale line forever; adopt makes the home's truth win — same SET and same LENGTH (convergence).
+{
+  const d = freshDirs();
+  const ov = { ctx: good, memoryDir: d.memoryDir, syncDir: d.sync };
+  state.board = null; state.you = null; state.turns = [];
+  state.memory = "- keep A\n- keep B\n- STALE line the home will remove\n";
+  state.user = "profile line\n";
+  state.wm = 45;
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- keep A\n- keep B\n- STALE line the home will remove\n");
+  writeFileSync(join(d.memoryDir, "USER.md"), "profile line\n");
+  await syncPull(d.base, ov);   // first contact: merges, records lastSeenWm=45 + base (never a blind adopt)
+  await syncPush(d.base, ov);   // converge → the seat is clean (lastPushHash = hashOf(local))
+  // THE HOME CONSOLIDATES: drops the STALE line, bumps the sky wm
+  state.memory = "- keep A\n- keep B\n";
+  state.wm = 46;
+  const note = await syncPull(d.base, ov);
+  const mem = readFileSync(join(d.memoryDir, "MEMORY.md"), "utf8");
+  ok("ADOPT-1 (today's ghost, FAIL->PASS): a clean union seat ADOPTS the home consolidation — the removed line is GONE, not union-kept",
+     mem === "- keep A\n- keep B\n" && !mem.includes("STALE"));
+  ok("ADOPT-4 (convergence): the adopted seat equals the home truth — same SET and same LENGTH",
+     mem === state.memory && mem.length === state.memory.length);
+  ok("ADOPT: the pull names the adopt honestly (not 'merged')", note.includes("adopted the home's consolidated"));
+  const st = JSON.parse(readFileSync(join(d.sync, "state.json"), "utf8"));
+  ok("ADOPT: the seat records the adopted sky as its base + push-baseline",
+     st.base && st.base.memory === "- keep A\n- keep B\n" && typeof st.lastPushHash === "string");
+  const before = state.pushes.length;
+  const rp = await syncPush(d.base, ov);
+  ok("ADOPT: after a clean adopt the seat never spuriously re-pushes (it already holds the sky's truth)",
+     rp.skipped === "unchanged" && state.pushes.length === before);
+}
+
+// 21. ADOPT — acceptance 2 (diverged): a DIRTY union seat (a genuine unpushed local line) that
+// pulls a home consolidation adopts the home truth AND keeps its own line — while NEVER reviving
+// a line the home discarded. The three-way against the last adopted base.
+{
+  const d = freshDirs();
+  const ov = { ctx: good, memoryDir: d.memoryDir, syncDir: d.sync };
+  state.turns = [];
+  state.memory = "- base A\n- base B the home will drop\n";
+  state.user = "u\n";
+  state.wm = 50;
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- base A\n- base B the home will drop\n");
+  writeFileSync(join(d.memoryDir, "USER.md"), "u\n");
+  await syncPull(d.base, ov);   // base = {A, B}, lastSeenWm=50
+  await syncPush(d.base, ov);   // clean baseline
+  // the seat authors a GENUINE new local line (now dirty, unpushed)
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- base A\n- base B the home will drop\n- SEAT genuine local line\n");
+  // the home consolidates: drops base B, bumps wm
+  state.memory = "- base A\n";
+  state.wm = 51;
+  await syncPull(d.base, ov);
+  const mem = readFileSync(join(d.memoryDir, "MEMORY.md"), "utf8");
+  ok("ADOPT-2 (diverged): the home's dropped line is GONE (adopted, never revived)", !mem.includes("base B"));
+  ok("ADOPT-2b (diverged): the seat's GENUINE local line survives (re-contributed, not lost)", mem.includes("SEAT genuine local line"));
+  ok("ADOPT-2c (diverged): the home truth leads the file (base A adopted first)", mem.startsWith("- base A\n"));
+  const before = state.pushes.length;
+  await syncPush(d.base, ov);
+  ok("ADOPT-2d (diverged): the seat then pushes exactly its own addition (converge), not the discarded line",
+     state.pushes.length === before + 1 && state.pushes.at(-1).memory.includes("SEAT genuine local line") && !state.pushes.at(-1).memory.includes("base B"));
+}
+
+// 22. ADOPT — acceptance 3 (home urørt): the HOME seat (replace) NEVER adopts on a wm-advance;
+// its local consolidated truth always wins. Adopt is a union-seat behavior only.
+{
+  const d = freshDirs();
+  writeFileSync(join(d.base, "config.json"), JSON.stringify({ sync: { enabled: true, endpoint } }));
+  writeFileSync(join(d.base, "token"), "good-token");
+  writeFileSync(join(d.base, "mode"), "replace\n");
+  const ov = { configPath: join(d.base, "config.json"), tokenPath: join(d.base, "token"), modePath: join(d.base, "mode"), syncDir: d.sync, memoryDir: d.memoryDir };
+  state.turns = [];
+  state.memory = "- sky content X\n";
+  state.user = "u\n";
+  state.wm = 10;
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- home consolidated truth\n");
+  await syncPull(d.base, ov);   // home first pull: records lastSeenWm=10
+  state.memory = "- sky content X\n- sky content Y\n";
+  state.wm = 20;                 // the sky advances
+  await syncPull(d.base, ov);
+  const mem = readFileSync(join(d.memoryDir, "MEMORY.md"), "utf8");
+  ok("ADOPT-3 (home urørt): the home's local truth is NEVER discarded by an adopt on wm-advance", mem.includes("home consolidated truth"));
+}
+
+// 23. ADOPT — the NAMED gap (honest partial): a seat upgrading across this release mid-flight
+// (a known lastSeenWm but NO stored base yet) that is dirty cannot compute a safe delta on its
+// FIRST advanced pull — it merges honestly (nothing lost) for that one pull, records the base,
+// and the very NEXT advanced pull is a clean three-way adopt. Self-healing.
+{
+  const d = freshDirs();
+  const ov = { ctx: good, memoryDir: d.memoryDir, syncDir: d.sync };
+  state.turns = [];
+  mkdirSync(d.sync, { recursive: true });
+  writeFileSync(join(d.memoryDir, "MEMORY.md"), "- old A\n- SEAT line\n");
+  writeFileSync(join(d.sync, "state.json"), JSON.stringify({ lastSeenWm: 60, lastPushHash: "deadbeefdeadbeef" }) + "\n"); // dirty, no base
+  state.memory = "- old A\n"; state.user = ""; state.wm = 61;
+  await syncPull(d.base, ov);
+  const mem1 = readFileSync(join(d.memoryDir, "MEMORY.md"), "utf8");
+  const st1 = JSON.parse(readFileSync(join(d.sync, "state.json"), "utf8"));
+  ok("ADOPT-gap: a dirty, base-less seat merges honestly for one pull (nothing lost) and records the base",
+     mem1.includes("SEAT line") && st1.base && st1.base.memory === "- old A\n");
+  state.memory = "- old A\n- new home line\n"; state.wm = 62;
+  await syncPull(d.base, ov);
+  const mem2 = readFileSync(join(d.memoryDir, "MEMORY.md"), "utf8");
+  const st2 = JSON.parse(readFileSync(join(d.sync, "state.json"), "utf8"));
+  ok("ADOPT-gap self-heals: the base is now present → the next advanced pull three-way adopts (home line in, seat line kept)",
+     st2.lastSeenWm === 62 && mem2.includes("new home line") && mem2.includes("SEAT line"));
+}
+
 server.close();
 console.log(`\n${passed} checks passed — sync edges hold. EXIT=0`);
