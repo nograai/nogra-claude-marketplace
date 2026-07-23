@@ -114,7 +114,8 @@ The router is:
 - brief intent -> `/nogra:brief`;
 - approved GO after a reviewed brief -> `/nogra:dispatch`;
 - "is this done?", evidence or verification intent -> `/nogra:verify`;
-- Nogra ledger/state/checkpoint/version intent -> `/nogra:status`;
+- explicit factual continuity save intent -> `/nogra:anchor`;
+- Nogra ledger/state/Anchor/version intent -> `/nogra:status`;
 - Nogra live hook/event visibility intent -> `/nogra:watch`;
 - setup/adapt/create/settings/update/help intent -> the matching `nogra-*` skill;
 - no matching Nogra intent -> direct work.
@@ -145,6 +146,8 @@ intent.
 - `/nogra:brief`: write and lock scoped work into a Nogra brief.
 - `/nogra:dispatch`: run an approved brief after explicit GO.
 - `/nogra:verify`: check whether a claim/result matches the brief and evidence.
+- `/nogra:anchor`: save schema-valid factual continuity without granting GO or
+  claiming readiness.
 - `/nogra:update`: check installed plugin-local contract/guidance on demand.
 - `/nogra:settings`: show or update Nogra profile, role models, effort,
   and language.
@@ -153,6 +156,9 @@ intent.
 - `/nogra:watch`: show a bounded snapshot of `.nogra/runtime/live-hooks.log`
   and, on explicit request, use Claude Code Monitor or `tail -F` for live
   follow.
+- `/nogra:transcript-diagnostic`: user-only, explicit lexical transcript
+  inspection. It is never model-invoked, has no score or authority, and writes
+  only after an explicit save request.
 - `/nogra:help`: explain Nogra and choose the right flow.
 
 ## Normal Workflow
@@ -166,11 +172,17 @@ intent.
    brief.
 3. Make the user approve the brief before dispatch.
 4. Dispatch approved work with a scoped run and a clean execution crossing.
-5. Package evidence before calling work complete.
+5. Package schema-valid, content-addressed evidence before calling work complete.
 6. For a normal single-run, compare the returned evidence against the approved
    brief and return a concise verification with remaining risk.
 7. Use a separate verifier only for noisy log/test checks, explicit
    independent verification or larger multi-agent flows.
+
+Canonical local order is
+`run -> role lease -> structured role report -> evidence-save -> verify`. A ship verdict
+requires a canonical evidence ID. Facts are separate append-only records:
+same stable subject deduplicates, changes require explicit `supersedes`, and
+memory/sync content can remain reported continuity but never verified truth.
 
 If the user asks whether work is actually done, use `/nogra:verify` or the
 `nogra-verify` skill. Verification can check a Nogra-dispatched run or ordinary Claude
@@ -222,7 +234,9 @@ The clean crossing is:
 3. Inspect `executionSizing`; concrete `executionMaxTurns` is chosen here, after
    approval. When it requires a Manager decision, split, override with operator
    approval or ask before spawning.
-4. Fetch the local `handoff-contract --kind executor --run-id <runId>`.
+4. Enter the strict executor role lease, then fetch
+   `handoff-contract --kind executor --run-id <runId>` so the handoff carries
+   the exact lease and role-report contract.
 5. Spawn with the Claude Code `Agent` primitive into the plugin-provided
    `executor` subagent role with the executor role contract, full brief, run id,
    scope, stop criteria and required evidence. Include prior findings directly,
@@ -231,9 +245,13 @@ The clean crossing is:
    The local runtime resolves executor model/effort from runtime policy or the
    release default and carries dispatch-derived `maxTurns` from the run receipt
    instead of relying on role frontmatter.
-6. Wait for the executor report, then compare evidence against the brief.
+6. Wait for the structured executor report, close its lease, validate/save the
+   report, run Manager-owned probes and compare canonical evidence against the
+   brief. Executor has no Bash and cannot issue a verdict.
 7. Use the plugin-provided `verifier` only when independent verification
-   is explicitly needed or the evidence surface is noisy.
+   is explicitly needed or the evidence surface is noisy. Verifier is
+   mechanically limited to Read, Grep and Glob and returns a recommendation;
+   Manager owns the verdict.
 
 If the dispatch receipt, handoff contract, Claude Code `Agent` primitive,
 `executor` role primitive, or required `verifier` primitive is unavailable, stop

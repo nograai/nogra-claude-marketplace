@@ -1,0 +1,30 @@
+{
+  "subject": "workspace.quality.phase",
+  "summary": "Describe the observation without upgrading it beyond the available evidence.",
+  "evidenceLevel": "tested",
+  "producer": {
+    "type": "tool",
+    "ref": "local-command"
+  },
+  "method": {
+    "type": "test",
+    "description": "Run the approved local test suite.",
+    "command": "npm test"
+  },
+  "result": {
+    "status": "pass",
+    "exitCode": 0
+  },
+  "artifacts": [
+    {
+      "ref": ".nogra/evidence/test-output.txt",
+      "mediaType": "text/plain"
+    }
+  ],
+  "sourceRefs": [],
+  "verdictIds": [],
+  "runId": null,
+  "briefId": null,
+  "redactions": [],
+  "metadata": {}
+}

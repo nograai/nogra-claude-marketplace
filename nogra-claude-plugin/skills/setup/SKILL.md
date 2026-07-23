@@ -8,7 +8,7 @@ description: Set this folder up for Nogra. Use when the user runs /nogra:setup, 
 Nogra enables the current folder as a workspace. The plugin provides the Nogra
 skills and local runtime; this setup flow creates the local `.nogra/` domain
 structure needed for boot, project discovery, briefs, runs, evidence,
-checkpoints and local memory.
+immutable Anchors and local memory.
 
 Use this flow when the user runs `/nogra:setup` or asks to set up Nogra in this
 folder. If the user asks whether Nogra can be installed without overwriting

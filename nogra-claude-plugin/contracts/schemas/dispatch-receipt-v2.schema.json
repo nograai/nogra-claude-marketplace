@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/dispatch-receipt-v2.schema.json",
+  "title": "Nogra Dispatch Receipt v2",
+  "type": "object",
+  "required": [
+    "schema",
+    "generatedAt",
+    "status",
+    "receiptType",
+    "idempotent",
+    "runId",
+    "briefId",
+    "briefHash",
+    "approvalId",
+    "actionHash",
+    "approvalStatus",
+    "owner",
+    "targetRole",
+    "targetModel",
+    "lifecycle",
+    "outcome",
+    "verdict",
+    "ledgerWatermark",
+    "transport",
+    "executionCrossing",
+    "brief",
+    "approval",
+    "run",
+    "nextOwner"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nogra.dispatch.receipt.v2"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "const": "ready"
+    },
+    "receiptType": {
+      "const": "canonicalDispatchReceipt"
+    },
+    "idempotent": {
+      "type": "boolean"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_.-]+$"
+    },
+    "briefId": {
+      "type": "string",
+      "pattern": "^brief-[A-Za-z0-9_.-]+$"
+    },
+    "briefHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "approvalId": {
+      "type": "string",
+      "pattern": "^approval-[A-Za-z0-9_.-]+$"
+    },
+    "actionHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "approvalStatus": {
+      "const": "consumed"
+    },
+    "owner": {
+      "const": "Manager"
+    },
+    "target": {
+      "type": "string"
+    },
+    "targetRole": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetModel": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executionRole": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executionRuntime": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lifecycle": {
+      "type": "string",
+      "enum": ["queued", "running", "returning", "returned", "verified", "accepted", "cancelled", "archived"]
+    },
+    "outcome": {
+      "type": ["string", "null"],
+      "enum": [null, "ok", "partial", "blocked", "failed", "cancelled"]
+    },
+    "verdict": {
+      "type": ["string", "null"],
+      "enum": [null, "ship", "deviation", "blocked", "decision_required", "unverified"]
+    },
+    "ledgerWatermark": {
+      "type": "integer"
+    },
+    "transport": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "executionCrossing": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "brief": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "nextOwner": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": true
+}

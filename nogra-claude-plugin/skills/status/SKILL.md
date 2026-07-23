@@ -47,16 +47,23 @@ After versions, show:
 - Workspace id from the local runtime.
 - Local `.nogra/config.json` state when present: pull-first routing posture and
   workspace language.
-- Local transport run state when present:
+- Local canonical or legacy run state when present:
   - Use `skills/status/references/data-sources.md` for collection details.
-  - Show only structured facts: run id, status, phase, target/runtime,
+  - Show only structured facts: run id, lifecycle, executor outcome, verifier
+    verdict, target/runtime,
     elapsed/duration, artifact flags, and helper consistency result.
-- Recent briefs and local transport runs from `.nogra/`; summarize counts and
+- Recent briefs and local canonical/legacy runs from `.nogra/`; summarize counts and
   newest item only unless the user asks for details.
 - Transport note: runtime ledger truth lives in `.nogra/`. Do not imply hosted
   Nogra owns run state.
-- Local ledger/checkpoint freshness when present: show `ledgerWatermark`,
-  `checkpointSourceWatermark` and whether the checkpoint is `fresh` or `stale`.
+- Local Anchor freshness when present: show `currentAnchorId`,
+  `anchorSourceWatermark` and `anchorStatus`. Preserve legacy
+  `checkpointSourceWatermark` only as a compatibility projection. Distinguish
+  `fresh`, `missing`, `invalid`, `stale_ledger` and `stale_git`.
+- Local fact projection status when present: show `factProjectionStatus`,
+  active/superseded counts and source watermark. Never treat
+  `CURRENT-FACTS.json` or native memory as the authority; facts come from the
+  append-only ledger.
 - Local bridge/git/promotion projections when present: show bridge status and
   version, git status plus dirty count only, and the promotion hint with
   blockers. Do not list individual dirty files. Treat `local-preflight` bridge
@@ -64,7 +71,8 @@ After versions, show:
 - Local index readiness when present: show whether risk intake, behavior score,
   risk registry, decisions and expansions files exist. If
   `.nogra/index/behavior-score.md` has a filled latest score line, summarize it
-  in one short line.
+  in one short line. This is an explicit scenario-grading record, never a
+  transcript-derived or hook-generated score.
 - Local continuity migration status when present: show `ready` or
   `migration-needed`. If migration is needed, say `/nogra:setup` will merge the
   missing local continuity layout without replacing app files or user-set config.
@@ -112,7 +120,8 @@ Transport:
 - Consistency: ok
 
 Ledger:
-- Watermark: 4, checkpoint source 2, checkpoint stale
+- Watermark: 4, Anchor source 2, Anchor stale_ledger
+- Facts: fresh, 3 active, 1 superseded
 - Continuity: ready
 
 Warnings:

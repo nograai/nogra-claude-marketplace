@@ -15,8 +15,50 @@ The local runtime owns:
 
 - Reading and writing `.nogra/config.json`
 - Promoting brief drafts to approved briefs
-- Recording transport runs and verification support under `.nogra/transport/`
+- Recording canonical runs under `.nogra/runs/`, content-addressed evidence
+  under `.nogra/evidence/`, approval/verdict receipts under `.nogra/receipts/`,
+  canonical events and facts under `.nogra/ledger/`, and execution/validation
+  artifacts under `.nogra/transport/artifacts/`
+- Rebuilding `.nogra/state/CURRENT-FACTS.json` from ledger facts; native
+  MEMORY/USER sync remains an advisory projection and never fact authority
 - Resolving role models and effort from runtimePolicy or release fallback
+
+## Boot And Native Memory Adapters
+
+`runtime/local/boot-context.mjs` emits `nogra.boot.context.v2`. Its state is
+one of `fresh`, `detected`, `focused`, `resumed` or `recovering`.
+Checkpoint existence is reported without reading checkpoint contents. Only a
+native SessionStart `resume` source can produce `resumed`; compact produces
+`recovering`. Every boot record has `authorization=none`.
+
+`runtime/local/native-memory.mjs` emits
+`nogra.memory.resolution.v1`. It resolves observable Claude settings,
+`CLAUDE_CONFIG_DIR`, SessionStart transcript identity and Git repository
+identity in one place. Pinning, sync, diagnostics and consolidation must use
+that result. For an effective `--settings` or remotely delivered managed value
+that hooks cannot inspect, the operator can bind the same absolute directory
+through `NOGRA_NATIVE_MEMORY_DIR`. Relative, disabled, unresolved and unsafe
+default paths are never used for writes.
+
+Read-only diagnostics:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/runtime/local/boot-context.mjs" --cwd "${CLAUDE_PROJECT_DIR}" --session-source startup --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/native-memory.mjs" "${CLAUDE_PROJECT_DIR}" --json
+```
+
+## Explicit Transcript Diagnostic
+
+Default hooks, status and statusline never analyze transcript wording.
+`/nogra:transcript-diagnostic` is a user-only skill
+(`disable-model-invocation: true`) backed by
+`nogra.transcript.diagnostic.v1`. The default command is a read-only preview;
+`--write` is permitted only after an explicit save request.
+
+The diagnostic reports lexical co-occurrences and their limitations. It has no
+numeric score, severity, permission decision, GO inference, route/dispatch
+effect, evidence/fact upgrade or verdict. Historical session-quality receipts
+remain historical files and are not projected into current status.
 
 ## Term: runtime profile
 
@@ -50,9 +92,11 @@ Use `/nogra:settings` to view or change runtimePolicy.
 ## Executor And Verifier Agents
 
 The Nogra plugin registers `executor` and `verifier` from its own
-`agents/` directory with default Sonnet/medium frontmatter and explicit public
+`agents/` directory with release-default runtime hints and explicit public
 tool allowlists. The public roles are not granted the Claude Code `Agent` tool,
-so they cannot spawn nested subagents. The bundled agents stay inside the plugin
+so they cannot spawn nested subagents. Neither role has Bash. Executor writes
+are bound to a Manager-issued run lease and approved file scope; Verifier has
+only Read, Grep and Glob. The bundled agents stay inside the plugin
 and are not copied into this workspace's
 `.claude/agents/`.
 

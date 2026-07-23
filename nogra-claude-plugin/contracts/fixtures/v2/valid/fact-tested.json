@@ -1,0 +1,26 @@
+{
+  "schema": "nogra.fact.v1",
+  "factId": "fact-5ac59ec82b11513b4922",
+  "factKey": "sha256:a804c1327303677160bca0780e0cca7e6797bc4c3b282a43738d227cc9a25ed1",
+  "workspaceId": "fixture-workspace",
+  "subject": "fixture.contract.status",
+  "claim": "The fixture contract test passed.",
+  "source": {
+    "type": "tool_receipt",
+    "ref": "evidence-fixture"
+  },
+  "evidenceLevel": "tested",
+  "observedAt": "2026-07-23T10:04:00.000Z",
+  "recordedAt": "2026-07-23T10:05:00.000Z",
+  "supersedes": null,
+  "evidenceIds": [
+    "evidence-aaaaaaaaaaaaaaaaaaaa"
+  ],
+  "verdictIds": [],
+  "contentHash": "sha256:5ac59ec82b11513b492253025fd930b4f94feb2b086114ed2cd043b35eadf290",
+  "ledgerWatermark": 7,
+  "sessionId": "",
+  "transcriptId": "",
+  "redactions": [],
+  "metadata": {}
+}

@@ -31,8 +31,8 @@ Linked brief/run/evidence:
   Owner: Workspace operator.
   Linked brief/run/evidence: `.nogra/config.json` memoryPolicy.
 - Date: {{generatedAt}}
-  Decision: SessionStart is detector-only: no full memory load, no write, no dispatch.
-  Why: Boot should orient Claude without creating action or state drift.
-  Alternatives considered: Automatic boot writes or full memory load.
+  Decision: SessionStart uses explicit `fresh`, `detected`, `focused`, `resumed` and `recovering` states; checkpoint existence is detection only.
+  Why: Boot should orient Claude without loading continuity state, implying resume or creating authority/action drift.
+  Alternatives considered: Checkpoint-implies-resume, automatic boot writes or broad state loading.
   Owner: Workspace operator.
   Linked brief/run/evidence: `.nogra/config.json` bootPolicy.

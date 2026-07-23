@@ -1,0 +1,17 @@
+{
+  "subject": "workspace.quality.phase",
+  "claim": "The approved local test suite passed.",
+  "source": {
+    "type": "tool_receipt",
+    "ref": "evidence-REPLACE_WITH_ID"
+  },
+  "evidenceLevel": "tested",
+  "observedAt": "2026-01-01T00:00:00Z",
+  "supersedes": null,
+  "evidenceIds": [
+    "evidence-REPLACE_WITH_ID"
+  ],
+  "verdictIds": [],
+  "redactions": [],
+  "metadata": {}
+}

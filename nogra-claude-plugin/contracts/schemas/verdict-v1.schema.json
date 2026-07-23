@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/verdict-v1.schema.json",
+  "title": "Nogra Verdict v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "verdictId",
+    "workspaceId",
+    "runId",
+    "briefId",
+    "briefHash",
+    "verdict",
+    "reason",
+    "generatedAt",
+    "owner",
+    "nextOwner",
+    "acceptance",
+    "briefDeviations",
+    "decisionRequired",
+    "evidenceIds"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nogra.verdict.v1"
+    },
+    "verdictId": {
+      "type": "string",
+      "pattern": "^verdict-[A-Za-z0-9_.-]+$"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_.-]+$"
+    },
+    "briefId": {
+      "type": "string",
+      "pattern": "^brief-[A-Za-z0-9_.-]+$"
+    },
+    "briefHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["ship", "deviation", "blocked", "decision_required", "unverified"]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "owner": {
+      "const": "Manager"
+    },
+    "nextOwner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string"
+    },
+    "acceptance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "briefDeviations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "decisionRequired": {
+      "type": "boolean"
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidenceIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^evidence-[a-f0-9]{20}$"
+      }
+    },
+    "executionRole": {
+      "type": "string"
+    },
+    "executionRuntime": {
+      "type": "string"
+    },
+    "verificationRole": {
+      "type": "string"
+    },
+    "verificationRuntime": {
+      "type": "string"
+    },
+    "roleReportId": {
+      "type": "string"
+    },
+    "ledgerWatermark": {
+      "type": "integer"
+    },
+    "sessionId": {
+      "type": "string"
+    },
+    "transcriptId": {
+      "type": "string"
+    },
+    "redactions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

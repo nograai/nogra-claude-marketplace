@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/run-v2.schema.json",
+  "title": "Nogra Run v2",
+  "type": "object",
+  "required": [
+    "schema",
+    "runId",
+    "workspaceId",
+    "briefId",
+    "briefHash",
+    "approvalId",
+    "approvalActionHash",
+    "lifecycle",
+    "outcome",
+    "verdict",
+    "createdAt",
+    "updatedAt",
+    "owner",
+    "nextOwner",
+    "targetRole",
+    "executionRole",
+    "executionRuntime",
+    "evidenceLevel",
+    "paths",
+    "artifacts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nogra.run.v2"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_.-]+$"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "briefId": {
+      "type": "string",
+      "pattern": "^brief-[A-Za-z0-9_.-]+$"
+    },
+    "briefHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "approvalId": {
+      "type": "string",
+      "pattern": "^approval-[A-Za-z0-9_.-]+$"
+    },
+    "approvalActionHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "lifecycle": {
+      "type": "string",
+      "enum": ["queued", "running", "returning", "returned", "verified", "accepted", "cancelled", "archived"]
+    },
+    "outcome": {
+      "type": ["string", "null"],
+      "enum": [null, "ok", "partial", "blocked", "failed", "cancelled"]
+    },
+    "verdict": {
+      "type": ["string", "null"],
+      "enum": [null, "ship", "deviation", "blocked", "decision_required", "unverified"]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "startedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "returnedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "verifiedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "acceptedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "endedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nextOwner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target": {
+      "type": "string"
+    },
+    "targetRole": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetModel": {
+      "type": "string"
+    },
+    "executionRole": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executionRuntime": {
+      "type": "string",
+      "minLength": 1
+    },
+    "executionRuntimeSource": {
+      "type": "string"
+    },
+    "executionEffort": {
+      "type": "string"
+    },
+    "executionContext": {
+      "type": "string"
+    },
+    "executionMaxTurns": {
+      "type": "integer"
+    },
+    "executionSizing": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "executionRuntimePolicyProfile": {
+      "type": "string"
+    },
+    "executionLabel": {
+      "type": "string"
+    },
+    "verificationRole": {
+      "type": "string"
+    },
+    "verificationRuntime": {
+      "type": "string"
+    },
+    "verificationRuntimeSource": {
+      "type": "string"
+    },
+    "verificationStatus": {
+      "type": "string"
+    },
+    "verificationLabel": {
+      "type": "string"
+    },
+    "roleReportId": {
+      "type": "string"
+    },
+    "evidenceLevel": {
+      "type": "string",
+      "enum": ["reported", "edited", "tested", "verified"]
+    },
+    "ledgerWatermark": {
+      "type": "integer"
+    },
+    "sessionId": {
+      "type": "string"
+    },
+    "transcriptId": {
+      "type": "string"
+    },
+    "scratchRoots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "authorizedBoundaries": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "scopePatterns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "summary": {
+      "type": "string"
+    },
+    "error": {
+      "type": "string"
+    },
+    "stopReason": {
+      "type": "string"
+    },
+    "returnReason": {
+      "type": "string"
+    },
+    "pendingState": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "paths": {
+      "type": "object",
+      "required": ["artifactsDir", "report", "output", "validation"],
+      "properties": {
+        "artifactsDir": {
+          "type": "string"
+        },
+        "report": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "validation": {
+          "type": "string"
+        },
+        "log": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "required": ["reportExists", "outputExists", "validationExists"],
+      "properties": {
+        "reportExists": {
+          "type": "boolean"
+        },
+        "outputExists": {
+          "type": "boolean"
+        },
+        "validationExists": {
+          "type": "boolean"
+        },
+        "logExists": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "redactions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

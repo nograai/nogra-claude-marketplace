@@ -188,7 +188,7 @@
       "path": ".nogra/ledger/.gitkeep",
       "mimeType": "text/plain",
       "writePolicy": "create_if_missing",
-      "purpose": "Creates the ledger lane for append-only checkpoint freshness facts."
+      "purpose": "Creates the ledger lane for append-only Anchor and workflow freshness facts."
     },
     {
       "source": "init-bundle/files/.nogra/memory/sync/.gitkeep",

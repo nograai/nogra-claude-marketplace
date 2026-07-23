@@ -37,7 +37,18 @@ Symptom: artifact exists but may come from an older run or another workspace.
 Cause: path, timestamp, run id or workspace root was not tied to the claim.
 
 Action: require current path/timestamp/run linkage before using it as verdict
-evidence.
+evidence. Save it through `evidence-save`; a later digest mismatch blocks use.
+
+## Memory Or Sync Claim
+
+Symptom: MEMORY.md, USER.md or a synchronized line says work is complete or
+verified.
+
+Cause: advisory continuity was treated as workspace fact authority.
+
+Action: keep the line at `reported`. It can only become stronger through a
+canonical evidence receipt, fact record and—when verified—a ship verdict or
+verified operator record.
 
 ## No Brief
 

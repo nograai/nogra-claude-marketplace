@@ -1,0 +1,453 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/anchor-v1.schema.json",
+  "title": "Nogra Anchor v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "anchorId",
+    "workspaceId",
+    "createdAt",
+    "updatedAt",
+    "sourceWatermark",
+    "contentHash",
+    "supersedes",
+    "authority",
+    "completion",
+    "decisions",
+    "blockers",
+    "nextOwner",
+    "git",
+    "references",
+    "native",
+    "redactions",
+    "metadata"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nogra.anchor.v1"
+    },
+    "anchorId": {
+      "type": "string",
+      "pattern": "^anchor-[A-Za-z0-9_.-]+$"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sourceWatermark": {
+      "type": "integer"
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "supersedes": {
+      "type": ["string", "null"],
+      "pattern": "^anchor-[A-Za-z0-9_.-]+$"
+    },
+    "authority": {
+      "type": "object",
+      "required": [
+        "mode",
+        "objective",
+        "scope",
+        "briefId",
+        "briefHash",
+        "approvalId",
+        "approvalActionHash"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["approved", "direct", "observation"]
+        },
+        "objective": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "object",
+          "required": ["in", "out"],
+          "properties": {
+            "in": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "out": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "briefId": {
+          "type": ["string", "null"],
+          "pattern": "^brief-[A-Za-z0-9_.-]+$"
+        },
+        "briefHash": {
+          "type": ["string", "null"],
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "approvalId": {
+          "type": ["string", "null"],
+          "pattern": "^approval-[A-Za-z0-9_.-]+$"
+        },
+        "approvalActionHash": {
+          "type": ["string", "null"],
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "completion": {
+      "type": "object",
+      "required": ["verifiedDone", "claimedDone", "unknown"],
+      "properties": {
+        "verifiedDone": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "claimId",
+              "factId",
+              "claim",
+              "observedAt",
+              "evidenceRefs",
+              "provenance"
+            ],
+            "properties": {
+              "claimId": {
+                "type": "string",
+                "pattern": "^claim-[A-Za-z0-9_.-]+$"
+              },
+              "factId": {
+                "type": "string",
+                "pattern": "^fact-[a-f0-9]{20}$"
+              },
+              "claim": {
+                "type": "string",
+                "minLength": 1
+              },
+              "observedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "evidenceRefs": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "provenance": {
+                "type": "object",
+                "required": ["evidenceLevel", "sourceType", "sourceRef"],
+                "properties": {
+                  "evidenceLevel": {
+                    "const": "verified"
+                  },
+                  "sourceType": {
+                    "type": "string",
+                    "enum": ["verdict", "evidence", "repository", "tool_receipt", "operator_record"]
+                  },
+                  "sourceRef": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "claimedDone": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "claimId",
+              "factId",
+              "claim",
+              "claimedAt",
+              "claimedBy",
+              "evidenceRefs",
+              "provenance"
+            ],
+            "properties": {
+              "claimId": {
+                "type": "string",
+                "pattern": "^claim-[A-Za-z0-9_.-]+$"
+              },
+              "factId": {
+                "type": "string",
+                "pattern": "^fact-[a-f0-9]{20}$"
+              },
+              "claim": {
+                "type": "string",
+                "minLength": 1
+              },
+              "claimedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "claimedBy": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidenceRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "provenance": {
+                "type": "object",
+                "required": ["evidenceLevel", "sourceType", "sourceRef"],
+                "properties": {
+                  "evidenceLevel": {
+                    "type": "string",
+                    "enum": ["reported", "edited", "tested"]
+                  },
+                  "sourceType": {
+                    "type": "string",
+                    "enum": ["executor_report", "evidence", "repository", "tool_receipt", "operator_record"]
+                  },
+                  "sourceRef": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "unknown": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["itemId", "subject", "reason", "nextCheck", "sourceRef"],
+            "properties": {
+              "itemId": {
+                "type": "string",
+                "pattern": "^unknown-[A-Za-z0-9_.-]+$"
+              },
+              "subject": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "nextCheck": {
+                "type": "string"
+              },
+              "sourceRef": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["decisionId", "decision", "owner", "sourceRef"],
+        "properties": {
+          "decisionId": {
+            "type": "string",
+            "pattern": "^decision-[A-Za-z0-9_.-]+$"
+          },
+          "decision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceRef": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["blockerId", "blocker", "owner", "sourceRef"],
+        "properties": {
+          "blockerId": {
+            "type": "string",
+            "pattern": "^blocker-[A-Za-z0-9_.-]+$"
+          },
+          "blocker": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceRef": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "nextOwner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "git": {
+      "type": "object",
+      "required": [
+        "status",
+        "commit",
+        "branch",
+        "dirtyCount",
+        "dirtyFingerprint",
+        "fingerprintBasis",
+        "source"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["clean", "dirty", "not_repository", "unknown"]
+        },
+        "commit": {
+          "type": ["string", "null"],
+          "pattern": "^[a-f0-9]{7,64}$"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "dirtyCount": {
+          "type": ["integer", "null"]
+        },
+        "dirtyFingerprint": {
+          "type": ["string", "null"],
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "fingerprintBasis": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "references": {
+      "type": "object",
+      "required": ["briefIds", "approvalIds", "runIds", "factIds", "evidenceRefs", "verdictIds"],
+      "properties": {
+        "briefIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^brief-[A-Za-z0-9_.-]+$"
+          }
+        },
+        "approvalIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^approval-[A-Za-z0-9_.-]+$"
+          }
+        },
+        "runIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?:run|transport)-[A-Za-z0-9_.-]+$"
+          }
+        },
+        "factIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^fact-[a-f0-9]{20}$"
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "verdictIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^verdict-[A-Za-z0-9_.-]+$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "native": {
+      "type": "object",
+      "required": ["platform", "sessionId", "transcriptId", "checkpointRef"],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "enum": ["claude_code", "codex", "other", "none"]
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "transcriptId": {
+          "type": "string"
+        },
+        "checkpointRef": {
+          "type": ["string", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "redactions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

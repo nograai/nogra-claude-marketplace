@@ -1,0 +1,36 @@
+{
+  "schema": "nogra.evidence.v1",
+  "evidenceId": "evidence-3ed8095fc1370e1ba2b0",
+  "workspaceId": "fixture-workspace",
+  "createdAt": "2026-07-23T10:04:00.000Z",
+  "subject": "fixture.contract.test",
+  "summary": "The fixture test passed.",
+  "evidenceLevel": "tested",
+  "producer": {
+    "type": "tool",
+    "ref": "fixture-runner"
+  },
+  "method": {
+    "type": "test",
+    "description": "Run the fixture suite.",
+    "command": "node fixture.mjs"
+  },
+  "result": {
+    "status": "pass",
+    "exitCode": 0
+  },
+  "artifacts": [
+    {
+      "ref": ".nogra/evidence/fixture-output.txt",
+      "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mediaType": "text/plain"
+    }
+  ],
+  "sourceRefs": [],
+  "verdictIds": [],
+  "runId": null,
+  "briefId": null,
+  "contentHash": "sha256:3ed8095fc1370e1ba2b0269bfbc9717013031d27b482361f1c2a576e8354106a",
+  "redactions": [],
+  "metadata": {}
+}

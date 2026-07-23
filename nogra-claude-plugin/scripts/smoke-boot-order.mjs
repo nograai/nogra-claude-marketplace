@@ -1,39 +1,53 @@
 #!/usr/bin/env node
-// Smoke: the bound boot order (hooks/boot-order.mjs).
+
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-function run(root) {
-  const out = execFileSync("node", ["hooks/boot-order.mjs"], {
+function run(root, source = "startup") {
+  const output = execFileSync("node", ["hooks/boot-order.mjs"], {
+    cwd: new URL("..", import.meta.url),
     env: { ...process.env, CLAUDE_PROJECT_DIR: root },
-    encoding: "utf8",
+    input: JSON.stringify({ cwd: root, source }),
+    encoding: "utf8"
   });
-  return JSON.parse(out).hookSpecificOutput.additionalContext;
+  return JSON.parse(output).hookSpecificOutput.additionalContext;
 }
 
-let n = 0;
-const ok = (name, cond) => { assert.ok(cond, name); console.log(`ok ${++n} - ${name}`); };
+function initialize(root) {
+  mkdirSync(join(root, ".nogra", "state"), { recursive: true });
+  writeFileSync(
+    join(root, ".nogra", "config.json"),
+    `${JSON.stringify({ schema: "nogra.workspace.config.v1", workspaceName: "Boot Smoke", workspaceId: "boot-smoke" })}\n`
+  );
+}
 
-// 1. workspace WITH state → the order is injected
+let checks = 0;
+const ok = (name, condition) => {
+  assert.ok(condition, name);
+  console.log(`ok ${++checks} - ${name}`);
+};
+
 const withState = mkdtempSync(join(tmpdir(), "boot-order-"));
-mkdirSync(join(withState, ".nogra", "state"), { recursive: true });
+initialize(withState);
 writeFileSync(join(withState, ".nogra", "state", "SESSION-CHECKPOINT.md"), "# checkpoint\n");
-const ctx = run(withState);
-ok("existing state injects <nogra-boot-order>", ctx.includes("<nogra-boot-order>"));
-ok("the order names the four reads in order",
-  ctx.indexOf("SESSION-CHECKPOINT.md") < ctx.indexOf("ledger") &&
-  ctx.indexOf("ledger") < ctx.indexOf("pinned user profile") &&
-  ctx.indexOf("pinned user profile") < ctx.indexOf("STANDING AGREEMENT"));
-ok("yesterday's agreement is law, GO inherits the plan",
-  ctx.includes("Yesterday's agreement is law") && ctx.includes("NEVER authorizes shortcuts"));
-ok("one green box never auto-approves the rest", ctx.includes("never auto-approves"));
-ok("regardless of which model answers", ctx.includes("regardless of which model"));
+const startup = run(withState, "startup");
+ok("startup is focused, not resumed", startup.includes("state=focused") && !startup.includes("RESUMING work"));
+ok("checkpoint is detected but not loaded", startup.includes("checkpointAvailable=true") && startup.includes("checkpointLoaded=false"));
+ok("boot never authorizes continuation", startup.includes("authorization=none") && startup.includes("no boot state authorizes"));
 
-// 2. fresh workspace (no state) → silent
+const resumed = run(withState, "resume");
+ok("explicit native resume is named", resumed.includes("state=resumed") && resumed.includes("explicit native resume"));
+ok("native resume is not Nogra GO", resumed.includes("not Nogra GO"));
+
+const withoutCheckpoint = mkdtempSync(join(tmpdir(), "boot-order-empty-"));
+initialize(withoutCheckpoint);
+const focused = run(withoutCheckpoint, "startup");
+ok("initialized workspace without checkpoint is focused", focused.includes("state=focused") && focused.includes("checkpointAvailable=false"));
+
 const fresh = mkdtempSync(join(tmpdir(), "boot-order-fresh-"));
-ok("fresh workspace stays silent", run(fresh) === "");
+ok("folder without Nogra stays silent", run(fresh, "startup") === "");
 
-console.log(`\n${n} checks passed — the boot order is bound. EXIT=0`);
+console.log(`\n${checks} checks passed — boot state is explicit. EXIT=0`);

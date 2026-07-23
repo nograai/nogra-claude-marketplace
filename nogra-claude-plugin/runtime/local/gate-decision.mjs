@@ -88,8 +88,8 @@ function isGateArmingResult(result) {
 // One-shot gate decision for a hook invocation. Returns
 // { configured, input, root, result } where result carries shouldAsk,
 // denyEligible, shouldAllow, allowReason and reviewMessage.
-export function resolveGateDecision() {
-  const input = readHookInput();
+export function resolveGateDecision(inputOverride) {
+  const input = inputOverride && typeof inputOverride === "object" ? inputOverride : readHookInput();
   const root = resolveProjectRoot(input);
   if (!hasNograConfig(root)) {
     return { configured: false, input, root, result: null };

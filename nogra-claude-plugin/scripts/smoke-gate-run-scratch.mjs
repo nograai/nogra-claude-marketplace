@@ -78,6 +78,15 @@ function runLocal(args, input) {
   return JSON.parse(output);
 }
 
+function dispatchApproved(root, briefId, extraArgs = []) {
+  const approval = runLocal(["approval-create", "--root", root, "--brief-id", briefId, "--approved-by", "smoke"]);
+  assert(approval.status === "available", "approval-create should record explicit smoke GO");
+  return runLocal([
+    "dispatch", "--root", root, "--brief-id", briefId, "--approval-id", approval.approvalId,
+    ...extraArgs
+  ]);
+}
+
 function makeWorkspace(name, gate) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `nogra-gate-scratch-${name}-`)));
   const config = {
@@ -229,19 +238,20 @@ function main() {
   };
   const saved = runLocal(["brief-save", "--root", dispatchWs, "--source", "run-scratch-smoke"], brief);
   assert(saved.valid === true, "brief-save should accept the smoke brief");
-  const defaultDispatch = runLocal(["dispatch", "--root", dispatchWs, "--brief-id", saved.briefId]);
+  const promoted = runLocal(["brief-promote", "--root", dispatchWs, "--brief-id", saved.briefId]);
+  assert(promoted.status === "ready", "brief-promote should make the smoke brief dispatchable");
+  const defaultDispatch = dispatchApproved(dispatchWs, saved.briefId);
   assert(defaultDispatch.status === "ready", "dispatch should create a receipt");
   const expectedArtifactsRoot = path.join(dispatchWs, ".nogra", "transport", "artifacts", defaultDispatch.runId);
   assert(Array.isArray(defaultDispatch.scratchRoots) && defaultDispatch.scratchRoots.length === 1, "default dispatch should declare exactly one scratch root");
   assert(defaultDispatch.scratchRoots[0] === expectedArtifactsRoot, "default scratch root should be the run's own artifacts dir (absolute, deterministic)");
-  const defaultRun = JSON.parse(fs.readFileSync(path.join(dispatchWs, ".nogra", "transport", "runs", `${defaultDispatch.runId}.json`), "utf8"));
+  const defaultRun = JSON.parse(fs.readFileSync(path.join(dispatchWs, ".nogra", "runs", `${defaultDispatch.runId}.json`), "utf8"));
   assert(Array.isArray(defaultRun.scratchRoots) && defaultRun.scratchRoots[0] === expectedArtifactsRoot, "run receipt should persist scratchRoots top-level");
   assert(defaultRun.metadata?.scratchRoots?.[0] === expectedArtifactsRoot, "run receipt metadata should persist scratchRoots");
 
   const extraScratch = path.join(dispatchWs, "session-scratch");
   fs.mkdirSync(extraScratch, { recursive: true });
-  const flaggedDispatch = runLocal([
-    "dispatch", "--root", dispatchWs, "--brief-id", saved.briefId,
+  const flaggedDispatch = dispatchApproved(dispatchWs, saved.briefId, [
     "--scratch-root", extraScratch,
     "--scratch-root", extraScratch,
     "--scratch-root", "relative-scratch"

@@ -16,6 +16,7 @@
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { syncPull, syncPush, syncDir } from "../runtime/local/sync-client.mjs";
+import { resolveNativeMemory } from "../runtime/local/native-memory.mjs";
 
 // S-A (16/07, cwd-fælden): roden findes OPAD — nærmeste .nogra/ fra cwd og op. Kørt fra en
 // undermappe virker alt; kørt UDENFOR workspacet siger vi det HØJT i stedet for det stille
@@ -286,16 +287,20 @@ async function main() {
     } else if (sync && sync.enabled === true) warn("live-probe sprunget over — løs token-linjen først");
     else warn("live-probe sprunget over (sync off)");
     // 8 · bounds (serverens egen måling: streng-length) + receipts-halen
-    const slug = "-" + root.replace(/^\/+/, "").replace(/\//g, "-");
-    const memHome = join(process.env.HOME || "", ".claude", "projects", slug, "memory");
-    if (existsSync(join(memHome, "MEMORY.md"))) {
+    const memory = resolveNativeMemory({ projectDir: root });
+    const memHome = memory.status === "resolved" ? memory.resolvedDirectory : "";
+    if (memHome && existsSync(join(memHome, "MEMORY.md"))) {
       let mb = "";
       let ub = "";
       try { mb = readFileSync(join(memHome, "MEMORY.md"), "utf8"); } catch {}
       try { ub = readFileSync(join(memHome, "USER.md"), "utf8"); } catch {}
       const over = mb.length > 3000 || ub.length > 1375;
-      (over ? warn : ok)(`bounds: MEMORY ${mb.length}/3000 · USER ${ub.length}/1375${over ? " — OVER: himlen gemmer IKKE et over-budget replace; konsolidér først" : ""}`);
-    } else warn("bounds: native memory ikke fundet for denne rod (ok på et tomt sæde)");
+      (over ? warn : ok)(`bounds: MEMORY ${mb.length}/3000 · USER ${ub.length}/1375 · source=${memory.source}${over ? " — OVER: himlen gemmer IKKE et over-budget replace; konsolidér først" : ""}`);
+    } else if (memory.status === "resolved") {
+      warn(`bounds: native memory destination resolved via ${memory.source}, but no MEMORY.md exists yet (ok on an empty seat)`);
+    } else {
+      warn(`bounds: native memory ${memory.status} (${memory.source}); sync cannot safely select a home`);
+    }
     const rec = tailReceipts(5);
     const recFails = rec.filter((r) => r.ok === false);
     if (rec.length) (recFails.length ? warn : ok)(`receipts: ${rec.length} seneste · ${recFails.length} FAIL${recFails.length ? " — " + recFails.map((r) => `${r.op}:${r.error || "?"}`).join(", ") : ""}`);

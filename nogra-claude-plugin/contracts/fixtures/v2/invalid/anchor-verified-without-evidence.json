@@ -1,0 +1,72 @@
+{
+  "schema": "nogra.anchor.v1",
+  "anchorId": "anchor-000001-invalid",
+  "workspaceId": "fixture-workspace",
+  "createdAt": "2026-07-23T10:00:00.000Z",
+  "updatedAt": "2026-07-23T10:00:00.000Z",
+  "sourceWatermark": 1,
+  "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "supersedes": null,
+  "authority": {
+    "mode": "observation",
+    "objective": "Reject unsupported verified claims.",
+    "scope": {
+      "in": [
+        "Fixture."
+      ],
+      "out": []
+    },
+    "briefId": null,
+    "briefHash": null,
+    "approvalId": null,
+    "approvalActionHash": null
+  },
+  "completion": {
+    "verifiedDone": [
+      {
+        "claimId": "claim-unsupported",
+        "factId": "fact-aaaaaaaaaaaaaaaaaaaa",
+        "claim": "The deployment is live.",
+        "observedAt": "2026-07-23T10:00:00.000Z",
+        "evidenceRefs": [],
+        "provenance": {
+          "evidenceLevel": "verified",
+          "sourceType": "verdict",
+          "sourceRef": "verdict-missing"
+        }
+      }
+    ],
+    "claimedDone": [],
+    "unknown": []
+  },
+  "decisions": [],
+  "blockers": [],
+  "nextOwner": "Manager",
+  "git": {
+    "status": "unknown",
+    "commit": null,
+    "branch": "",
+    "dirtyCount": null,
+    "dirtyFingerprint": null,
+    "fingerprintBasis": "",
+    "source": "git read-only snapshot unavailable"
+  },
+  "references": {
+    "briefIds": [],
+    "approvalIds": [],
+    "runIds": [],
+    "factIds": [
+      "fact-aaaaaaaaaaaaaaaaaaaa"
+    ],
+    "evidenceRefs": [],
+    "verdictIds": []
+  },
+  "native": {
+    "platform": "claude_code",
+    "sessionId": "",
+    "transcriptId": "",
+    "checkpointRef": null
+  },
+  "redactions": [],
+  "metadata": {}
+}

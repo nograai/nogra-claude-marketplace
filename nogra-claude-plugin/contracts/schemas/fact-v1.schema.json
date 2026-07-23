@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/fact-v1.schema.json",
+  "title": "Nogra Fact v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "factId",
+    "factKey",
+    "workspaceId",
+    "subject",
+    "claim",
+    "source",
+    "evidenceLevel",
+    "observedAt",
+    "recordedAt",
+    "supersedes",
+    "evidenceIds",
+    "verdictIds",
+    "contentHash",
+    "ledgerWatermark",
+    "sessionId",
+    "transcriptId",
+    "redactions",
+    "metadata"
+  ],
+  "properties": {
+    "schema": { "const": "nogra.fact.v1" },
+    "factId": { "type": "string", "pattern": "^fact-[a-f0-9]{20}$" },
+    "factKey": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "workspaceId": { "type": "string", "minLength": 1 },
+    "subject": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$" },
+    "claim": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "required": ["type", "ref"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "operator_record",
+            "manager_observation",
+            "executor_report",
+            "verifier_report",
+            "repository",
+            "tool_receipt",
+            "memory_projection",
+            "sync_projection"
+          ]
+        },
+        "ref": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "evidenceLevel": {
+      "type": "string",
+      "enum": ["reported", "edited", "tested", "verified"]
+    },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "supersedes": { "type": ["string", "null"], "pattern": "^fact-[a-f0-9]{20}$" },
+    "evidenceIds": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^evidence-[a-f0-9]{20}$" }
+    },
+    "verdictIds": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^verdict-[A-Za-z0-9_.-]+$" }
+    },
+    "contentHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "ledgerWatermark": { "type": "integer" },
+    "sessionId": { "type": "string" },
+    "transcriptId": { "type": "string" },
+    "redactions": { "type": "array", "items": { "type": "string" } },
+    "metadata": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": false
+}

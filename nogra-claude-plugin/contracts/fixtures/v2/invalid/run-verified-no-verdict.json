@@ -1,0 +1,31 @@
+{
+  "schema": "nogra.run.v2",
+  "runId": "run-invalid-verified",
+  "workspaceId": "fixture-workspace",
+  "briefId": "brief-fixture",
+  "briefHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "approvalId": "approval-fixture",
+  "approvalActionHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "lifecycle": "verified",
+  "outcome": "ok",
+  "verdict": null,
+  "createdAt": "2026-07-23T10:00:00.000Z",
+  "updatedAt": "2026-07-23T10:05:00.000Z",
+  "owner": "Manager",
+  "nextOwner": "Manager",
+  "targetRole": "executor",
+  "executionRole": "nogra:executor",
+  "executionRuntime": "sonnet",
+  "evidenceLevel": "verified",
+  "paths": {
+    "artifactsDir": ".nogra/transport/artifacts/run-invalid-verified",
+    "report": ".nogra/transport/artifacts/run-invalid-verified/report.md",
+    "output": ".nogra/transport/artifacts/run-invalid-verified/output.md",
+    "validation": ".nogra/transport/artifacts/run-invalid-verified/validation.json"
+  },
+  "artifacts": {
+    "reportExists": true,
+    "outputExists": true,
+    "validationExists": false
+  }
+}

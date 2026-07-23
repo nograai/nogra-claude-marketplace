@@ -156,19 +156,30 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" registry --root "<absolute-
 ```
 
    The default dispatch control plane is plugin-local.
-5. Create a local dispatch receipt/run id for the approved brief:
+5. Record the just-observed explicit GO as a brief-hashed, action-hashed,
+   single-use approval record. Do this only once for that user GO:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" dispatch --root "<absolute-workspace-root>" --brief-id "<briefId>" --target executor --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" approval-create --root "<absolute-workspace-root>" --brief-id "<briefId>" --approved-by "operator" --json
 ```
 
-   Pass `--target-model` only for an explicit per-dispatch override. Otherwise
-   the local runtime resolves the configured runtime policy or release default.
+   Then use the returned `approvalId` to create exactly one canonical run:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" dispatch --root "<absolute-workspace-root>" --brief-id "<briefId>" --approval-id "<approvalId>" --json
+```
+
+   Target role and runtime are part of the approved brief hash. Do not use
+   `--target` or `--target-model` to change them after GO; update the brief,
+   show the changed brief, and obtain a fresh GO instead.
    Pass `--max-turns` only when Manager intentionally overrides the brief-derived
    sizing for this dispatch. Otherwise the local runtime derives `executionMaxTurns`
    from the approved brief and records the factors in `executionSizing`.
-   The local runtime writes the queued transport run and event under
-   `.nogra/transport/`.
+   The local runtime writes `nogra.run.v2` under `.nogra/runs/`, consumes the
+   approval, and appends `nogra.run.event.v2` to
+   `.nogra/ledger/events.jsonl`. Execution artifacts remain under
+   `.nogra/transport/artifacts/<runId>/`. It does not create a shadow legacy
+   transport run.
 6. Inspect `executionSizing` in the dispatch receipt before spawning. If
    `executionSizing.requiresManagerDecision` is true, do not continue to handoff
    and spawn by default. Treat this as a decomposition gate:
@@ -181,15 +192,26 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" dispatch --root "<absolute-
 
    Surface the receipt's `executionSizing.summary` in one line when a decision is
    needed.
-7. Fetch the local handoff contract:
+7. Enter the strict executor role lease before spawning:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" handoff-contract --root "$NOGRA_ROOT" --kind executor --run-id "<runId>" --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" role-enter --root "<absolute-workspace-root>" --run-id "<runId>" --role executor --json
    ```
 
-8. If any local runtime write fails, stop and surface the failure. Local runtime
+   The returned `nogra.role.lease.v1` binds this run revision, role, operation
+   set and normalized `scope.files`. Do not spawn on `blocked`, an empty/missing
+   lease, or a lease for another run. Only one active public role lease may
+   exist in a workspace.
+8. Fetch the local handoff contract after lease entry so it carries the exact
+   lease id and role-report template:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" handoff-contract --root "<absolute-workspace-root>" --kind executor --run-id "<runId>" --json
+   ```
+
+9. If any local runtime write fails, stop and surface the failure. Local runtime
    helpers own transport record writes.
-9. Spawn with the Claude Code `Agent` primitive into the plugin-provided
+10. Spawn with the Claude Code `Agent` primitive into the plugin-provided
    `nogra:executor` role when available. It is the preferred execution role
    contract because the plugin role file defines the responsibility while the
    local runtime resolves runtime metadata. Include:
@@ -220,9 +242,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" dispatch --root "<absolute-
    a plain reason such as "work stopped before completion with pending tool
    work". Carry the run id, any pending tool/request state available, and the
    known safe continuation. Do not treat a max-turn wrapper return as completion.
-   Long-running commands should set Bash timeout directly for the scaffold,
-   build or test step. Progress monitoring uses `run_in_background` rather than
-   sleep-poll command chains.
+   The strict public executor also omits `Bash`. It returns required command
+   checks in `requestedProbes`; Manager runs those probes after the role return
+   and stores canonical evidence. Never widen the role with arbitrary shell.
    If the client cannot invoke `nogra:executor`, stop and surface the missing
    role primitive. Inline implementation is outside the dispatch path. Generic
    subagent execution belongs to direct work only when the user explicitly asks
@@ -237,23 +259,35 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" dispatch --root "<absolute-
    the background agent result to Manager before exit, leave the local run
    queued and tell the operator to resume/check/verify the run in an
    interactive Claude Code session.
-10. While the executor-role subagent runs, keep the main chat focused on state
+11. While the executor-role subagent runs, keep the main chat focused on state
    and decisions. If the user asks to stop or cancel it, stop that subagent first,
    then update the local run through the local ledger/finalize path or return a
    short cancelled or partial state report if no terminal record can be safely
    written. Further implementation, verification, screenshots, browser opening
    or file-opening require a fresh user ask.
-11. When the executor-role subagent returns, read evidence in the Manager phase
-   and choose the run status. Then persist report/output/run/event records
-   locally with the local ledger helper:
+12. When the executor-role subagent returns, close its lease and validate the
+   exact structured return before choosing the executor outcome:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-ledger.mjs" finalize-run --root "$NOGRA_ROOT" --json
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" role-exit --root "<absolute-workspace-root>" --lease-id "<leaseId>" --reason "executor returned control to Manager" --json
+   ```
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" role-report-save --root "<absolute-workspace-root>" --input ".nogra/transport/tmp-executor-role-report.json" --json
+   ```
+
+   A report that names an out-of-scope file, another run/brief/lease or an
+   Executor verdict fails closed. The accepted report remains a claim surface.
+   Manager then runs any `requestedProbes`, saves canonical evidence, chooses
+   the executor outcome, and persists report/output/run/event records with:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-ledger.mjs" finalize-run --root "<absolute-workspace-root>" --json
    ```
 
    Pass JSON on stdin with:
    - `runId`;
-   - Manager-phase terminal `status`: `ok`, `partial`, `blocked` or `failed`;
+   - executor `status`/outcome: `ok`, `partial`, `blocked` or `failed`;
    - `phase`: `returned`;
    - `summary`;
    - `reportText`;
@@ -261,13 +295,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" dispatch --root "<absolute-
    - optional `stopReason`, `returnReason` and `pendingState` when the role
      returns without a normal report because the client loop hit a turn/runtime
      limit.
-   - if an independent verifier-role pass actually ran, also include:
-     `verificationRole: "nogra:verifier"`, `verificationRuntime`,
-     `verificationRuntimeSource`, and `verificationStatus`.
 
    The helper owns write order: report/output first, then artifact flags from
-   disk, then run JSON, then terminal event, then consistency check. The
-   Manager phase owns the language and the status decision. Do not use task
+   disk, then canonical run JSON, then canonical run event, then consistency
+   check. This transition sets `lifecycle=returned` and `outcome`; it never
+   writes a verifier verdict. The Manager phase owns the language and the
+   outcome decision. Do not use task
    wrapper `completed` as completion evidence, and do not invent
    `completed/completed`.
    Executor self-report is never verdict evidence. Complete, truncated, missing
@@ -282,20 +315,29 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" dispatch --root "<absolute-
    read its `Safe Continuation` section before returning to the user. If a safe
    route is present, include both the blocker and that route in the Manager
    verification/return surface.
-12. For an ordinary single-run, compare executor-role evidence against the
+13. For an ordinary single-run, compare executor-role evidence against the
     approved brief and return the verification. Spawn a subagent in the
     plugin-provided `nogra:verifier` role only for noisy log/test checks,
     explicit independent verification, explicitly requested adapter evidence or
-    larger multi-agent flows. If the `nogra:verifier` primitive is unavailable
+    larger multi-agent flows. The verifier is restricted to Read, Grep and Glob;
+    it has no Bash or mutation tool. Manager runs commands and persists their
+    canonical evidence before the verifier pass. If the `nogra:verifier` primitive is unavailable
     when independent verification is required, stop and report the missing
-    primitive. When a verifier-role subagent is used, final Nogra state must
-    preserve that second role/runtime pair beside the executor pair. Use
-    `verificationRole: "nogra:verifier"`, the verifier runtime hint or resolved
-    runtime when available, and `verificationStatus` such as `ship`,
-    `deviation`, `blocked`, `decision_required` or `unverified` in the
-    `finalize-run` payload. Do not overwrite `executionRole`; that remains the
-    executor-role run.
-13. If the result differs from the approved brief in a material way, return
+    primitive. When a verifier-role subagent is used, include
+    the complete evidence receipts and a verifier handoff contract. Before
+    spawn, enter `--role verifier`. After return, close the lease and save the
+    `nogra.role.report.v1` exactly as above. Pass its `roleReportId` to
+    verification; do not translate free text into a verifier verdict:
+
+    ```bash
+    node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" verify --root "<absolute-workspace-root>" --run-id "<runId>" --input ".nogra/transport/tmp-verification-input.json" --json
+    ```
+
+    This writes a canonical `nogra.verdict.v1`, transitions the run from
+    `returned` to `verified`, and appends `run_verified`. It preserves
+    `executionRole` and executor `outcome`; verification only adds the separate
+    verifier role/runtime and `verdict`.
+14. If the result differs from the approved brief in a material way, return
     `deviation` / `partial` even when the result looks good. Examples:
     requested framework/version changed, a success criterion was satisfied by
     substitute evidence, a screenshot was skipped, or scope moved without user
@@ -308,6 +350,8 @@ If any required crossing piece is missing, stop cleanly:
 
 - no dispatch receipt or run id: stop
 - no executor handoff contract: stop
+- no active run-bound executor lease: stop
+- malformed, mismatched or out-of-scope structured role report: stop
 - no Claude Code `Agent` primitive or no `nogra:executor` role primitive: stop
 - required Claude Code `Agent` primitive or `nogra:verifier` role primitive
   missing: stop
@@ -327,8 +371,9 @@ direction; do not propose a bypass from this flow.
 ## Local Runtime Notes
 
 - Local dispatch uses `scripts/nogra-local.mjs` as the control-plane runtime.
-- Local dispatch returns a receipt/run id and writes local `.nogra/transport/`
-  records. Execution starts at the agent handoff.
+- Local dispatch returns a receipt/run id, writes the canonical run under
+  `.nogra/runs/`, and leaves execution artifacts under `.nogra/transport/`.
+  Execution starts at the agent handoff.
 - Private transport packets are outside plugin-mode execution.
 - `handoff-contract --kind executor --run-id <runId>` returns the local handoff
   prompt supplied to the plugin-provided `nogra:executor` role subagent, with

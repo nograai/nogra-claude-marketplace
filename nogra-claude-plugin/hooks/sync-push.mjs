@@ -4,10 +4,16 @@
 // OFF unless sync is enabled + a token exists. Fail-open: errors leave a receipt, never a crash.
 
 import { syncPush } from "../runtime/local/sync-client.mjs";
+import { readFileSync } from "node:fs";
 
 try {
-  const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  await syncPush(root);
+  let input = {};
+  try {
+    const raw = readFileSync(0, "utf8").trim();
+    input = raw ? JSON.parse(raw) : {};
+  } catch {}
+  const root = process.env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
+  await syncPush(root, { hookInput: input });
 } catch {
   // receipts are written inside syncPush; a crash here must never disturb session end
 }

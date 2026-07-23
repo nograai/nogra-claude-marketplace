@@ -65,9 +65,15 @@ function validateSkillDirectory(skillName) {
   const text = read(relativePath);
   const { frontmatter, body } = parseFrontmatter(text, relativePath);
   const keys = Object.keys(frontmatter).sort();
+  const expectedKeys = skillName === "transcript-diagnostic"
+    ? ["description", "disable-model-invocation", "name"]
+    : ["description", "name"];
 
-  assert(JSON.stringify(keys) === JSON.stringify(["description", "name"]), `${relativePath} frontmatter must contain only name and description`);
+  assert(JSON.stringify(keys) === JSON.stringify(expectedKeys), `${relativePath} frontmatter contains an unsupported field set`);
   assert(frontmatter.name === `nogra-${skillName}`, `${relativePath} name must be nogra-${skillName}`);
+  if (skillName === "transcript-diagnostic") {
+    assert(frontmatter["disable-model-invocation"] === "true", `${relativePath} must be user-only`);
+  }
   assert(/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(frontmatter.name), `${relativePath} name must be lowercase hyphen-case`);
   assert(/\bUse (when|after|only when)\b/.test(frontmatter.description), `${relativePath} description must describe trigger conditions`);
   assert(frontmatter.description.length <= 360, `${relativePath} description is too long for trigger metadata`);
@@ -118,6 +124,8 @@ requireText("skills/verify/SKILL.md", "Executor self-report is never verdict evi
 requireText("hooks/hooks.json", "\"SessionStart\"", "hook config must keep lifecycle hooks explicit");
 requireText("hooks/hooks.json", "\"PreToolUse\"", "hook config must keep action guard explicit");
 requireText("runtime/local/convergence-guard.mjs", "git", "convergence guard should preserve hard risk boundaries");
+requireText("skills/transcript-diagnostic/SKILL.md", "authority: none", "transcript diagnostic must stay non-authoritative");
+requireText("skills/transcript-diagnostic/SKILL.md", "Never invoke this skill automatically", "transcript diagnostic must stay explicit");
 ok("critical Nogra boundaries are present");
 
 console.log("skill-quality: PASS");

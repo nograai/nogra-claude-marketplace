@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/role-report-v1.schema.json",
+  "title": "Nogra Role Report v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "reportId",
+    "workspaceId",
+    "runId",
+    "briefId",
+    "leaseId",
+    "role",
+    "status",
+    "summary",
+    "claims",
+    "evidenceIds",
+    "filesChanged",
+    "requestedProbes",
+    "scopeCheck",
+    "mutationAttempted",
+    "recommendation",
+    "reason",
+    "generatedAt",
+    "nextOwner",
+    "contentHash",
+    "ledgerWatermark"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nogra.role.report.v1"
+    },
+    "reportId": {
+      "type": "string",
+      "pattern": "^role-report-[A-Za-z0-9_.-]+$"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_.-]+$"
+    },
+    "briefId": {
+      "type": "string",
+      "pattern": "^brief-[A-Za-z0-9_.-]+$"
+    },
+    "leaseId": {
+      "type": "string",
+      "pattern": "^role-lease-[A-Za-z0-9_.-]+$"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["executor", "verifier"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "partial", "blocked", "failed"]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim", "verificationStatus", "evidenceIds"],
+        "properties": {
+          "claim": {
+            "type": "string",
+            "minLength": 1
+          },
+          "verificationStatus": {
+            "type": "string",
+            "enum": ["claimed", "unverified", "verified"]
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^evidence-[a-f0-9]{20}$"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "evidenceIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^evidence-[a-f0-9]{20}$"
+      }
+    },
+    "filesChanged": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "requestedProbes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "scopeCheck": {
+      "type": "object",
+      "required": ["status", "checkedPatterns", "deviations"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["met", "deviation", "blocked"]
+        },
+        "checkedPatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deviations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "mutationAttempted": {
+      "type": "boolean"
+    },
+    "recommendation": {
+      "type": "string",
+      "enum": ["none", "ship", "deviation", "blocked", "decision_required", "unverified"]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "nextOwner": {
+      "const": "Manager"
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "ledgerWatermark": {
+      "type": "integer"
+    },
+    "sessionId": {
+      "type": "string"
+    },
+    "transcriptId": {
+      "type": "string"
+    },
+    "redactions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

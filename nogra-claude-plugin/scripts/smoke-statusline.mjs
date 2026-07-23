@@ -27,7 +27,7 @@ const pluginVersion = JSON.parse(
   fs.readFileSync(path.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8"),
 ).version;
 const EXPECTED_UNINIT_BASELINE =
-  `Nogra:local ${pluginVersion} hook:none checkpoint:fresh continuity:migration-needed bridge:unknown dirty:unknown promo:unknown`;
+  `Nogra:local ${pluginVersion} hook:none anchor:missing continuity:migration-needed bridge:unknown dirty:unknown promo:unknown`;
 
 function assert(condition, message) {
   if (!condition) {

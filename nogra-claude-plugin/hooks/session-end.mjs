@@ -4,7 +4,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
-import { captureSessionQualityReceipt } from "../runtime/local/session-quality.mjs";
 
 function readStdin() {
   try {
@@ -72,4 +71,3 @@ if (!hasNograConfig(root)) {
 
 captureSessionAnchor(root, input, "SessionEnd");
 captureLiveHookEvent(root, input, { eventName: "SessionEnd", decision: "observed" });
-captureSessionQualityReceipt(root, input);

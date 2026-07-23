@@ -1,5 +1,65 @@
 # Changelog
 
+## Unreleased — Quality Pass 0
+
+- Added the canonical contract spine
+  `brief.v1 -> approval.v1 -> run.v2 -> run-event.v2 -> evidence.v1 -> verdict.v1` with
+  schema-closed validation, scoped single-use approvals, lifecycle/outcome/
+  verdict separation, replay recovery and frozen legacy reads.
+- Added English-first Anchor v1 continuity: `/nogra:anchor`,
+  `nogra.anchor.v1`, immutable JSON records, atomic current JSON/Markdown
+  projections, evidence-gated `verifiedDone`, separate `claimedDone` and
+  `unknown`, approved brief/GO binding, ledger and Git freshness, content
+  dedupe, `supersedes`, and interrupted-projection recovery.
+- Anchor complements Claude Code's native rewind checkpoints. It does not
+  grant GO, infer readiness, read transcripts or invent a native checkpoint
+  identifier that Claude hooks do not expose.
+- Added Phase 3 factual identity: immutable content-addressed
+  `nogra.evidence.v1` receipts, append-only `nogra.fact.v1` ledger records,
+  one active fact per stable subject, explicit `supersedes`, non-regressing
+  evidence levels and a rebuildable `CURRENT-FACTS.json` projection. Ship
+  verdicts now require canonical evidence IDs, Anchor completion claims bind
+  active facts, and artifact digests are checked before evidence can support a
+  fact or verdict.
+- Native MEMORY/USER and hosted sync remain the one continuity home and
+  transport, but are explicitly advisory projections. Memory/sync sources are
+  capped at `reported` and cannot create or upgrade verified facts; sync state,
+  receipts and SessionStart context carry that boundary without changing the
+  HOME/seat/adopt protocol.
+- Added Phase 4 strict role isolation. Manager now issues one short-lived,
+  run-revision-bound `nogra.role.lease.v1` before a public role starts.
+  PreToolUse binds the lease to Claude's `agent_type` and `agent_id`; missing,
+  expired, swapped-agent and out-of-scope Executor operations fail closed.
+  Public Executor and Verifier no longer receive Bash. Verifier is mechanically
+  limited to Read, Grep and Glob, while Manager owns command/test probes and
+  canonical evidence.
+- Added schema-valid `nogra.role.report.v1` returns. Executor reports are claims
+  and cannot recommend a verdict; Verifier reports are read-only recommendations
+  bound to canonical evidence. Manager alone finalizes executor outcome and
+  writes `nogra.verdict.v1`. Adversarial regression covers scope escape,
+  control-plane writes, agent swaps, role escalation, arbitrary shell, mutation,
+  missing evidence and unstructured verifier claims.
+- Added Phase 5 explicit boot and native-memory adapter contracts.
+  `nogra.boot.context.v2` projects `fresh`, `detected`, `focused`, `resumed`
+  and `recovering`; checkpoint existence is detection-only and only Claude
+  Code's native SessionStart source may produce resume/recovery states. Boot
+  never loads checkpoint contents or grants authority.
+- Added one shared `nogra.memory.resolution.v1` path resolver for USER pinning,
+  sync, diagnostics and consolidation. It honors observable settings,
+  `CLAUDE_CONFIG_DIR`, runtime transcript identity and Git repository identity,
+  supports an explicit runtime bridge for CLI/remote-only settings, respects
+  disabled Auto Memory and fails closed on invalid or escaping default paths.
+  SessionStart now orders optional sync pull before reading the resolved USER
+  pin/bound state.
+- Added Phase 6 hidden-scoring isolation. SessionEnd no longer reads
+  transcripts or writes session-quality receipts, and default status/statusline
+  no longer project stale language judgments. The former numeric quality score,
+  severity ladder and GO/stop interpretation are removed.
+- Added optional `nogra.transcript.diagnostic.v1` behind the user-only
+  `/nogra:transcript-diagnostic` skill. It reports bounded lexical observations
+  and limitations with `authority=none`, neutral control/truth effects and no
+  score or verdict. Preview writes nothing; saving requires explicit `--write`.
+
 ## 0.8.8 — 2026-07-17 "the adopt release" (the house's truth wins)
 
 - **Union seats now ADOPT the home's consolidated truth on pull — they no longer union-grow it.**

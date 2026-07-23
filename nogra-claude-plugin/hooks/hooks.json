@@ -16,11 +16,6 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sync-pull.mjs\""
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-load.mjs\"",
-            "async": false
           }
         ]
       },
@@ -108,6 +103,16 @@
     "PreToolUse": [
       {
         "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.mjs\"",
+            "async": false
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob",
         "hooks": [
           {
             "type": "command",

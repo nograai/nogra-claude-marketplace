@@ -1,0 +1,31 @@
+{
+  "schema": "nogra.run.v2",
+  "runId": "run-fixture",
+  "workspaceId": "fixture-workspace",
+  "briefId": "brief-fixture",
+  "briefHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "approvalId": "approval-fixture",
+  "approvalActionHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "lifecycle": "queued",
+  "outcome": null,
+  "verdict": null,
+  "createdAt": "2026-07-23T10:00:01.000Z",
+  "updatedAt": "2026-07-23T10:00:01.000Z",
+  "owner": "Manager",
+  "nextOwner": "nogra:executor",
+  "targetRole": "executor",
+  "executionRole": "nogra:executor",
+  "executionRuntime": "sonnet",
+  "evidenceLevel": "tested",
+  "paths": {
+    "artifactsDir": ".nogra/transport/artifacts/run-fixture",
+    "report": ".nogra/transport/artifacts/run-fixture/report.md",
+    "output": ".nogra/transport/artifacts/run-fixture/output.md",
+    "validation": ".nogra/transport/artifacts/run-fixture/validation.json"
+  },
+  "artifacts": {
+    "reportExists": false,
+    "outputExists": false,
+    "validationExists": false
+  }
+}

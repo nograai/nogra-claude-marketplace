@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeActiveIntentGate, readActiveIntent as readActiveIntentState } from "./active-intent.mjs";
+import { RUN_SCHEMA_V2, compatibilityRunStatus, listRunRecords } from "./contract-spine.mjs";
 
 const PENDING_AUTHORIZATION_RUN_STATUSES = new Set(["queued", "running", "returning", "in_progress"]);
 const TERMINAL_AUTHORIZATION_RUN_STATUSES = new Set(["returned", "ok", "partial"]);
@@ -313,29 +314,30 @@ function checkpointSourceWatermark(root) {
 }
 
 function listTransportRuns(root) {
-  const dir = path.join(root, ".nogra", "transport", "runs");
-  if (!exists(dir)) return [];
-  return fs.readdirSync(dir)
-    .filter((name) => name.endsWith(".json"))
-    .map((name) => {
-      const file = path.join(dir, name);
-      const payload = readJsonIfValid(file) || {};
+  return listRunRecords(root)
+    .map((payload) => {
+      const file = payload.sourcePath || "";
       return {
-        runId: cleanInline(payload.runId || name.replace(/\.json$/u, "")),
+        schema: cleanInline(payload.schema || ""),
+        runId: cleanInline(payload.runId || path.basename(file, ".json")),
         briefId: cleanInline(payload.briefId || ""),
         title: cleanInline(payload.title || payload.metadata?.title || ""),
         objective: cleanInline(payload.objective || payload.metadata?.objective || ""),
         target: cleanInline(payload.target || payload.targetRole || ""),
         targetRole: cleanInline(payload.targetRole || payload.target || payload.metadata?.targetRole || ""),
-        status: cleanInline(payload.status || ""),
-        phase: cleanInline(payload.phase || ""),
+        status: cleanInline(compatibilityRunStatus(payload)),
+        phase: cleanInline(payload.lifecycle || payload.phase || ""),
+        lifecycle: cleanInline(payload.lifecycle || payload.phase || ""),
+        outcome: cleanInline(payload.outcome || ""),
+        verdict: cleanInline(payload.verdict || ""),
+        evidenceLevel: cleanInline(payload.evidenceLevel || ""),
         owner: cleanInline(payload.owner || payload.metadata?.owner || ""),
         nextOwner: cleanInline(payload.nextOwner || payload.metadata?.nextOwner || ""),
         stopReason: cleanInline(payload.stopReason || payload.metadata?.stopReason || ""),
         returnReason: cleanInline(payload.returnReason || payload.reason || payload.metadata?.returnReason || payload.metadata?.reason || ""),
         pendingState: cleanInline(payload.pendingState || payload.metadata?.pendingState || ""),
         authorizedBoundaries: normalizeScopeList(payload.authorizedBoundaries ?? payload.metadata?.authorizedBoundaries, true),
-        scopePatterns: normalizeScopeList(payload.scope ?? payload.metadata?.scope),
+        scopePatterns: normalizeScopeList(payload.scopePatterns ?? payload.scope ?? payload.metadata?.scope),
         scratchRoots: normalizeScopeList(payload.scratchRoots ?? payload.metadata?.scratchRoots),
         createdAt: cleanInline(payload.createdAt || ""),
         updatedAt: cleanInline(payload.updatedAt || payload.createdAt || ""),
@@ -419,6 +421,12 @@ function authorizationReceiptIssue(root, run, runs, nowMs = Date.now()) {
   if (!isPotentialAuthorizationStatus(status)) return `status ${run.status || "missing"} is not an authorization state`;
   if (!run.briefId) return "missing brief scope";
   if (run.requiresManagerDecision) return "requiresManagerDecision=true";
+  if (run.schema === RUN_SCHEMA_V2 && run.lifecycle === "verified" && run.verdict !== "ship") {
+    return `verdict ${run.verdict || "missing"} does not authorize continuation`;
+  }
+  if (run.schema === RUN_SCHEMA_V2 && run.lifecycle === "returned" && run.evidenceLevel === "verified") {
+    return "verified evidence level is awaiting a canonical verdict";
+  }
   if (isPendingAuthorizationStatus(status) && !run.nextOwner.startsWith("nogra:")) {
     return `pending nextOwner=${run.nextOwner || "missing"}`;
   }

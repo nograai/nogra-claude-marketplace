@@ -1,0 +1,17 @@
+{
+  "schema": "nogra.run.event.v2",
+  "eventId": "run-event-run-fixture-run_queued-2",
+  "eventType": "run_queued",
+  "type": "run_queued",
+  "workspaceId": "fixture-workspace",
+  "runId": "run-fixture",
+  "briefId": "brief-fixture",
+  "approvalId": "approval-fixture",
+  "approvalActionHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "lifecycle": "queued",
+  "outcome": null,
+  "verdict": null,
+  "ledgerWatermark": 2,
+  "createdAt": "2026-07-23T10:00:01.000Z",
+  "generatedAt": "2026-07-23T10:00:01.000Z"
+}
