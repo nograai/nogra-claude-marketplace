@@ -1,0 +1,26 @@
+{
+  "schema": "nogra.approval.v1",
+  "approvalId": "approval-20260723-example",
+  "workspaceId": "example-workspace",
+  "briefId": "brief-example",
+  "briefHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "actionHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "status": "available",
+  "approvedAt": "2026-07-23T10:00:00.000Z",
+  "approvedBy": "operator",
+  "source": "manager_observed_explicit_go",
+  "singleUse": true,
+  "createdAt": "2026-07-23T10:00:00.000Z",
+  "updatedAt": "2026-07-23T10:00:00.000Z",
+  "expiresAt": null,
+  "consumedAt": null,
+  "consumedByRunId": null,
+  "sessionId": "",
+  "transcriptId": "",
+  "ledgerWatermark": 1,
+  "redactions": [],
+  "metadata": {
+    "authority": "dispatch-only",
+    "nativePermissionsRemainAuthoritative": true
+  }
+}

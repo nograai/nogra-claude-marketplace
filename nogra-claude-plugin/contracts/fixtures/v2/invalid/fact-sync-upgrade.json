@@ -1,0 +1,24 @@
+{
+  "schema": "nogra.fact.v1",
+  "factId": "fact-4445ef211d41875d87db",
+  "factKey": "sha256:b8e1161736b71528c6321fb99f0937ad7134a5754d898ca20b03e068681333d7",
+  "workspaceId": "fixture-workspace",
+  "subject": "fixture.sync.claim",
+  "claim": "A synchronized line is verified truth.",
+  "source": {
+    "type": "sync_projection",
+    "ref": "MEMORY.md"
+  },
+  "evidenceLevel": "verified",
+  "observedAt": "2026-07-23T10:04:00.000Z",
+  "recordedAt": "2026-07-23T10:05:00.000Z",
+  "supersedes": null,
+  "evidenceIds": [],
+  "verdictIds": [],
+  "contentHash": "sha256:4445ef211d41875d87db6a1f8cc1ea51d4aeb2b526e61f91d96767628c41b8d2",
+  "ledgerWatermark": 8,
+  "sessionId": "",
+  "transcriptId": "",
+  "redactions": [],
+  "metadata": {}
+}

@@ -1,0 +1,40 @@
+{
+  "schema": "nogra.verdict.v1",
+  "verdictId": "verdict-run-20260723-example",
+  "workspaceId": "example-workspace",
+  "runId": "run-20260723-example",
+  "briefId": "brief-example",
+  "briefHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "verdict": "ship",
+  "reason": "",
+  "generatedAt": "2026-07-23T10:05:00.000Z",
+  "owner": "Manager",
+  "nextOwner": "Manager",
+  "summary": "All approved criteria have direct evidence.",
+  "acceptance": [
+    {
+      "criterion": "The requested behavior is implemented.",
+      "status": "met",
+      "evidence": "Relevant tests passed."
+    }
+  ],
+  "briefDeviations": [],
+  "decisionRequired": false,
+  "evidenceIds": [
+    "evidence-aaaaaaaaaaaaaaaaaaaa"
+  ],
+  "evidenceRefs": [
+    ".nogra/transport/artifacts/run-20260723-example/report.md"
+  ],
+  "executionRole": "nogra:executor",
+  "executionRuntime": "sonnet",
+  "verificationRole": "nogra:verifier",
+  "verificationRuntime": "sonnet",
+  "ledgerWatermark": 4,
+  "sessionId": "",
+  "transcriptId": "",
+  "redactions": [],
+  "metadata": {
+    "source": "verifier_report"
+  }
+}

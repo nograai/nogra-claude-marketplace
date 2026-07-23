@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/role-lease-v1.schema.json",
+  "title": "Nogra Role Lease v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "leaseId",
+    "workspaceId",
+    "runId",
+    "briefId",
+    "briefHash",
+    "role",
+    "owner",
+    "status",
+    "agentId",
+    "scopePatterns",
+    "allowedTools",
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "closedAt",
+    "closeReason",
+    "ledgerWatermark"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nogra.role.lease.v1"
+    },
+    "leaseId": {
+      "type": "string",
+      "pattern": "^role-lease-[A-Za-z0-9_.-]+$"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_.-]+$"
+    },
+    "briefId": {
+      "type": "string",
+      "pattern": "^brief-[A-Za-z0-9_.-]+$"
+    },
+    "briefHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["executor", "verifier"]
+    },
+    "owner": {
+      "const": "Manager"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "closed", "expired"]
+    },
+    "agentId": {
+      "type": ["string", "null"]
+    },
+    "scopePatterns": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "allowedTools": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "closedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "closeReason": {
+      "type": "string"
+    },
+    "ledgerWatermark": {
+      "type": "integer"
+    },
+    "sessionId": {
+      "type": "string"
+    },
+    "transcriptId": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

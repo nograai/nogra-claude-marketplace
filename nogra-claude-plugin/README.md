@@ -45,12 +45,12 @@ You can also ask Claude:
 Can you help me set up Nogra in this folder?
 ```
 
-The plugin provides three primitives - brief, dispatch, verify - plus a thin
-intent router, a local five-anchor index and the local `.nogra/` ledger they
-write to. The router maps explicit Nogra intent to the right skill. The index
-keeps risk intake, behavior score, connections/risk registry, decisions and
-expansion guidance visible. If no Nogra route matches, ordinary work stays
-direct.
+The plugin provides the brief → dispatch → verify workflow spine plus an
+explicit factual Anchor for continuity. A thin intent router, a local
+five-anchor index and the `.nogra/` ledger keep the workflow inspectable. The
+router maps explicit Nogra intent to the right skill. The index keeps risk
+intake, behavior score, connections/risk registry, decisions and expansion
+guidance visible. If no Nogra route matches, ordinary work stays direct.
 Folder-local state is created only when `/nogra:setup` runs.
 
 By default, setup, brief contracts, brief validation, local dispatch receipts and
@@ -60,17 +60,23 @@ to the workspace.
 
 ### Memory (bounded, native)
 
-Your durable memory is Claude Code's own Auto Memory: `~/.claude/projects/<slug>/memory/`
-(a `MEMORY.md` index plus typed topic files). Claude writes it and loads it every session
-natively; Nogra keeps no second copy. Nogra owns the **bound**: when the memory grows past
-what Claude actually loads (~the first 200 lines of the index), Nogra flags you at session
-start to consolidate (merge duplicates, prune stale) so what matters stays in view. A
-theory of you, not an archive.
+Your durable memory is Claude Code's own Auto Memory (a `MEMORY.md` index plus
+typed topic files). Claude Code resolves its location from active settings and
+repository identity; the default lives under
+`~/.claude/projects/<project>/memory/`, while `autoMemoryDirectory` can move it.
+Nogra's shared `nogra.memory.resolution.v1` resolver binds USER pinning, sync,
+diagnostics and consolidation to that same identity. Nogra keeps no second
+copy. When memory exceeds the first 200 lines/25KB of the loaded index or
+Nogra's bounded continuity budget, Nogra offers consolidation.
 
 It also pins: a `USER.md` in that same folder is the bounded who-you-are profile (≤1375
 chars). Nogra loads it into context **every** session, so who you are is never one recall
 away. Claude maintains it as a distilled projection of the topic files; the consolidator
 creates it if missing and keeps it under the bound.
+
+Native MEMORY/USER content and its sync transport are advisory projections, not workspace fact
+authority. They can preserve reported continuity, but cannot verify or upgrade project status;
+canonical facts remain append-only `.nogra/` records backed by evidence and verdicts.
 
 It also learns: when you correct Claude, or it catches its own mistake, the lesson goes in
 as a one-line rule, so it never repeats. Bounded, so lessons consolidate instead of piling up
@@ -179,17 +185,19 @@ direct run reaches git history or another permanent-risk action without a
 current dispatch receipt, Nogra asks for intent confirmation before that tool
 call continues.
 
-### Save a checkpoint
+### Save an Anchor
 
 Ask Claude:
 
 ```text
-Save a checkpoint of what we did, what changed, and what remains.
+Use Nogra to save a factual Anchor of what is verified, claimed, unknown and
+next.
 ```
 
-Expected behavior: Nogra records a local continuity checkpoint under `.nogra/`
-with the work completed, evidence checked and remaining next steps. No external
-account or service is required.
+Expected behavior: `/nogra:anchor` validates `nogra.anchor.v1`, writes one
+immutable JSON record under `.nogra/checkpoints/`, updates the current JSON and
+Markdown projections atomically, and appends one ledger event. Verified claims
+require existing local evidence. Anchor never grants GO or claims readiness.
 
 ### Check local continuity
 
@@ -200,25 +208,23 @@ Show Nogra ledger state for this workspace.
 ```
 
 Expected behavior: Nogra reports the installed plugin version, the workspace
-contract version, routing/runtime state, recent local records and checkpoint
-freshness. If the local ledger watermark is ahead of the checkpoint
-`SourceWatermark`, the checkpoint is stale and should be refreshed before it is
-trusted as the latest state.
+contract version, routing/runtime state, recent local records and Anchor
+freshness. An Anchor is stale when the ledger is ahead of its
+`SourceWatermark` or the repository no longer matches its Git fingerprint.
 
 ### Continue later
 
 Ask Claude:
 
 ```text
-Continue from the latest Nogra checkpoint if it is fresh. If it is stale, compare
-the local ledger watermark with the checkpoint source watermark and tell me what
-needs to be refreshed first.
+Continue from the latest Nogra Anchor if it is fresh. If it is stale, tell me
+whether ledger state or Git state moved and what must be checked first.
 ```
 
 Expected behavior: Nogra treats the append-only local ledger as the truth source
-and the checkpoint as a human-readable projection. Claude should not invent
+and the Anchor Markdown file as a human-readable projection. Claude should not invent
 memory from chat history or read transcript contents. It should use the local
-`.nogra/` records to explain whether the checkpoint is fresh or stale, then ask
+`.nogra/` records to explain whether the Anchor is fresh or stale, then ask
 what you want to do next.
 
 ## Updates
@@ -252,13 +258,18 @@ preserves or merges existing Nogra files according to the bundled write policy.
   brief before execution.
 - `/nogra:dispatch`: dispatch an approved brief after explicit GO.
 - `/nogra:verify`: check whether a claim/result matches the brief and evidence.
+- `/nogra:anchor`: preserve schema-valid factual continuity without granting
+  GO or claiming readiness.
 - `/nogra:settings`: show or update local Nogra profile, runtime role models,
   effort and language.
 - `/nogra:status`: show installed plugin ref, workspace id,
-  language/runtime state and recent local ledger records.
+  language/runtime state, current Anchor freshness and recent local records.
 - `/nogra:watch`: show recent local hook events from
   `.nogra/runtime/live-hooks.log`; live follow is opt-in via Claude Code
   Monitor or a manual tail command.
+- `/nogra:transcript-diagnostic`: user-only, explicit preview of bounded
+  lexical transcript observations. It has no score, authority, GO inference or
+  verdict and writes only when the user explicitly requests `--write`.
 - `/nogra:sync`: show sync state with receipts, `run` the full pull→push cycle
   in one call, pull/push the hosted brain on demand, `bind <endpoint>` to wire
   this seat, or turn sync off. The token never passes through the model; status
@@ -281,7 +292,9 @@ Fresh setup creates a compact `.nogra/index/` surface:
   adapters, verifier flows or other Nogra surfaces.
 
 This index is not a structural audit score. Nogra behavior is graded by
-evidence from scenarios, runs and verification.
+evidence from deliberately run scenarios, runs and verification.
+`behavior-score.md` is never populated from hooks or transcript-language
+analysis.
 
 ## Thin Intent Router
 
@@ -294,23 +307,31 @@ intent to the matching skill:
 - brief or Nogra workflow -> `/nogra:brief`
 - GO after a reviewed brief -> `/nogra:dispatch`
 - evidence, "is this done?", or verification -> `/nogra:verify`
-- Nogra ledger/state, checkpoint, version or recent records -> `/nogra:status`
+- factual continuity save -> `/nogra:anchor`
+- Nogra ledger/state, Anchor, version or recent records -> `/nogra:status`
 - live hook or transcript activity visibility -> `/nogra:watch`
 - runtime/language configuration -> `/nogra:settings`
 - sync state, sync now (run), pull/push the hosted brain, wire a seat -> `/nogra:sync`
 - guidance refresh -> `/nogra:update`
 - help choosing a flow -> `/nogra:help`
 
+`/nogra:transcript-diagnostic` is deliberately excluded from natural-language
+routing and model invocation. Only the user can invoke it directly.
+
 If no Nogra route matches, stay direct. For unusually large autonomous work,
 Claude may give one short non-blocking brief nudge before the run starts, but
 must not repeat it, block on it or turn it into prompt scoring.
 
 The plugin includes lightweight lifecycle hooks for boot, compact continuity and
-project focus. `SessionStart` adds a small boot or resume pointer when
-`.nogra/config.json` exists and includes a small convergence guard. `PostCompact`
+project focus. `SessionStart` projects the explicit
+`fresh -> detected -> focused -> resumed -> recovering` boot state. A checkpoint
+is only a detection signal: startup with a checkpoint remains `focused`; only
+Claude Code's native `resume` source produces `resumed`. No boot state grants
+GO, loads broad state or authorizes continuation. `PostCompact`
 rehydrates a thin continuity pointer plus that same convergence guard after
-context compaction. `SessionEnd` updates the local session anchor without adding
-chat context. `UserPromptSubmit` may add project-focus context when the user
+context compaction. `SessionEnd` updates the local session anchor and event log
+without reading transcript contents or producing a language score.
+`UserPromptSubmit` may add project-focus context when the user
 clearly selects an indexed project from a workspace hub. `PreToolUse` is a
 narrow deterministic git/action convergence gate: it asks when a permanent-risk
 tool call has no current dispatch receipt, and it may add a visible Nogra
@@ -327,6 +348,19 @@ drafting, dispatch, verification and agent spawning. Claude transcript and
 history stay outside Nogra's routing input. Claude must still use Nogra skills
 for the workflow and wait for the user's choice before entering brief flow.
 
+Transcript analysis is absent from default hooks, status and statusline. The
+optional user-only `/nogra:transcript-diagnostic` command is a separate,
+non-authoritative lexical inspection surface: preview is read-only, saved
+receipts require explicit `--write`, and its output cannot affect permission,
+GO, routing, dispatch, evidence level, fact level or verdict.
+
+SessionStart memory work is ordered in one adapter: optional sync pull first,
+then USER pin/bound measurement from the same resolved directory. If
+`autoMemoryDirectory` comes from a CLI-only or remotely delivered setting that
+hooks cannot observe, set `NOGRA_NATIVE_MEMORY_DIR` to the same absolute path;
+ambiguous, disabled or unsafe default resolutions fail closed without touching
+memory.
+
 Session continuity and observability are local and explicit. Session-start and
 prompt hooks may write a bounded session anchor under
 `.nogra/runtime/session-anchor.json`. Hook/event observability is appended to
@@ -340,10 +374,10 @@ contents or full shell commands.
 For a live view, tail `.nogra/runtime/live-hooks.log` or ask Claude to Monitor
 that file in the background. Nogra runtime writes append-only ledger events when
 briefs, dispatches, verification, diagnostics or terminal run records are
-created. A checkpoint is a user-visible projection of that ledger state, not an
-automatic shutdown upload. When the ledger is ahead of the checkpoint,
-`/nogra:status` reports the checkpoint as stale so Claude can ask whether to
-refresh it.
+created. An Anchor is an explicit, schema-valid continuity record, not an
+automatic shutdown upload. Its Markdown file is a user-visible projection.
+When the ledger or Git state is ahead of the current Anchor, `/nogra:status`
+reports the exact stale class.
 
 Nogra also ships a Claude Code statusline projector at
 `scripts/statusline.mjs`. It reads Claude Code's statusline JSON from stdin,
@@ -430,17 +464,44 @@ are not copied into the workspace's `.claude/agents/`. Claude Code's native
 `/model` and `/effort` remain the source of truth for the live model and
 effort.
 
+## Canonical Workflow Contracts
+
+Nogra's local workflow has one contract spine:
+
+```text
+brief.v1 -> approval.v1 -> run.v2 -> role.lease.v1
+         -> role.report.v1 -> run-event.v2 -> evidence.v1 -> verdict.v1
+```
+
+After a reviewed brief, explicit GO is persisted with both a brief hash and a
+dispatch action hash as a single-use approval. Dispatch consumes it and writes
+the canonical run under
+`.nogra/runs/`; canonical run events are appended to
+`.nogra/ledger/events.jsonl`. Executor `outcome` and verifier `verdict` are
+separate facts, so verification cannot rewrite what execution returned.
+Before a public role starts, Manager issues a short-lived run lease. Executor
+writes are checked against the approved file scope; Verifier has only Read,
+Grep and Glob. Neither role has arbitrary shell. Both return schema-valid role
+reports, and Executor self-report remains a claim rather than a verdict.
+Execution and validation artifacts stay under `.nogra/transport/artifacts/`.
+The old transport run/event formats remain read-only legacy inputs and are not
+silently migrated or written by the v2 path.
+
+The approval record authorizes only Nogra dispatch. It does not replace, widen
+or predict Claude Code's native tool permissions.
+
 ## What Setup Writes
 
 `/nogra:setup` reads the plugin-bundled bootstrap bundle and writes local Nogra
 workspace state:
 
 - `.nogra/config.json` (the workspace config)
-- `.nogra/state/` current checkpoint, tasks, decisions and structure files
+- `.nogra/state/` current Anchor projections, tasks, decisions and structure files
 - `.nogra/index/` workspace index, risk intake, behavior score, risk registry
   and expansion guidance
 - `.nogra/briefs/`, `.nogra/runs/`, `.nogra/evidence/`, `.nogra/receipts/`,
-  `.nogra/reports/`, `.nogra/checkpoints/`, `.nogra/memory/`, `.nogra/index/`
+  `.nogra/reports/`, `.nogra/checkpoints/` (immutable Anchors and legacy
+  snapshots), `.nogra/memory/`, `.nogra/index/`
   and `.nogra/transport/` lanes
 - root `CLAUDE.md`, only when one does not already exist
 

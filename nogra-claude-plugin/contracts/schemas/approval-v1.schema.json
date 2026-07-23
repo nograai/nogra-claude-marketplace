@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/approval-v1.schema.json",
+  "title": "Nogra Approval v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "approvalId",
+    "workspaceId",
+    "briefId",
+    "briefHash",
+    "actionHash",
+    "status",
+    "approvedAt",
+    "approvedBy",
+    "source",
+    "singleUse",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nogra.approval.v1"
+    },
+    "approvalId": {
+      "type": "string",
+      "pattern": "^approval-[A-Za-z0-9_.-]+$"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "briefId": {
+      "type": "string",
+      "pattern": "^brief-[A-Za-z0-9_.-]+$"
+    },
+    "briefHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "actionHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["available", "consumed", "revoked", "expired"]
+    },
+    "approvedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "approvedBy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "const": "manager_observed_explicit_go"
+    },
+    "singleUse": {
+      "const": true
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "consumedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "consumedByRunId": {
+      "type": ["string", "null"],
+      "pattern": "^run-[A-Za-z0-9_.-]+$"
+    },
+    "sessionId": {
+      "type": "string"
+    },
+    "transcriptId": {
+      "type": "string"
+    },
+    "ledgerWatermark": {
+      "type": "integer"
+    },
+    "redactions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

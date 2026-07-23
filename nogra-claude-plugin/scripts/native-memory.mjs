@@ -1,62 +1,43 @@
-// native-memory.mjs — Nogra's Path B: bound + sync Claude Code's NATIVE Auto Memory.
-//
-// Claude Code writes durable memories to ~/.claude/projects/<slug>/memory/ (a MEMORY.md index plus
-// typed topic files: user-/feedback-/project-/reference-*.md, each with frontmatter). It self-learns
-// and loads them natively — but it is UNBOUNDED. Nogra's 30% is the bound + the cross-machine sync.
-//
-// This module is READ-ONLY: it resolves the native folder and reports its state. Consolidation (the
-// bound) and sync build on top — and any WRITE path must treat this folder as Claude's own state:
-// merge/prune deliberately, never corrupt.
+#!/usr/bin/env node
 
-import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+// Read-only diagnostic for Claude Code's resolved native Auto Memory.
 
-// Claude Code derives the per-project memory folder by replacing every "/" in the project path with "-".
-// e.g. /Users/patricklarsen/y26dev -> -Users-patricklarsen-y26dev
-export function nativeMemoryDir(projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd()) {
-  const slug = projectDir.replace(/\//g, "-");
-  return join(homedir(), ".claude", "projects", slug, "memory");
-}
+import { pathToFileURL } from "node:url";
+import {
+  readNativeMemory,
+  resolveNativeMemory
+} from "../runtime/local/native-memory.mjs";
 
-const TYPES = ["user", "feedback", "project", "reference"];
+export { readNativeMemory, resolveNativeMemory };
 
-function typeOf(name) {
-  if (name === "MEMORY.md") return "index";
-  const m = name.match(/^([a-z]+)[-_]/);
-  return m && TYPES.includes(m[1]) ? m[1] : "other";
-}
-
-// Read the native folder. Returns its shape without mutating anything.
-export function readNativeMemory(dir = nativeMemoryDir()) {
-  if (!existsSync(dir)) {
-    return { dir, exists: false, files: [], totalChars: 0, byType: {} };
+async function main() {
+  const projectDir = process.argv[2] || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const resolution = resolveNativeMemory({ projectDir });
+  if (process.argv.includes("--json")) {
+    console.log(JSON.stringify({ resolution, memory: readNativeMemory(resolution) }, null, 2));
+    return;
   }
-  const files = readdirSync(dir)
-    .filter((f) => f.endsWith(".md"))
-    .map((f) => {
-      const content = readFileSync(join(dir, f), "utf8");
-      return { name: f, type: typeOf(f), chars: content.length };
-    })
-    .sort((a, b) => b.chars - a.chars);
-
-  const totalChars = files.reduce((s, f) => s + f.chars, 0);
-  const byType = {};
-  for (const f of files) byType[f.type] = (byType[f.type] || 0) + f.chars;
-  return { dir, exists: true, files, totalChars, byType };
+  if (resolution.status !== "resolved") {
+    console.log(`native memory: ${resolution.status.toUpperCase()} (${resolution.source})`);
+    for (const warning of resolution.warnings) console.log(`  warning: ${warning}`);
+    return;
+  }
+  const state = readNativeMemory(resolution);
+  console.log(`native memory: ${resolution.resolvedDirectory}`);
+  console.log(`  source: ${resolution.source} · confidence: ${resolution.confidence}`);
+  if (!state.exists) {
+    console.log("  state: NOT FOUND (resolved destination is valid)");
+    return;
+  }
+  console.log(`  files: ${state.files.length} · total: ${state.totalChars} chars`);
+  console.log(`  by type: ${Object.entries(state.byType).map(([type, chars]) => `${type}=${chars}`).join(" · ")}`);
+  console.log("  largest:");
+  for (const file of state.files.slice(0, 5)) console.log(`    ${file.chars.toString().padStart(5)}  ${file.name}`);
 }
 
-// CLI: `node native-memory.mjs [projectDir]` → report the native memory state.
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const dir = process.argv[2] ? join(process.argv[2]) : nativeMemoryDir();
-  const s = readNativeMemory(dir);
-  if (!s.exists) {
-    console.log(`native memory: NOT FOUND at ${s.dir}`);
-  } else {
-    console.log(`native memory: ${s.dir}`);
-    console.log(`  files: ${s.files.length} · total: ${s.totalChars} chars`);
-    console.log(`  by type: ${Object.entries(s.byType).map(([t, c]) => `${t}=${c}`).join(" · ")}`);
-    console.log(`  largest:`);
-    for (const f of s.files.slice(0, 5)) console.log(`    ${f.chars.toString().padStart(5)}  ${f.name}`);
-  }
+if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
+  main().catch((error) => {
+    console.error(`native-memory: ${error.message}`);
+    process.exit(1);
+  });
 }

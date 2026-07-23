@@ -4,6 +4,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import {
+  RUN_EVENT_SCHEMA_V2,
+  RUN_SCHEMA_V2,
+  assertRunEventSemantics,
+  assertRunSemantics,
+  assertRunTransition,
+  readRunRecord,
+  safeRunId as safeContractRunId
+} from "../runtime/local/contract-spine.mjs";
 
 const TERMINAL_STATUSES = new Set(["ok", "partial", "blocked", "failed", "cancelled"]);
 const TERMINAL_EVENT_TYPES = new Set([
@@ -131,11 +140,7 @@ function continuationFields(input = {}) {
 }
 
 function safeRunId(runId) {
-  const cleaned = cleanInline(runId);
-  if (!/^transport-[A-Za-z0-9._-]+$/.test(cleaned)) {
-    throw new Error(`invalid run id: ${cleaned || "(empty)"}`);
-  }
-  return cleaned;
+  return safeContractRunId(runId);
 }
 
 function readStdin() {
@@ -368,6 +373,7 @@ function transportPaths(root, runId, existing = {}) {
     artifactsDir,
     report: existing.report || `${artifactsDir}/report.md`,
     output: existing.output || `${artifactsDir}/output.md`,
+    validation: existing.validation || `${artifactsDir}/validation.json`,
     log: existing.log || `${artifactsDir}/log`
   };
 }
@@ -469,12 +475,164 @@ function artifactFlags(root, paths) {
   return {
     reportExists: Boolean(paths.report && fs.existsSync(localTarget(root, paths.report)) && fs.statSync(localTarget(root, paths.report)).isFile()),
     outputExists: Boolean(paths.output && fs.existsSync(localTarget(root, paths.output)) && fs.statSync(localTarget(root, paths.output)).isFile()),
+    validationExists: Boolean(paths.validation && fs.existsSync(localTarget(root, paths.validation)) && fs.statSync(localTarget(root, paths.validation)).isFile()),
     logExists: Boolean(paths.log && fs.existsSync(localTarget(root, paths.log)) && fs.statSync(localTarget(root, paths.log)).isFile())
   };
 }
 
 function terminalEventId(runId, status) {
   return `transport-event-${runId}-terminal-${status}`;
+}
+
+function canonicalRunEvent(root, eventType, record, extra = {}) {
+  const eventId = cleanInline(extra.eventId) || `run-event-${record.runId}-${eventType}`;
+  const existing = parseJsonl(ledgerEventsFile(root)).find((item) => item?.eventId === eventId);
+  if (existing) return { event: existing, result: "skipped" };
+  const at = cleanInline(extra.createdAt || extra.generatedAt) || now();
+  const session = readSessionAnchor(root);
+  const event = {
+    schema: RUN_EVENT_SCHEMA_V2,
+    eventId,
+    eventType,
+    type: eventType,
+    workspaceId: record.workspaceId,
+    runId: record.runId,
+    briefId: record.briefId,
+    approvalId: record.approvalId,
+    approvalActionHash: record.approvalActionHash,
+    lifecycle: record.lifecycle,
+    outcome: record.outcome,
+    verdict: record.verdict,
+    ledgerWatermark: nonEmptyLineCount(ledgerEventsFile(root)) + 1,
+    createdAt: at,
+    generatedAt: at,
+    sessionId: cleanInline(extra.sessionId || session.sessionId),
+    transcriptId: cleanInline(extra.transcriptId || session.transcriptId),
+    summary: cleanInline(extra.summary || record.summary || ""),
+    ...(cleanInline(record.stopReason) ? { stopReason: cleanInline(record.stopReason) } : {}),
+    ...(cleanInline(record.returnReason) ? { returnReason: cleanInline(record.returnReason) } : {}),
+    ...(record.pendingState && typeof record.pendingState === "object" ? { pendingState: record.pendingState } : {}),
+    executionRole: cleanInline(record.executionRole),
+    executionRuntime: cleanInline(record.executionRuntime),
+    executionRuntimeSource: cleanInline(record.executionRuntimeSource),
+    executionLabel: cleanInline(record.executionLabel),
+    nextOwner: cleanInline(extra.nextOwner || record.nextOwner)
+  };
+  assertRunEventSemantics(event);
+  const result = appendJsonlIfMissing(ledgerEventsFile(root), JSON.stringify(event), "eventId", event.eventId);
+  return { event, result };
+}
+
+function finalizeCanonicalRun(root, record, sourcePath, input, options = {}) {
+  const runId = record.runId;
+  assertRunSemantics(record);
+  const outcome = cleanInline(input.status).toLowerCase();
+  if (["verified", "accepted", "archived"].includes(record.lifecycle)) {
+    return {
+      status: "conflict",
+      runId,
+      lifecycle: record.lifecycle,
+      requestedOutcome: outcome,
+      reason: "a verified, accepted or archived run cannot be finalized again",
+      nextOwner: "Manager"
+    };
+  }
+  if (record.outcome && record.outcome !== outcome && !options.allowStatusChange) {
+    return {
+      status: "conflict",
+      runId,
+      currentStatus: record.outcome,
+      requestedStatus: outcome,
+      nextOwner: "Manager",
+      reason: "terminal outcome change requires explicit Manager decision"
+    };
+  }
+  const paths = transportPaths(root, runId, record.paths && typeof record.paths === "object" ? record.paths : {});
+  const reportText = String(input.reportText ?? "");
+  const outputText = String(input.outputText ?? "");
+  const reportResult = reportText
+    ? writeMaybeArtifact(localTarget(root, paths.report), reportText, options.allowOverwrite)
+    : "not_provided";
+  const outputPayload = outputText || reportText;
+  const outputResult = outputPayload
+    ? writeMaybeArtifact(localTarget(root, paths.output), outputPayload, options.allowOverwrite)
+    : "not_provided";
+  const flags = artifactFlags(root, paths);
+  const at = record.returnedAt || cleanInline(input.completedAt) || now();
+  const lifecycle = outcome === "cancelled" ? "cancelled" : "returned";
+  const executionPair = roleRuntimePair(record, outcome);
+  const continuation = continuationFields(input);
+  const eventType = outcome === "cancelled" ? "run_cancelled" : "run_returned";
+  const eventId = cleanInline(input.eventId) || `run-event-${runId}-${eventType}-${outcome}`;
+  const existingEvent = parseJsonl(ledgerEventsFile(root)).find((item) => item?.eventId === eventId);
+  const ledgerWatermark = existingEvent?.ledgerWatermark || nonEmptyLineCount(ledgerEventsFile(root)) + 1;
+  const updated = {
+    ...record,
+    updatedAt: now(),
+    returnedAt: outcome === "cancelled" ? record.returnedAt : at,
+    endedAt: at,
+    lifecycle,
+    outcome,
+    owner: "Manager",
+    nextOwner: cleanInline(input.nextOwner) || "Manager",
+    paths: {
+      artifactsDir: paths.artifactsDir,
+      report: paths.report,
+      output: paths.output,
+      validation: paths.validation,
+      ...(record.paths?.log ? { log: paths.log } : {})
+    },
+    artifacts: {
+      reportExists: flags.reportExists,
+      outputExists: flags.outputExists,
+      validationExists: flags.validationExists,
+      ...(record.artifacts?.logExists != null || record.paths?.log ? { logExists: flags.logExists } : {})
+    },
+    ledgerWatermark,
+    sessionId: existingEvent?.sessionId || readSessionAnchor(root).sessionId || record.sessionId,
+    transcriptId: existingEvent?.transcriptId || readSessionAnchor(root).transcriptId || record.transcriptId,
+    executionRole: executionPair.executionRole || record.executionRole,
+    executionRuntime: executionPair.executionRuntime || record.executionRuntime,
+    executionRuntimeSource: executionPair.executionRuntimeSource || record.executionRuntimeSource,
+    executionLabel: executionPair.executionLabel || record.executionLabel,
+    ...continuation,
+    summary: input.summary != null ? cleanInline(input.summary) : record.summary,
+    error: input.error != null ? cleanInline(input.error) : record.error,
+    metadata: {
+      ...(record.metadata || {}),
+      completedAt: at,
+      durationSeconds: record.createdAt ? durationSeconds(record.createdAt, at) : null,
+      ...continuation,
+      nextOwner: cleanInline(input.nextOwner) || "Manager"
+    }
+  };
+  assertRunTransition(record.lifecycle, updated.lifecycle);
+  assertRunSemantics(updated);
+  writeIfChanged(sourcePath || path.join(root, ".nogra", "runs", `${runId}.json`), `${JSON.stringify(updated, null, 2)}\n`);
+  const canonicalEvent = canonicalRunEvent(root, eventType, updated, {
+    eventId,
+    createdAt: cleanInline(input.eventAt) || at,
+    summary: cleanInline(input.summary || ""),
+    nextOwner: updated.nextOwner,
+    sessionId: updated.sessionId,
+    transcriptId: updated.transcriptId
+  });
+  if (canonicalEvent.event.ledgerWatermark !== ledgerWatermark) {
+    throw new Error("run ledger watermark changed during canonical finalize write");
+  }
+  const check = checkRun(root, runId);
+  return {
+    status: check.status === "ok" ? "ok" : "inconsistent",
+    runId,
+    lifecycle,
+    outcome,
+    report: paths.report,
+    output: paths.output,
+    artifacts: flags,
+    writes: { report: reportResult, output: outputResult, run: "applied", event: canonicalEvent.result },
+    consistency: check,
+    nextOwner: "Manager"
+  };
 }
 
 function finalizeRun(root, input, options = {}) {
@@ -487,10 +645,15 @@ function finalizeRun(root, input, options = {}) {
   if (!VALID_PHASES.has(phase)) {
     throw new Error(`invalid phase: ${phase}`);
   }
-  const file = runFile(root, runId);
-  if (!fs.existsSync(file)) {
-    return { status: "missing", runId, error: "transport run not found", nextOwner: "Manager" };
+  const located = readRunRecord(root, runId);
+  if (!located) {
+    return { status: "missing", runId, error: "run not found", nextOwner: "Manager" };
   }
+  if (!located.legacy) {
+    const canonical = readJsonFile(located.sourcePath);
+    return finalizeCanonicalRun(root, canonical, located.sourcePath, input, options);
+  }
+  const file = located.sourcePath || runFile(root, runId);
   const record = readJsonFile(file);
   const currentStatus = cleanInline(record.status).toLowerCase();
   if (TERMINAL_STATUSES.has(currentStatus) && currentStatus !== status && !options.allowStatusChange) {
@@ -667,21 +830,71 @@ function latestTerminalEvent(root, runId) {
   return null;
 }
 
+function latestCanonicalTerminalEvent(root, runId) {
+  const events = parseJsonl(ledgerEventsFile(root)).filter((event) =>
+    event.runId === runId &&
+    event.schema === RUN_EVENT_SCHEMA_V2 &&
+    ["run_returned", "run_cancelled", "run_verified", "run_accepted", "run_archived"].includes(event.eventType)
+  );
+  return events.at(-1) || null;
+}
+
 function checkRun(root, runIdValue) {
   const runId = safeRunId(runIdValue);
-  const file = runFile(root, runId);
-  if (!fs.existsSync(file)) {
+  const located = readRunRecord(root, runId);
+  if (!located) {
     return { status: "missing", runId, differences: [{ field: "run", expected: "exists", actual: "missing" }], nextOwner: "Manager" };
   }
-  const record = readJsonFile(file);
+  const record = readJsonFile(located.sourcePath);
   const paths = transportPaths(root, runId, record.paths && typeof record.paths === "object" ? record.paths : {});
   const expectedFlags = artifactFlags(root, paths);
   const actualFlags = record.artifacts && typeof record.artifacts === "object" ? record.artifacts : {};
   const differences = [];
-  for (const key of ["reportExists", "outputExists", "logExists"]) {
+  const flagKeys = located.legacy
+    ? ["reportExists", "outputExists", "logExists"]
+    : ["reportExists", "outputExists", "validationExists", ...(record.artifacts?.logExists != null ? ["logExists"] : [])];
+  for (const key of flagKeys) {
     if (Boolean(actualFlags[key]) !== Boolean(expectedFlags[key])) {
       differences.push({ field: `artifacts.${key}`, expected: expectedFlags[key], actual: Boolean(actualFlags[key]) });
     }
+  }
+  if (!located.legacy) {
+    try {
+      assertRunSemantics(record);
+    } catch (error) {
+      differences.push({ field: "schema", expected: RUN_SCHEMA_V2, actual: error.message });
+    }
+    const event = latestCanonicalTerminalEvent(root, runId);
+    if (record.outcome) {
+      if (!event) {
+        differences.push({ field: "latestTerminalEvent", expected: "exists", actual: "missing" });
+      } else {
+        if (event.lifecycle !== record.lifecycle) {
+          differences.push({ field: "latestTerminalEvent.lifecycle", expected: record.lifecycle, actual: event.lifecycle });
+        }
+        if (event.outcome !== record.outcome) {
+          differences.push({ field: "latestTerminalEvent.outcome", expected: record.outcome, actual: event.outcome });
+        }
+        if (event.verdict !== record.verdict) {
+          differences.push({ field: "latestTerminalEvent.verdict", expected: record.verdict, actual: event.verdict });
+        }
+        if (event.ledgerWatermark !== record.ledgerWatermark) {
+          differences.push({ field: "ledgerWatermark", expected: record.ledgerWatermark, actual: event.ledgerWatermark });
+        }
+      }
+    }
+    return {
+      status: differences.length ? "inconsistent" : "ok",
+      runId,
+      schema: record.schema,
+      lifecycle: record.lifecycle,
+      outcome: record.outcome,
+      verdict: record.verdict,
+      differences,
+      artifacts: expectedFlags,
+      latestTerminalEventId: event?.eventId || "",
+      nextOwner: differences.length ? "Manager" : undefined
+    };
   }
   const status = cleanInline(record.status).toLowerCase();
   const phase = cleanInline(record.phase).toLowerCase();

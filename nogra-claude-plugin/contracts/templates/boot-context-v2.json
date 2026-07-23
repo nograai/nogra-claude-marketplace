@@ -1,0 +1,20 @@
+{
+  "schema": "nogra.boot.context.v2",
+  "state": "focused",
+  "status": "project",
+  "sessionSource": "startup",
+  "source": "nearest-cwd",
+  "workspaceName": "Example",
+  "workspaceId": "example",
+  "workspaceRoot": "/absolute/project",
+  "stateRoot": ".nogra/state",
+  "focusReason": "runtime-project-root",
+  "checkpointAvailable": true,
+  "checkpointLoaded": false,
+  "checkpointStatus": "available",
+  "candidates": [],
+  "writes": [],
+  "autoLoaded": false,
+  "authorization": "none",
+  "message": "Checkpoint is available as a pull-only signal; startup is not resume."
+}

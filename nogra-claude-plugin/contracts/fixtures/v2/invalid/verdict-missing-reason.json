@@ -1,0 +1,17 @@
+{
+  "schema": "nogra.verdict.v1",
+  "verdictId": "verdict-run-invalid-reason",
+  "workspaceId": "fixture-workspace",
+  "runId": "run-invalid-reason",
+  "briefId": "brief-fixture",
+  "briefHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "verdict": "unverified",
+  "reason": "",
+  "generatedAt": "2026-07-23T10:05:00.000Z",
+  "owner": "Manager",
+  "nextOwner": "Manager",
+  "acceptance": [],
+  "briefDeviations": [],
+  "decisionRequired": false,
+  "evidenceIds": []
+}

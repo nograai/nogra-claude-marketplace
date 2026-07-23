@@ -8,7 +8,64 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { activeIntentPath, readActiveIntent } from "../runtime/local/active-intent.mjs";
-import { analyzeSessionQuality, sessionQualityLatestPath, writeSessionQualityReceipt } from "../runtime/local/session-quality.mjs";
+import {
+  ANCHOR_SCHEMA_V1,
+  APPROVAL_SCHEMA_V1,
+  BRIEF_SCHEMA_V1,
+  DISPATCH_RECEIPT_SCHEMA_V2,
+  EVIDENCE_SCHEMA_V1,
+  FACT_SCHEMA_V1,
+  ROLE_LEASE_SCHEMA_V1,
+  ROLE_REPORT_SCHEMA_V1,
+  RUN_EVENT_SCHEMA_V2,
+  RUN_SCHEMA_V2,
+  VERDICT_SCHEMA_V1,
+  approvalPath,
+  approvalActionHash,
+  anchorContentHash,
+  assertAnchorSemantics,
+  assertApprovalSemantics,
+  assertContract,
+  assertRunEventSemantics,
+  assertRunSemantics,
+  assertRunTransition,
+  assertRoleLeaseSemantics,
+  assertRoleReportSemantics,
+  assertVerdictSemantics,
+  briefAuthorityHash,
+  canonicalJson,
+  canonicalRunPath,
+  compatibilityRunStatus,
+  listRunRecords,
+  readJsonIfValid as readContractJsonIfValid,
+  readRunRecord,
+  roleReportContentHash,
+  safeAnchorId,
+  runIdForApproval,
+  safeApprovalId,
+  safeRunId as safeCanonicalRunId,
+  validateContract
+} from "../runtime/local/contract-spine.mjs";
+import {
+  ROLE_TOOL_POLICY,
+  activeRoleLeasePath,
+  matchesRoleScope,
+  normalizeRole,
+  normalizeScopePatterns,
+  readActiveRoleLease,
+  roleLeaseReceiptPath,
+  roleLeaseStatus,
+  roleReportReceiptPath,
+  writeRoleLease
+} from "../runtime/local/role-isolation.mjs";
+import {
+  factStatus,
+  readEvidenceRecord,
+  readFactRecords,
+  recordFact,
+  saveEvidenceRecord
+} from "../runtime/local/fact-store.mjs";
+import { analyzeTranscriptDiagnostic, writeTranscriptDiagnosticReceipt } from "../runtime/local/transcript-diagnostic.mjs";
 
 const NODE_MAJOR = Number.parseInt(process.versions.node.split(".")[0], 10);
 if (!Number.isFinite(NODE_MAJOR) || NODE_MAJOR < 18) {
@@ -16,12 +73,10 @@ if (!Number.isFinite(NODE_MAJOR) || NODE_MAJOR < 18) {
   process.exit(1);
 }
 
-const BRIEF_SCHEMA = "nogra.brief.v1";
+const BRIEF_SCHEMA = BRIEF_SCHEMA_V1;
 const INIT_BUNDLE_SCHEMA = "nogra.init.bundle.v1";
 const WORKSPACE_CONFIG_RELEASE_VERSION = "v1.0.0";
 const TRANSPORT_STATUSES = new Set(["queued", "running", "returning", "returned", "ok", "partial", "blocked", "failed", "cancelled", "acknowledged"]);
-const BRIEF_STATUSES = new Set(["draft", "ready", "approved", "in_progress", "returned", "accepted", "archived"]);
-const EVIDENCE_LEVELS = new Set(["reported", "edited", "tested", "verified"]);
 const DEFAULT_EXECUTOR_TURN_CEILING = 96;
 const ABSOLUTE_EXECUTOR_TURN_CEILING = 192;
 
@@ -44,10 +99,24 @@ function usage() {
     "  node scripts/nogra-local.mjs brief-sizing-preview [--root <dir>] [--input <file>] [--json]",
     "  node scripts/nogra-local.mjs brief-save [--root <dir>] [--input <file>] [--source <label>] [--json]",
     "  node scripts/nogra-local.mjs brief-promote [--root <dir>] [--brief-id <id>] [--input <file>] [--json]",
+    "  node scripts/nogra-local.mjs approval-create [--root <dir>] --brief-id <id> [--approved-by <label>] [--expires-at <date-time>] [--json]",
+    "  node scripts/nogra-local.mjs anchor-contract [--root <dir>] [--json]",
+    "  node scripts/nogra-local.mjs anchor-validate [--root <dir>] [--input <file>] [--json]",
+    "  node scripts/nogra-local.mjs anchor-save [--root <dir>] [--input <file>] [--json]",
+    "  node scripts/nogra-local.mjs evidence-contract [--root <dir>] [--json]",
+    "  node scripts/nogra-local.mjs evidence-save [--root <dir>] [--input <file>] [--json]",
+    "  node scripts/nogra-local.mjs fact-contract [--root <dir>] [--json]",
+    "  node scripts/nogra-local.mjs fact-record [--root <dir>] [--input <file>] [--json]",
+    "  node scripts/nogra-local.mjs fact-status [--root <dir>] [--json]",
     "  node scripts/nogra-local.mjs ledger-smoke [--root <dir>] [--label <text>] [--json]",
-    "  node scripts/nogra-local.mjs quality [--root <dir>] [--transcript <file>] [--write] [--json]",
+    "  node scripts/nogra-local.mjs transcript-diagnostic [--root <dir>] [--transcript <file>] [--write] [--json]",
     "  node scripts/nogra-local.mjs handoff-contract [--root <dir>] --kind executor|verifier [--run-id <id>] [--json]",
-    "  node scripts/nogra-local.mjs dispatch [--root <dir>] --brief-id <id> [--target executor] [--target-model <model>] [--max-turns <n>] [--scratch-root <dir>]... [--json]",
+    "  node scripts/nogra-local.mjs role-enter [--root <dir>] --run-id <id> --role executor|verifier [--expires-in-minutes <n>] [--json]",
+    "  node scripts/nogra-local.mjs role-status [--root <dir>] [--json]",
+    "  node scripts/nogra-local.mjs role-exit [--root <dir>] --lease-id <id> [--reason <text>] [--json]",
+    "  node scripts/nogra-local.mjs role-report-contract [--root <dir>] --kind executor|verifier [--run-id <id>] [--lease-id <id>] [--json]",
+    "  node scripts/nogra-local.mjs role-report-save [--root <dir>] [--input <file>] [--json]",
+    "  node scripts/nogra-local.mjs dispatch [--root <dir>] --brief-id <id> --approval-id <id> [--target executor] [--target-model <model>] [--max-turns <n>] [--scratch-root <dir>]... [--json]",
     "  node scripts/nogra-local.mjs verify [--root <dir>] --run-id <id> [--input <file>] [--json]",
     "",
     "All commands use local plugin contracts and workspace-local records."
@@ -797,13 +866,32 @@ function registryPayload(root) {
       "local_brief_validate",
       "local_brief_save",
       "local_brief_promote",
+      "local_anchor_contract",
+      "local_anchor_validate",
+      "local_anchor_save",
+      "local_transcript_diagnostic",
       "local_dispatch",
       "local_handoff_contract",
+      "local_role_enter",
+      "local_role_status",
+      "local_role_exit",
+      "local_role_report_contract",
+      "local_role_report_save",
       "local_verify_support"
     ],
     resources: [
       "plugin://nogra/contracts/schemas/brief-v1.schema.json",
+      "plugin://nogra/contracts/schemas/anchor-v1.schema.json",
+      "plugin://nogra/contracts/schemas/role-lease-v1.schema.json",
+      "plugin://nogra/contracts/schemas/role-report-v1.schema.json",
+      "plugin://nogra/contracts/schemas/boot-context-v2.schema.json",
+      "plugin://nogra/contracts/schemas/memory-resolution-v1.schema.json",
+      "plugin://nogra/contracts/schemas/transcript-diagnostic-v1.schema.json",
       "plugin://nogra/contracts/templates/brief-v1.md",
+      "plugin://nogra/contracts/templates/anchor-v1.json",
+      "plugin://nogra/contracts/templates/boot-context-v2.json",
+      "plugin://nogra/contracts/templates/memory-resolution-v1.json",
+      "plugin://nogra/contracts/templates/transcript-diagnostic-v1.json",
       "plugin://nogra/contracts/init-bundle/manifest.json"
     ]
   };
@@ -818,7 +906,8 @@ function readOnlyCommand(args, options = {}) {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
         env: { ...process.env, ...(options.env || {}) },
-        timeout: options.timeoutMs || 1200
+        timeout: options.timeoutMs || 1200,
+        maxBuffer: options.maxBuffer || 16 * 1024 * 1024
       }).trim()
     };
   } catch {
@@ -859,6 +948,115 @@ function gitProjection(root) {
     dirtyCount,
     branch: cleanInline(branch),
     head: cleanInline(metadata.oid).slice(0, 12)
+  };
+}
+
+const ANCHOR_GIT_PATHSPECS = [
+  ".",
+  ":(exclude).nogra/checkpoints/anchor-*.json",
+  ":(exclude).nogra/ledger/events.jsonl",
+  ":(exclude).nogra/state/CURRENT-ANCHOR.json",
+  ":(exclude).nogra/state/SESSION-CHECKPOINT.md",
+  ":(exclude).nogra/runtime/anchor-save.lock"
+];
+
+function untrackedAnchorDigests(root) {
+  const listing = readOnlyCommand(
+    ["git", "--no-optional-locks", "-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--", ...ANCHOR_GIT_PATHSPECS],
+    { env: { GIT_OPTIONAL_LOCKS: "0" }, timeoutMs: 5000, maxBuffer: 64 * 1024 * 1024 }
+  );
+  if (listing.status !== "ok") return { status: "unknown", value: "" };
+  const rootReal = fs.realpathSync(root);
+  const records = [];
+  for (const relative of listing.output.split("\0").filter(Boolean).sort()) {
+    const file = path.resolve(rootReal, relative);
+    if (file !== rootReal && !file.startsWith(`${rootReal}${path.sep}`)) {
+      records.push(`${relative}\0outside-root`);
+      continue;
+    }
+    try {
+      const stat = fs.lstatSync(file);
+      if (stat.isSymbolicLink()) {
+        records.push(`${relative}\0symlink\0${fs.readlinkSync(file)}`);
+      } else if (stat.isFile()) {
+        const digest = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+        records.push(`${relative}\0file\0${stat.size}\0${digest}`);
+      } else {
+        records.push(`${relative}\0${stat.isDirectory() ? "directory" : "other"}`);
+      }
+    } catch {
+      records.push(`${relative}\0unreadable`);
+    }
+  }
+  return { status: "ok", value: records.join("\n") };
+}
+
+function gitAnchorSnapshot(root) {
+  const source = "git read-only anchor snapshot (porcelain v2 + tracked diffs + untracked content digests; Nogra anchor records/projections and ledger events excluded)";
+  const gitEnv = { GIT_OPTIONAL_LOCKS: "0" };
+  const status = readOnlyCommand(
+    ["git", "--no-optional-locks", "-C", root, "status", "--porcelain=v2", "--branch", "--", ...ANCHOR_GIT_PATHSPECS],
+    { env: gitEnv, timeoutMs: 5000, maxBuffer: 64 * 1024 * 1024 }
+  );
+  if (status.status !== "ok") {
+    return {
+      status: "unknown",
+      commit: null,
+      branch: "",
+      dirtyCount: null,
+      dirtyFingerprint: null,
+      fingerprintBasis: "",
+      source
+    };
+  }
+
+  const lines = status.output.split(/\r?\n/u).filter(Boolean);
+  const metadata = Object.fromEntries(lines
+    .filter((line) => line.startsWith("# branch."))
+    .map((line) => {
+      const match = line.match(/^# branch\.([A-Za-z]+)\s+(.+)$/u);
+      return match ? [match[1], cleanInline(match[2])] : null;
+    })
+    .filter(Boolean));
+  const dirtyCount = lines.filter((line) => !line.startsWith("#")).length;
+  const commit = /^[a-f0-9]{7,64}$/u.test(metadata.oid || "") ? metadata.oid : null;
+  const branch = metadata.upstream ? `${metadata.head || ""}...${metadata.upstream}` : metadata.head || "";
+  if (dirtyCount === 0) {
+    return {
+      status: "clean",
+      commit,
+      branch: cleanInline(branch),
+      dirtyCount: 0,
+      dirtyFingerprint: null,
+      fingerprintBasis: "",
+      source
+    };
+  }
+
+  const workingDiff = readOnlyCommand(
+    ["git", "--no-optional-locks", "-C", root, "diff", "--no-ext-diff", "--binary", "--", ...ANCHOR_GIT_PATHSPECS],
+    { env: gitEnv, timeoutMs: 10000, maxBuffer: 64 * 1024 * 1024 }
+  );
+  const stagedDiff = readOnlyCommand(
+    ["git", "--no-optional-locks", "-C", root, "diff", "--cached", "--no-ext-diff", "--binary", "--", ...ANCHOR_GIT_PATHSPECS],
+    { env: gitEnv, timeoutMs: 10000, maxBuffer: 64 * 1024 * 1024 }
+  );
+  const untracked = untrackedAnchorDigests(root);
+  const components = [
+    ["status", status.output],
+    ...(workingDiff.status === "ok" ? [["working-diff", workingDiff.output]] : []),
+    ...(stagedDiff.status === "ok" ? [["staged-diff", stagedDiff.output]] : []),
+    ...(untracked.status === "ok" ? [["untracked-content", untracked.value]] : [])
+  ];
+  const fingerprintMaterial = components.map(([name, value]) => `${name}\0${value}`).join("\0");
+  return {
+    status: "dirty",
+    commit,
+    branch: cleanInline(branch),
+    dirtyCount,
+    dirtyFingerprint: `sha256:${crypto.createHash("sha256").update(fingerprintMaterial).digest("hex")}`,
+    fingerprintBasis: components.map(([name]) => name).join("+"),
+    source
   };
 }
 
@@ -1008,10 +1206,39 @@ function statusPayload(root) {
   const briefs = listBriefs(root, 1);
   const runs = listTransportRuns(root, 1);
   const checkpoint = checkpointFreshness(root, config);
+  const anchor = anchorFreshness(root, config);
+  let facts = { freshness: "missing", projection: { sourceWatermark: 0, counts: { active: 0, superseded: 0, total: 0 } } };
+  if (mode.initialized) {
+    try {
+      facts = factStatus(root);
+    } catch (error) {
+      facts = { freshness: "invalid", error: error.message, projection: { sourceWatermark: 0, counts: { active: 0, superseded: 0, total: 0 } } };
+    }
+  }
   const index = indexReadiness(root, config);
   const git = gitProjection(root);
   const bridge = bridgeProjection(root);
   const promotion = promotionProjection(root, config, bridge, git);
+  let roleIsolation = {
+    schema: ROLE_LEASE_SCHEMA_V1,
+    status: "none",
+    owner: "Manager",
+    nextOwner: "Manager"
+  };
+  if (mode.initialized) {
+    try {
+      roleIsolation = roleLeaseStatus(root);
+    } catch (error) {
+      roleIsolation = {
+        schema: ROLE_LEASE_SCHEMA_V1,
+        status: "invalid",
+        effectiveStatus: "invalid",
+        error: error.message,
+        owner: "Manager",
+        nextOwner: "Manager"
+      };
+    }
+  }
   return {
     schema: "nogra.local.status.v1",
     generatedAt: now(),
@@ -1052,15 +1279,26 @@ function statusPayload(root) {
     ledger: {
       watermark: checkpoint.ledgerWatermark,
       checkpointSourceWatermark: checkpoint.checkpointSourceWatermark,
-      checkpointStatus: checkpoint.status
+      checkpointStatus: checkpoint.status,
+      anchorSourceWatermark: anchor.sourceWatermark,
+      anchorStatus: anchor.status,
+      currentAnchorId: anchor.anchorId,
+      currentAnchorHash: anchor.contentHash,
+      factProjectionStatus: facts.freshness,
+      factSourceWatermark: facts.projection.sourceWatermark,
+      activeFacts: facts.projection.counts.active,
+      supersededFacts: facts.projection.counts.superseded,
+      factError: facts.error || ""
     },
     git,
     bridge,
     promotion,
+    roleIsolation,
     index,
-    continuity: continuityState(root, config),
+    continuity: continuityState(root, config, anchor),
     recent: {
       briefs,
+      runs,
       transportRuns: runs
     },
     next: mode.initialized ? ["/nogra:brief", "/nogra:status"] : ["/nogra:setup"]
@@ -1464,8 +1702,10 @@ function defaultManagerHubBootPolicy(existing = {}) {
 
   const next = {
     ...existing,
-    schema: existing.schema || "nogra.boot_policy.v1",
+    schema: "nogra.boot_policy.v2",
     mode: "workspace-hub",
+    stateMachine: ["fresh", "detected", "focused", "resumed", "recovering"],
+    checkpointSemantics: "detection-only",
     cwdResolution: existing.cwdResolution || "nearest-nogra-then-workspace-index",
     autoLoad: false,
     writeOnSessionStart: false,
@@ -1507,6 +1747,7 @@ function ensureManagerHubConfig(root) {
     paths: {
       hiddenRoot: ".nogra",
       stateRoot: ".nogra/state",
+      currentAnchor: ".nogra/state/CURRENT-ANCHOR.json",
       currentCheckpoint: ".nogra/state/SESSION-CHECKPOINT.md",
       currentTasks: ".nogra/state/CURRENT-TASKS.md",
       decisions: ".nogra/state/DECISIONS.md",
@@ -1736,6 +1977,7 @@ function normalizeBrief(input, config = {}, existing = {}) {
   const returnPolicy = defaultReturnPolicy(config);
   const title = cleanInline(input.title || existing.title || "Untitled brief");
   const targetRole = cleanInline(input.targetRole || input.target_role || existing.targetRole || "executor");
+  const targetRuntime = runtimeRoleForTarget(runtimePolicyState(config), targetRole);
   const brief = {
     schema: cleanInline(input.schema || existing.schema || BRIEF_SCHEMA),
     briefId: safeBriefId(input.briefId || input.brief_id || input.id || existing.briefId || newBriefId(title)),
@@ -1747,7 +1989,7 @@ function normalizeBrief(input, config = {}, existing = {}) {
     owner: cleanInline(input.owner || existing.owner || "Manager"),
     nextOwner: cleanInline(input.nextOwner || input.next_owner || existing.nextOwner || scopedNograRole(targetRole)),
     targetRole,
-    targetModel: cleanInline(input.targetModel || input.target_model || existing.targetModel || defaultTargetModel(config)),
+    targetModel: cleanInline(input.targetModel || input.target_model || existing.targetModel || targetRuntime.model || defaultTargetModel(config)),
     intent: cleanText(input.intent || existing.intent),
     contextHandoff: cleanText(input.contextHandoff || existing.contextHandoff),
     decisions: asStringArray(input.decisions).length ? asStringArray(input.decisions) : asStringArray(existing.decisions),
@@ -1777,24 +2019,8 @@ function normalizeBrief(input, config = {}, existing = {}) {
 }
 
 function validateBrief(brief) {
-  const errors = [];
-  for (const key of ["schema", "briefId", "workspaceId", "title", "createdAt", "owner", "nextOwner", "intent", "contextHandoff", "scope", "successCriteria", "stopCriteria", "maxOutput"]) {
-    if (brief[key] == null || brief[key] === "") errors.push(`brief missing ${key}`);
-  }
-  if (brief.schema !== BRIEF_SCHEMA) errors.push(`brief schema mismatch: ${brief.schema}`);
-  try {
-    safeBriefId(brief.briefId);
-  } catch (error) {
-    errors.push(error.message);
-  }
-  if (brief.status && !BRIEF_STATUSES.has(brief.status)) errors.push(`brief status is not valid: ${brief.status}`);
-  if (brief.evidenceRequired && !EVIDENCE_LEVELS.has(brief.evidenceRequired)) errors.push(`brief evidenceRequired is not valid: ${brief.evidenceRequired}`);
-  if (!brief.scope || typeof brief.scope !== "object" || !Array.isArray(brief.scope.in) || !Array.isArray(brief.scope.out)) errors.push("brief scope missing in/out arrays");
-  if (!Array.isArray(brief.successCriteria) || !brief.successCriteria.some((item) => cleanInline(item))) errors.push("brief missing successCriteria");
-  if (!Array.isArray(brief.stopCriteria) || !brief.stopCriteria.some((item) => cleanInline(item))) errors.push("brief missing stopCriteria");
-  if (!brief.maxOutput || typeof brief.maxOutput !== "object" || !cleanInline(brief.maxOutput.format) || !cleanInline(brief.maxOutput.limit)) errors.push("brief missing maxOutput format/limit");
-  if (brief.executionShape != null && typeof brief.executionShape !== "object") errors.push("brief executionShape must be an object when present");
-  return errors;
+  const validation = validateContract(BRIEF_SCHEMA, brief);
+  return validation.errors.map((error) => `${error.instancePath || "/"} ${error.message}`);
 }
 
 function validateBriefPayload(root, input) {
@@ -2062,37 +2288,32 @@ function listBriefs(root, limit = 10) {
 }
 
 function listTransportRuns(root, limit = 10) {
-  const dir = path.join(nograDir(root), "transport", "runs");
-  if (!fs.existsSync(dir)) return [];
-  const items = [];
-  for (const file of fs.readdirSync(dir)) {
-    if (!file.endsWith(".json")) continue;
-    const full = path.join(dir, file);
-    try {
-      const payload = readJson(full);
-      items.push({
-        runId: payload.runId || file.replace(/\.json$/, ""),
-        status: payload.status || "",
-        phase: payload.phase || "",
-        target: payload.target || "",
-        executionRole: payload.executionRole || payload.metadata?.executionRole || "",
-        executionRuntime: payload.executionRuntime || payload.metadata?.executionRuntime || payload.targetModel || "",
-        executionEffort: payload.executionEffort || payload.metadata?.executionEffort || "",
-        executionRuntimePolicyProfile: payload.executionRuntimePolicyProfile || payload.metadata?.executionRuntimePolicyProfile || "",
-        executionLabel: payload.executionLabel || payload.metadata?.executionLabel || "",
-        verificationRole: payload.verificationRole || payload.metadata?.verificationRole || "",
-        verificationRuntime: payload.verificationRuntime || payload.metadata?.verificationRuntime || "",
-        verificationStatus: payload.verificationStatus || payload.metadata?.verificationStatus || "",
-        verificationLabel: payload.verificationLabel || payload.metadata?.verificationLabel || "",
-        briefId: payload.briefId || "",
-        updatedAt: payload.updatedAt || fs.statSync(full).mtime.toISOString(),
-        path: localPath(root, full)
-      });
-    } catch {
-      continue;
-    }
-  }
-  return items.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, limit);
+  return listRunRecords(root)
+    .map((payload) => ({
+      runId: payload.runId || "",
+      schema: payload.schema || "",
+      lifecycle: payload.lifecycle || "",
+      outcome: payload.outcome ?? null,
+      verdict: payload.verdict ?? null,
+      status: compatibilityRunStatus(payload),
+      phase: payload.legacy ? payload.phase || payload.lifecycle || "" : payload.lifecycle || "",
+      legacy: Boolean(payload.legacy),
+      target: payload.target || "",
+      executionRole: payload.executionRole || payload.metadata?.executionRole || "",
+      executionRuntime: payload.executionRuntime || payload.metadata?.executionRuntime || payload.targetModel || "",
+      executionEffort: payload.executionEffort || payload.metadata?.executionEffort || "",
+      executionRuntimePolicyProfile: payload.executionRuntimePolicyProfile || payload.metadata?.executionRuntimePolicyProfile || "",
+      executionLabel: payload.executionLabel || payload.metadata?.executionLabel || "",
+      verificationRole: payload.verificationRole || payload.metadata?.verificationRole || "",
+      verificationRuntime: payload.verificationRuntime || payload.metadata?.verificationRuntime || "",
+      verificationStatus: payload.verificationStatus || payload.metadata?.verificationStatus || "",
+      verificationLabel: payload.verificationLabel || payload.metadata?.verificationLabel || "",
+      briefId: payload.briefId || "",
+      updatedAt: payload.updatedAt || "",
+      path: payload.sourcePath ? localPath(root, payload.sourcePath) : ""
+    }))
+    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+    .slice(0, limit);
 }
 
 function ledgerEventsPath(root) {
@@ -2115,12 +2336,32 @@ function liveHooksLatestPath(root) {
   return path.join(nograDir(root), "runtime", "live-hooks.latest.json");
 }
 
-function sessionQualityReceiptsPath(root) {
-  return path.join(nograDir(root), "runtime", "quality");
-}
-
 function currentLedgerWatermark(root) {
   return nonEmptyLineCount(ledgerEventsPath(root));
+}
+
+function readLedgerEvents(root) {
+  const file = ledgerEventsPath(root);
+  if (!fs.existsSync(file)) return [];
+  return readText(file)
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function findRunEvent(root, runId, eventType) {
+  return readLedgerEvents(root).find((event) =>
+    event.schema === RUN_EVENT_SCHEMA_V2 &&
+    event.runId === runId &&
+    event.eventType === eventType
+  ) || null;
 }
 
 function transcriptIdFromPath(value) {
@@ -2143,7 +2384,7 @@ function readSessionAnchor(root) {
 
 function checkpointPath(root, config = {}) {
   const configured = cleanInline(config?.paths?.currentCheckpoint);
-  return configured ? path.join(root, configured) : path.join(nograDir(root), "state", "SESSION-CHECKPOINT.md");
+  return resolveWorkspacePath(root, configured || ".nogra/state/SESSION-CHECKPOINT.md").target;
 }
 
 function checkpointSourceWatermark(root, config = {}) {
@@ -2172,9 +2413,778 @@ function ensureCheckpointSourceWatermark(text, watermark = 0) {
   return `${line}\n${normalized}`;
 }
 
+function currentAnchorPath(root, config = {}) {
+  const configured = cleanInline(config?.paths?.currentAnchor);
+  return resolveWorkspacePath(root, configured || ".nogra/state/CURRENT-ANCHOR.json").target;
+}
+
+function anchorsDir(root, config = {}) {
+  const configured = cleanInline(config?.paths?.checkpoints);
+  return resolveWorkspacePath(root, configured || ".nogra/checkpoints").target;
+}
+
+function anchorRecordPath(root, anchorId, config = {}) {
+  return path.join(anchorsDir(root, config), `${safeAnchorId(anchorId)}.json`);
+}
+
+function readAnchorFile(file) {
+  if (!fs.existsSync(file)) return null;
+  const anchor = readJson(file);
+  assertAnchorSemantics(anchor);
+  return anchor;
+}
+
+function readCurrentAnchor(root, config = {}) {
+  return readAnchorFile(currentAnchorPath(root, config));
+}
+
+function anchorSourceWatermark(root, config = {}) {
+  try {
+    const anchor = readCurrentAnchor(root, config);
+    if (anchor) return anchor.sourceWatermark;
+  } catch {
+    return 0;
+  }
+  return checkpointSourceWatermark(root, config);
+}
+
+function semanticRecordId(prefix, value) {
+  const digest = crypto.createHash("sha256").update(canonicalJson(value)).digest("hex").slice(0, 16);
+  return `${prefix}-${digest}`;
+}
+
+function uniqueCleanStrings(value) {
+  return [...new Set(asStringArray(value))];
+}
+
+function anchorClaim(value, bucket) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${bucket} entries must be structured objects`);
+  }
+  const claim = cleanText(value.claim);
+  if (!claim) throw new Error(`${bucket} claim is required`);
+  const factId = cleanInline(value.factId);
+  if (!/^fact-[a-f0-9]{20}$/u.test(factId)) {
+    throw new Error(`${bucket} claim requires a canonical factId`);
+  }
+  const evidenceRefs = uniqueCleanStrings(value.evidenceRefs);
+  const provenance = value.provenance && typeof value.provenance === "object" && !Array.isArray(value.provenance)
+    ? value.provenance
+    : {};
+  const sourceType = cleanInline(provenance.sourceType);
+  const sourceRef = cleanInline(provenance.sourceRef);
+  if (!sourceType || !sourceRef) {
+    throw new Error(`${bucket} claim requires provenance.sourceType and provenance.sourceRef`);
+  }
+  if (bucket === "verifiedDone") {
+    const observedAt = cleanInline(value.observedAt);
+    if (!observedAt) throw new Error("verifiedDone claim requires observedAt");
+    if (!evidenceRefs.length) throw new Error("verifiedDone claim requires at least one evidenceRef");
+    return {
+      claimId: cleanInline(value.claimId) || semanticRecordId("claim", { bucket, claim, sourceType, sourceRef }),
+      factId,
+      claim,
+      observedAt,
+      evidenceRefs,
+      provenance: {
+        evidenceLevel: cleanInline(provenance.evidenceLevel),
+        sourceType,
+        sourceRef
+      }
+    };
+  }
+  const claimedAt = cleanInline(value.claimedAt);
+  const claimedBy = cleanInline(value.claimedBy);
+  if (!claimedAt || !claimedBy) throw new Error("claimedDone claim requires claimedAt and claimedBy");
+  return {
+    claimId: cleanInline(value.claimId) || semanticRecordId("claim", { bucket, claim, sourceType, sourceRef, claimedBy }),
+    factId,
+    claim,
+    claimedAt,
+    claimedBy,
+    evidenceRefs,
+    provenance: {
+      evidenceLevel: cleanInline(provenance.evidenceLevel),
+      sourceType,
+      sourceRef
+    }
+  };
+}
+
+function anchorUnknown(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("unknown entries must be structured objects");
+  }
+  const subject = cleanText(value.subject);
+  const reason = cleanText(value.reason);
+  const sourceRef = cleanInline(value.sourceRef);
+  if (!subject || !reason || !sourceRef) {
+    throw new Error("unknown entry requires subject, reason and sourceRef");
+  }
+  return {
+    itemId: cleanInline(value.itemId) || semanticRecordId("unknown", { subject, reason, sourceRef }),
+    subject,
+    reason,
+    nextCheck: cleanText(value.nextCheck),
+    sourceRef
+  };
+}
+
+function anchorDecision(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("decision entries must be structured objects");
+  }
+  const decision = cleanText(value.decision);
+  const owner = cleanInline(value.owner);
+  const sourceRef = cleanInline(value.sourceRef);
+  if (!decision || !owner || !sourceRef) {
+    throw new Error("decision entry requires decision, owner and sourceRef");
+  }
+  return {
+    decisionId: cleanInline(value.decisionId) || semanticRecordId("decision", { decision, owner, sourceRef }),
+    decision,
+    owner,
+    sourceRef
+  };
+}
+
+function anchorBlocker(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("blocker entries must be structured objects");
+  }
+  const blocker = cleanText(value.blocker);
+  const owner = cleanInline(value.owner);
+  const sourceRef = cleanInline(value.sourceRef);
+  if (!blocker || !owner || !sourceRef) {
+    throw new Error("blocker entry requires blocker, owner and sourceRef");
+  }
+  return {
+    blockerId: cleanInline(value.blockerId) || semanticRecordId("blocker", { blocker, owner, sourceRef }),
+    blocker,
+    owner,
+    sourceRef
+  };
+}
+
+function anchorAuthority(root, input, config) {
+  const raw = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const mode = cleanInline(raw.mode);
+  if (!["approved", "direct", "observation"].includes(mode)) {
+    throw new Error("anchor authority.mode must be approved, direct or observation");
+  }
+  if (mode === "approved") {
+    const briefId = safeBriefId(raw.briefId);
+    const approvalId = safeApprovalId(raw.approvalId);
+    const brief = readBriefDraft(root, briefId);
+    assertContract(BRIEF_SCHEMA_V1, brief);
+    if (brief.status !== "ready") {
+      throw new Error(`approved anchor authority requires a ready brief (found ${brief.status || "unknown"})`);
+    }
+    const approval = readJson(approvalPath(root, approvalId));
+    assertApprovalSemantics(approval);
+    if (!["available", "consumed"].includes(approval.status)) {
+      throw new Error(`approved anchor authority cannot use approval status ${approval.status}`);
+    }
+    const briefHash = briefAuthorityHash(brief);
+    const actionHash = approvalActionHash(brief);
+    if (
+      approval.workspaceId !== workspaceId(config) ||
+      approval.briefId !== briefId ||
+      approval.briefHash !== briefHash ||
+      approval.actionHash !== actionHash
+    ) {
+      throw new Error("approved anchor authority does not match the current brief/approval contract");
+    }
+    if (cleanText(raw.objective) && cleanText(raw.objective) !== cleanText(brief.intent)) {
+      throw new Error("approved anchor objective must come from the bound brief");
+    }
+    return {
+      mode,
+      objective: cleanText(brief.intent),
+      scope: {
+        in: uniqueCleanStrings(brief.scope?.in),
+        out: uniqueCleanStrings(brief.scope?.out)
+      },
+      briefId,
+      briefHash,
+      approvalId,
+      approvalActionHash: actionHash
+    };
+  }
+  if (raw.briefId || raw.briefHash || raw.approvalId || raw.approvalActionHash) {
+    throw new Error(`${mode} anchor authority cannot carry brief or approval bindings`);
+  }
+  const objective = cleanText(raw.objective);
+  if (!objective) throw new Error(`${mode} anchor authority requires an objective`);
+  const scope = raw.scope && typeof raw.scope === "object" && !Array.isArray(raw.scope) ? raw.scope : {};
+  return {
+    mode,
+    objective,
+    scope: {
+      in: uniqueCleanStrings(scope.in),
+      out: uniqueCleanStrings(scope.out)
+    },
+    briefId: null,
+    briefHash: null,
+    approvalId: null,
+    approvalActionHash: null
+  };
+}
+
+function anchorReferences(input, authority, completion) {
+  const raw = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const claimEvidence = [
+    ...completion.verifiedDone.flatMap((item) => item.evidenceRefs),
+    ...completion.claimedDone.flatMap((item) => item.evidenceRefs)
+  ];
+  const claimFacts = [
+    ...completion.verifiedDone.map((item) => item.factId),
+    ...completion.claimedDone.map((item) => item.factId)
+  ];
+  return {
+    briefIds: uniqueCleanStrings([...asStringArray(raw.briefIds), ...(authority.briefId ? [authority.briefId] : [])]),
+    approvalIds: uniqueCleanStrings([...asStringArray(raw.approvalIds), ...(authority.approvalId ? [authority.approvalId] : [])]),
+    runIds: uniqueCleanStrings(raw.runIds),
+    factIds: uniqueCleanStrings([...asStringArray(raw.factIds), ...claimFacts]),
+    evidenceRefs: uniqueCleanStrings([...asStringArray(raw.evidenceRefs), ...claimEvidence]),
+    verdictIds: uniqueCleanStrings(raw.verdictIds)
+  };
+}
+
+function anchorEvidenceFile(root, value) {
+  const normalized = safeRelativePath(value);
+  if (!normalized.startsWith(".nogra/")) {
+    throw new Error(`anchor evidenceRef must be a workspace-local .nogra/ path: ${normalized}`);
+  }
+  const { target } = resolveWorkspacePath(root, normalized);
+  if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+    throw new Error(`anchor evidenceRef does not resolve to a local file: ${normalized}`);
+  }
+  const nograReal = fs.realpathSync(nograDir(root));
+  const targetReal = fs.realpathSync(target);
+  if (targetReal !== nograReal && !targetReal.startsWith(`${nograReal}${path.sep}`)) {
+    throw new Error(`anchor evidenceRef resolves outside the workspace-local .nogra/ trust domain: ${normalized}`);
+  }
+  return normalized;
+}
+
+function assertAnchorReferenceIntegrity(root, anchor) {
+  const expectedWorkspace = anchor.workspaceId;
+  for (const briefId of anchor.references.briefIds) {
+    const brief = readBriefDraft(root, safeBriefId(briefId));
+    assertContract(BRIEF_SCHEMA_V1, brief);
+    if (brief.workspaceId !== expectedWorkspace) {
+      throw new Error(`anchor brief reference belongs to another workspace: ${briefId}`);
+    }
+  }
+  for (const approvalId of anchor.references.approvalIds) {
+    const approval = readJson(approvalPath(root, safeApprovalId(approvalId)));
+    assertApprovalSemantics(approval);
+    if (approval.workspaceId !== expectedWorkspace) {
+      throw new Error(`anchor approval reference belongs to another workspace: ${approvalId}`);
+    }
+  }
+  for (const runId of anchor.references.runIds) {
+    const run = readRunRecord(root, runId);
+    if (!run) throw new Error(`anchor run reference does not exist: ${runId}`);
+    if (run.workspaceId && run.workspaceId !== expectedWorkspace) {
+      throw new Error(`anchor run reference belongs to another workspace: ${runId}`);
+    }
+    if (!run.legacy) assertRunSemantics(readJson(run.sourcePath));
+  }
+  for (const evidenceRef of anchor.references.evidenceRefs) {
+    anchorEvidenceFile(root, evidenceRef);
+  }
+  const facts = readFactRecords(root);
+  const supersededFactIds = new Set(facts.map((fact) => fact.supersedes).filter(Boolean));
+  const factsById = new Map(facts.map((fact) => [fact.factId, fact]));
+  for (const factId of anchor.references.factIds) {
+    const fact = factsById.get(factId);
+    if (!fact) throw new Error(`anchor fact reference does not exist: ${factId}`);
+    if (fact.workspaceId !== expectedWorkspace) throw new Error(`anchor fact reference belongs to another workspace: ${factId}`);
+    if (supersededFactIds.has(factId)) throw new Error(`anchor fact reference is superseded: ${factId}`);
+  }
+  for (const claim of anchor.completion.verifiedDone) {
+    const fact = factsById.get(claim.factId);
+    if (!fact || fact.evidenceLevel !== "verified") {
+      throw new Error(`anchor verifiedDone requires an active verified fact: ${claim.factId}`);
+    }
+    if (cleanText(fact.claim) !== cleanText(claim.claim)) {
+      throw new Error(`anchor verifiedDone claim differs from canonical fact ${claim.factId}`);
+    }
+  }
+  for (const claim of anchor.completion.claimedDone) {
+    const fact = factsById.get(claim.factId);
+    if (!fact || fact.evidenceLevel === "verified") {
+      throw new Error(`anchor claimedDone requires an active non-verified fact: ${claim.factId}`);
+    }
+    if (cleanText(fact.claim) !== cleanText(claim.claim)) {
+      throw new Error(`anchor claimedDone claim differs from canonical fact ${claim.factId}`);
+    }
+  }
+  for (const verdictId of anchor.references.verdictIds) {
+    const safeVerdictId = cleanInline(verdictId);
+    if (!/^verdict-[A-Za-z0-9_.-]+$/u.test(safeVerdictId)) {
+      throw new Error(`invalid verdict id: ${safeVerdictId || "(empty)"}`);
+    }
+    const file = path.join(nograDir(root), "receipts", "verdicts", `${safeVerdictId}.json`);
+    const verdict = readJson(file);
+    assertVerdictSemantics(verdict);
+    if (verdict.workspaceId !== expectedWorkspace) {
+      throw new Error(`anchor verdict reference belongs to another workspace: ${safeVerdictId}`);
+    }
+  }
+  return anchor;
+}
+
+function buildAnchorCandidate(root, input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("anchor input must be a structured JSON object");
+  }
+  const config = readWorkspaceConfig(root);
+  if (!config || config.__invalid) {
+    throw new Error(config?.error ? `invalid .nogra/config.json: ${config.error}` : "anchor requires an initialized Nogra workspace");
+  }
+  const authority = anchorAuthority(root, input.authority, config);
+  const completionInput = input.completion && typeof input.completion === "object" && !Array.isArray(input.completion)
+    ? input.completion
+    : {};
+  const completion = {
+    verifiedDone: (Array.isArray(completionInput.verifiedDone) ? completionInput.verifiedDone : []).map((item) => anchorClaim(item, "verifiedDone")),
+    claimedDone: (Array.isArray(completionInput.claimedDone) ? completionInput.claimedDone : []).map((item) => anchorClaim(item, "claimedDone")),
+    unknown: (Array.isArray(completionInput.unknown) ? completionInput.unknown : []).map(anchorUnknown)
+  };
+  const references = anchorReferences(input.references, authority, completion);
+  const session = readSessionAnchor(root);
+  const nativeInput = input.native && typeof input.native === "object" && !Array.isArray(input.native) ? input.native : {};
+  if (cleanInline(nativeInput.checkpointRef)) {
+    throw new Error("Claude Code hooks do not expose a native rewind checkpoint id; native.checkpointRef must remain null");
+  }
+  const metadataInput = input.metadata && typeof input.metadata === "object" && !Array.isArray(input.metadata) ? input.metadata : {};
+  const candidate = {
+    schema: ANCHOR_SCHEMA_V1,
+    workspaceId: workspaceId(config),
+    authority,
+    completion,
+    decisions: (Array.isArray(input.decisions) ? input.decisions : []).map(anchorDecision),
+    blockers: (Array.isArray(input.blockers) ? input.blockers : []).map(anchorBlocker),
+    nextOwner: cleanInline(input.nextOwner) || "Manager",
+    git: gitAnchorSnapshot(root),
+    references,
+    native: {
+      platform: "claude_code",
+      sessionId: session.sessionId,
+      transcriptId: session.transcriptId,
+      checkpointRef: null
+    },
+    redactions: uniqueCleanStrings(input.redactions),
+    metadata: {
+      ...metadataInput,
+      projection: ".nogra/state/SESSION-CHECKPOINT.md",
+      currentRecord: ".nogra/state/CURRENT-ANCHOR.json",
+      immutableLane: ".nogra/checkpoints",
+      nativeCheckpointRefSource: "not_exposed_by_claude_hooks"
+    }
+  };
+  candidate.contentHash = anchorContentHash(candidate);
+  return { config, candidate };
+}
+
+function materializeAnchor(candidate, values) {
+  const anchor = {
+    schema: ANCHOR_SCHEMA_V1,
+    anchorId: values.anchorId,
+    workspaceId: candidate.workspaceId,
+    createdAt: values.createdAt,
+    updatedAt: values.createdAt,
+    sourceWatermark: values.sourceWatermark,
+    contentHash: candidate.contentHash,
+    supersedes: values.supersedes,
+    authority: candidate.authority,
+    completion: candidate.completion,
+    decisions: candidate.decisions,
+    blockers: candidate.blockers,
+    nextOwner: candidate.nextOwner,
+    git: candidate.git,
+    references: candidate.references,
+    native: candidate.native,
+    redactions: candidate.redactions,
+    metadata: candidate.metadata
+  };
+  assertAnchorSemantics(anchor);
+  return anchor;
+}
+
+function anchorMarkdownLine(value) {
+  return cleanText(value).replace(/\s+/gu, " ").trim();
+}
+
+function anchorMarkdownList(items, render, empty = "None recorded.") {
+  return items.length ? items.map((item) => `- ${render(item)}`).join("\n") : `- ${empty}`;
+}
+
+function renderAnchorMarkdown(anchor) {
+  assertAnchorSemantics(anchor);
+  const completion = anchor.completion;
+  const refs = anchor.references;
+  return [
+    "# Nogra Anchor",
+    "",
+    `Workspace: ${anchor.workspaceId}`,
+    `AnchorId: ${anchor.anchorId}`,
+    `Created: ${anchor.createdAt}`,
+    `Updated: ${anchor.updatedAt}`,
+    `SourceWatermark: ${anchor.sourceWatermark}`,
+    `ContentHash: ${anchor.contentHash}`,
+    `Supersedes: ${anchor.supersedes || "none"}`,
+    "",
+    "## Current State",
+    "",
+    `This anchor records ${completion.verifiedDone.length} verified, ${completion.claimedDone.length} claimed, and ${completion.unknown.length} unknown completion statements with ${anchor.blockers.length} blockers.`,
+    "",
+    "## Objective",
+    "",
+    anchorMarkdownLine(anchor.authority.objective),
+    "",
+    `Authority: ${anchor.authority.mode}`,
+    "",
+    "## Scope In",
+    "",
+    anchorMarkdownList(anchor.authority.scope.in, anchorMarkdownLine),
+    "",
+    "## Scope Out",
+    "",
+    anchorMarkdownList(anchor.authority.scope.out, anchorMarkdownLine),
+    "",
+    "## Verified Done",
+    "",
+    anchorMarkdownList(
+      completion.verifiedDone,
+      (item) => `${anchorMarkdownLine(item.claim)} — evidence: ${item.evidenceRefs.map(anchorMarkdownLine).join(", ")}`
+    ),
+    "",
+    "## Claimed Done",
+    "",
+    anchorMarkdownList(
+      completion.claimedDone,
+      (item) => `${anchorMarkdownLine(item.claim)} — claimed by ${anchorMarkdownLine(item.claimedBy)}; level: ${item.provenance.evidenceLevel}`
+    ),
+    "",
+    "## Unknown",
+    "",
+    anchorMarkdownList(
+      completion.unknown,
+      (item) => `${anchorMarkdownLine(item.subject)} — ${anchorMarkdownLine(item.reason)}${item.nextCheck ? ` Next check: ${anchorMarkdownLine(item.nextCheck)}` : ""}`
+    ),
+    "",
+    "## Decisions",
+    "",
+    anchorMarkdownList(anchor.decisions, (item) => `${anchorMarkdownLine(item.decision)} — owner: ${anchorMarkdownLine(item.owner)}; source: ${anchorMarkdownLine(item.sourceRef)}`),
+    "",
+    "## Blockers",
+    "",
+    anchorMarkdownList(anchor.blockers, (item) => `${anchorMarkdownLine(item.blocker)} — owner: ${anchorMarkdownLine(item.owner)}; source: ${anchorMarkdownLine(item.sourceRef)}`),
+    "",
+    "## Git",
+    "",
+    `- Status: ${anchor.git.status}`,
+    `- Commit: ${anchor.git.commit || "unknown"}`,
+    `- Branch: ${anchor.git.branch || "unknown"}`,
+    `- Dirty count: ${anchor.git.dirtyCount == null ? "unknown" : anchor.git.dirtyCount}`,
+    `- Dirty fingerprint: ${anchor.git.dirtyFingerprint || "none"}`,
+    `- Fingerprint basis: ${anchor.git.fingerprintBasis || "none"}`,
+    "",
+    "## References",
+    "",
+    `- Briefs: ${refs.briefIds.join(", ") || "none"}`,
+    `- Approvals: ${refs.approvalIds.join(", ") || "none"}`,
+    `- Runs: ${refs.runIds.join(", ") || "none"}`,
+    `- Facts: ${refs.factIds.join(", ") || "none"}`,
+    `- Evidence: ${refs.evidenceRefs.join(", ") || "none"}`,
+    `- Verdicts: ${refs.verdictIds.join(", ") || "none"}`,
+    "",
+    "## Native Continuity",
+    "",
+    `- Platform: ${anchor.native.platform}`,
+    `- Session: ${anchor.native.sessionId || "not recorded"}`,
+    `- Transcript: ${anchor.native.transcriptId || "not recorded"}`,
+    `- Native checkpoint: ${anchor.native.checkpointRef || "not exposed"}`,
+    "",
+    "## Next",
+    "",
+    `Next owner: ${anchorMarkdownLine(anchor.nextOwner)}`,
+    "",
+    "This Markdown file is a human-readable projection. The schema-valid immutable JSON anchor and append-only ledger remain the factual continuity records.",
+    ""
+  ].join("\n");
+}
+
+function anchorEventFor(root, anchor) {
+  return readLedgerEvents(root).find((event) =>
+    event.type === "anchor_saved" &&
+    event.anchorId === anchor.anchorId &&
+    event.contentHash === anchor.contentHash &&
+    event.ledgerWatermark === anchor.sourceWatermark
+  ) || null;
+}
+
+function listImmutableAnchors(root, config = {}) {
+  const dir = anchorsDir(root, config);
+  if (!directoryExists(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter((name) => /^anchor-[A-Za-z0-9_.-]+\.json$/u.test(name))
+    .map((name) => {
+      try {
+        return readAnchorFile(path.join(dir, name));
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.sourceWatermark - a.sourceWatermark || String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+function committedAnchorForCandidate(root, config, candidate, ledgerWatermark) {
+  return listImmutableAnchors(root, config).find((anchor) =>
+    anchor.contentHash === candidate.contentHash &&
+    anchor.sourceWatermark === ledgerWatermark &&
+    Boolean(anchorEventFor(root, anchor))
+  ) || null;
+}
+
+function writeAnchorProjections(root, config, anchor) {
+  writeJsonAtomic(currentAnchorPath(root, config), anchor);
+  writeTextAtomic(checkpointPath(root, config), renderAnchorMarkdown(anchor));
+}
+
+function anchorSaveLockPath(root) {
+  return path.join(nograDir(root), "runtime", "anchor-save.lock");
+}
+
+function withAnchorSaveLock(root, callback) {
+  const file = anchorSaveLockPath(root);
+  ensureDir(path.dirname(file));
+  const token = `${process.pid}-${crypto.randomUUID()}`;
+  const acquire = () => {
+    try {
+      const fd = fs.openSync(file, "wx");
+      fs.writeFileSync(fd, `${JSON.stringify({ token, pid: process.pid, createdAt: now() })}\n`, "utf8");
+      fs.closeSync(fd);
+      return;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      const ageMs = Date.now() - fs.statSync(file).mtimeMs;
+      if (ageMs <= 5 * 60 * 1000) {
+        throw new Error("another anchor-save operation is active; retry after it finishes");
+      }
+      fs.unlinkSync(file);
+      const fd = fs.openSync(file, "wx");
+      fs.writeFileSync(fd, `${JSON.stringify({ token, pid: process.pid, createdAt: now(), recoveredStaleLock: true })}\n`, "utf8");
+      fs.closeSync(fd);
+    }
+  };
+  acquire();
+  try {
+    return callback();
+  } finally {
+    try {
+      const lock = readJson(file);
+      if (lock.token === token) fs.unlinkSync(file);
+    } catch {
+      // A missing or foreign lock is never removed.
+    }
+  }
+}
+
+function anchorContract() {
+  return {
+    schema: "nogra.local.anchor_contract.v1",
+    canonicalSchema: ANCHOR_SCHEMA_V1,
+    schemaPath: "contracts/schemas/anchor-v1.schema.json",
+    templatePath: "contracts/templates/anchor-v1.json",
+    immutableRecords: ".nogra/checkpoints/anchor-<watermark>-<content-hash>.json",
+    currentRecord: ".nogra/state/CURRENT-ANCHOR.json",
+    projection: ".nogra/state/SESSION-CHECKPOINT.md",
+    semantics: [
+      "Anchor records continuity; it never grants GO or marks work ready.",
+      "verifiedDone requires verified provenance and at least one existing workspace-local evidence file.",
+      "claimedDone and unknown remain separate and cannot be upgraded by rendering or memory.",
+      "Approved authority is derived from the bound brief and approval records.",
+      "Fresh identical state is deduplicated; stale ledger or Git state creates a superseding anchor.",
+      "Legacy Markdown checkpoints are preserved as projections and are never auto-upgraded into verified Anchor claims.",
+      "Claude-native checkpoint references remain optional because documented hooks do not expose one."
+    ],
+    hostedMcpUsed: false
+  };
+}
+
+function evidenceContract() {
+  return {
+    schema: "nogra.local.evidence_contract.v1",
+    canonicalSchema: EVIDENCE_SCHEMA_V1,
+    schemaPath: "contracts/schemas/evidence-v1.schema.json",
+    templatePath: "contracts/templates/evidence-v1.json",
+    immutableRecords: ".nogra/evidence/evidence-<content-hash>.json",
+    semantics: [
+      "Evidence is an immutable content-addressed observation receipt, not a completion verdict.",
+      "Artifact digests are computed from existing workspace-local files; caller-supplied digests are not trusted.",
+      "Tested evidence requires a command/test method and a content-addressed artifact.",
+      "Verified evidence requires either an operator record or a canonical verdict-backed verification.",
+      "Evidence save appends an idempotent evidence_recorded ledger event."
+    ],
+    hostedMcpUsed: false
+  };
+}
+
+function factContract() {
+  return {
+    schema: "nogra.local.fact_contract.v1",
+    canonicalSchema: FACT_SCHEMA_V1,
+    schemaPath: "contracts/schemas/fact-v1.schema.json",
+    templatePath: "contracts/templates/fact-v1.json",
+    authority: ".nogra/ledger/events.jsonl",
+    projection: ".nogra/state/CURRENT-FACTS.json",
+    semantics: [
+      "A stable subject has at most one active fact.",
+      "Changing a subject requires explicit supersedes; wording is never fuzzy-matched.",
+      "Evidence level cannot regress across a supersession chain.",
+      "Verified facts require verified operator evidence or a canonical ship verdict.",
+      "Memory and sync projections can create reported facts only and never upgrade truth.",
+      "MEMORY.md, USER.md and CURRENT-FACTS.json are projections; the append-only ledger owns fact identity."
+    ],
+    hostedMcpUsed: false
+  };
+}
+
+function validateAnchorPayload(root, input) {
+  let normalized = null;
+  try {
+    const { candidate } = buildAnchorCandidate(root, input);
+    const sourceWatermark = currentLedgerWatermark(root) + 1;
+    const anchorId = `anchor-${String(sourceWatermark).padStart(6, "0")}-${candidate.contentHash.slice(7, 19)}`;
+    normalized = materializeAnchor(candidate, {
+      anchorId,
+      createdAt: now(),
+      sourceWatermark,
+      supersedes: readCurrentAnchor(root, readWorkspaceConfig(root) || {})?.anchorId || null
+    });
+    assertAnchorReferenceIntegrity(root, normalized);
+    return {
+      schema: "nogra.local.anchor_validation.v1",
+      status: "valid",
+      valid: true,
+      errors: [],
+      normalized,
+      contract: "plugin-bundled anchor-v1.schema.json",
+      hostedMcpUsed: false
+    };
+  } catch (error) {
+    return {
+      schema: "nogra.local.anchor_validation.v1",
+      status: "invalid",
+      valid: false,
+      errors: [error.message],
+      normalized,
+      contract: "plugin-bundled anchor-v1.schema.json",
+      hostedMcpUsed: false
+    };
+  }
+}
+
+function saveAnchor(root, input) {
+  return withAnchorSaveLock(root, () => {
+    const { config, candidate } = buildAnchorCandidate(root, input);
+    const currentWatermark = currentLedgerWatermark(root);
+    let current = null;
+    try {
+      current = readCurrentAnchor(root, config);
+    } catch (error) {
+      throw new Error(`current anchor is invalid and will not be overwritten: ${error.message}`);
+    }
+
+    if (current && current.contentHash === candidate.contentHash && current.sourceWatermark === currentWatermark) {
+      assertAnchorReferenceIntegrity(root, current);
+      writeAnchorProjections(root, config, current);
+      return {
+        schema: "nogra.local.anchor_save.v1",
+        status: "ok",
+        idempotent: true,
+        recovered: false,
+        anchor: current,
+        path: localPath(root, anchorRecordPath(root, current.anchorId, config)),
+        currentPath: localPath(root, currentAnchorPath(root, config)),
+        projectionPath: localPath(root, checkpointPath(root, config)),
+        hostedMcpUsed: false
+      };
+    }
+
+    const committed = committedAnchorForCandidate(root, config, candidate, currentWatermark);
+    if (committed) {
+      assertAnchorReferenceIntegrity(root, committed);
+      writeAnchorProjections(root, config, committed);
+      return {
+        schema: "nogra.local.anchor_save.v1",
+        status: "ok",
+        idempotent: true,
+        recovered: true,
+        anchor: committed,
+        path: localPath(root, anchorRecordPath(root, committed.anchorId, config)),
+        currentPath: localPath(root, currentAnchorPath(root, config)),
+        projectionPath: localPath(root, checkpointPath(root, config)),
+        hostedMcpUsed: false
+      };
+    }
+
+    const sourceWatermark = currentWatermark + 1;
+    const anchorId = `anchor-${String(sourceWatermark).padStart(6, "0")}-${candidate.contentHash.slice(7, 19)}`;
+    const createdAt = now();
+    const anchor = materializeAnchor(candidate, {
+      anchorId,
+      createdAt,
+      sourceWatermark,
+      supersedes: current?.anchorId || null
+    });
+    assertAnchorReferenceIntegrity(root, anchor);
+    const immutablePath = anchorRecordPath(root, anchorId, config);
+    if (fs.existsSync(immutablePath)) {
+      const existing = readAnchorFile(immutablePath);
+      if (canonicalJson(existing) !== canonicalJson(anchor)) {
+        throw new Error(`immutable anchor id collision: ${anchorId}`);
+      }
+    } else {
+      writeJsonAtomic(immutablePath, anchor);
+    }
+    const event = appendLedgerEvent(root, "anchor_saved", {
+      eventId: `ledger-${anchorId}`,
+      anchorId,
+      contentHash: anchor.contentHash,
+      supersedes: anchor.supersedes,
+      sourceWatermark,
+      summary: `Anchor ${anchorId} saved with ${anchor.completion.verifiedDone.length} verified, ${anchor.completion.claimedDone.length} claimed and ${anchor.completion.unknown.length} unknown completion statements.`,
+      nextOwner: anchor.nextOwner
+    });
+    if (event.ledgerWatermark !== sourceWatermark) {
+      throw new Error(`anchor ledger watermark changed during save: expected ${sourceWatermark}, received ${event.ledgerWatermark}`);
+    }
+    writeAnchorProjections(root, config, anchor);
+    return {
+      schema: "nogra.local.anchor_save.v1",
+      status: "ok",
+      idempotent: false,
+      recovered: false,
+      anchor,
+      ledgerEvent: event,
+      path: localPath(root, immutablePath),
+      currentPath: localPath(root, currentAnchorPath(root, config)),
+      projectionPath: localPath(root, checkpointPath(root, config)),
+      hostedMcpUsed: false
+    };
+  });
+}
+
 function checkpointFreshness(root, config = {}) {
   const ledgerWatermark = currentLedgerWatermark(root);
-  const sourceWatermark = checkpointSourceWatermark(root, config);
+  const sourceWatermark = anchorSourceWatermark(root, config);
   return {
     ledgerWatermark,
     checkpointSourceWatermark: sourceWatermark,
@@ -2182,7 +3192,62 @@ function checkpointFreshness(root, config = {}) {
   };
 }
 
-function continuityState(root, config = {}) {
+function anchorFreshness(root, config = {}) {
+  const ledgerWatermark = currentLedgerWatermark(root);
+  let anchor;
+  try {
+    anchor = readCurrentAnchor(root, config);
+  } catch (error) {
+    return {
+      status: "invalid",
+      reason: error.message,
+      anchorId: "",
+      contentHash: "",
+      sourceWatermark: 0,
+      ledgerWatermark
+    };
+  }
+  if (!anchor) {
+    return {
+      status: "missing",
+      reason: "No schema-valid current anchor exists.",
+      anchorId: "",
+      contentHash: "",
+      sourceWatermark: checkpointSourceWatermark(root, config),
+      ledgerWatermark
+    };
+  }
+  if (ledgerWatermark > anchor.sourceWatermark) {
+    return {
+      status: "stale_ledger",
+      reason: "The append-only ledger is ahead of the current anchor.",
+      anchorId: anchor.anchorId,
+      contentHash: anchor.contentHash,
+      sourceWatermark: anchor.sourceWatermark,
+      ledgerWatermark,
+      supersedes: anchor.supersedes
+    };
+  }
+  const git = gitAnchorSnapshot(root);
+  const gitMatches =
+    git.status === anchor.git.status &&
+    git.commit === anchor.git.commit &&
+    git.branch === anchor.git.branch &&
+    git.dirtyCount === anchor.git.dirtyCount &&
+    git.dirtyFingerprint === anchor.git.dirtyFingerprint;
+  return {
+    status: gitMatches ? "fresh" : "stale_git",
+    reason: gitMatches ? "" : "Repository state no longer matches the current anchor fingerprint.",
+    anchorId: anchor.anchorId,
+    contentHash: anchor.contentHash,
+    sourceWatermark: anchor.sourceWatermark,
+    ledgerWatermark,
+    supersedes: anchor.supersedes,
+    gitMatches
+  };
+}
+
+function continuityState(root, config = {}, anchorStatus = null) {
   const ledgerDir = path.join(nograDir(root), "ledger");
   const ledgerFile = ledgerEventsPath(root);
   const checkpointFile = checkpointPath(root, config);
@@ -2190,14 +3255,12 @@ function continuityState(root, config = {}) {
   const liveHooksFile = liveHooksJsonlPath(root);
   const liveHooksLog = liveHooksTextPath(root);
   const liveHooksLatest = liveHooksLatestPath(root);
-  const qualityLatest = sessionQualityLatestPath(root);
-  const qualityReceipts = sessionQualityReceiptsPath(root);
   const checkpointHasWatermark = checkpointHasSourceWatermark(root, config);
   const ledgerDirExists = directoryExists(ledgerDir);
   const session = readSessionAnchor(root);
   const latestHook = readJsonIfValid(liveHooksLatest);
-  const latestQuality = readJsonIfValid(qualityLatest);
   const activeIntent = activeIntentState(root);
+  const anchor = anchorStatus || anchorFreshness(root, config);
   return {
     schema: "nogra.local.continuity_status.v1",
     status: ledgerDirExists && checkpointHasWatermark ? "ready" : "migration-needed",
@@ -2216,6 +3279,18 @@ function continuityState(root, config = {}) {
       hasSourceWatermark: checkpointHasWatermark,
       sourceWatermark: checkpointSourceWatermark(root, config)
     },
+    anchor: {
+      path: localPath(root, currentAnchorPath(root, config)),
+      exists: fs.existsSync(currentAnchorPath(root, config)),
+      status: anchor.status,
+      reason: anchor.reason,
+      anchorId: anchor.anchorId,
+      contentHash: anchor.contentHash,
+      sourceWatermark: anchor.sourceWatermark,
+      ledgerWatermark: anchor.ledgerWatermark,
+      supersedes: anchor.supersedes || null,
+      gitMatches: anchor.gitMatches ?? null
+    },
     sessionAnchor: {
       path: localPath(root, anchorFile),
       exists: fs.existsSync(anchorFile),
@@ -2233,17 +3308,6 @@ function continuityState(root, config = {}) {
       latestAt: cleanInline(latestHook?.timestamp)
     },
     activeIntent,
-    sessionQuality: {
-      latestPath: localPath(root, qualityLatest),
-      receiptsPath: localPath(root, qualityReceipts),
-      exists: fs.existsSync(qualityLatest),
-      latestStatus: cleanInline(latestQuality?.status),
-      score: Number.isFinite(Number(latestQuality?.score)) ? Number(latestQuality.score) : null,
-      maxSeverity: cleanInline(latestQuality?.maxSeverity),
-      patternCount: Number.isFinite(Number(latestQuality?.patternCount)) ? Number(latestQuality.patternCount) : 0,
-      latestAt: cleanInline(latestQuality?.generatedAt),
-      nextGuard: cleanInline(latestQuality?.nextGuard, 160)
-    },
     migrationHint: ledgerDirExists && checkpointHasWatermark
       ? ""
       : "Run /nogra:setup or local init --apply in this workspace to merge the 0.5.8 continuity layout without touching app files."
@@ -2311,14 +3375,30 @@ function watchPayload(root, options = {}) {
 }
 
 function appendLedgerEvent(root, type, extra = {}) {
-  const { releaseVersion: _ignoredReleaseVersion, ...safeExtra } = extra;
+  const {
+    releaseVersion: _ignoredReleaseVersion,
+    eventId: requestedEventId,
+    ledgerWatermark: _ignoredLedgerWatermark,
+    generatedAt: _ignoredGeneratedAt,
+    createdAt: _ignoredCreatedAt,
+    workspaceId: _ignoredWorkspaceId,
+    sessionId: _ignoredSessionId,
+    transcriptId: _ignoredTranscriptId,
+    type: _ignoredType,
+    ...safeExtra
+  } = extra;
+  const stableEventId = cleanInline(requestedEventId);
+  if (stableEventId) {
+    const existing = readLedgerEvents(root).find((event) => event.eventId === stableEventId);
+    if (existing) return existing;
+  }
   const config = readWorkspaceConfig(root) || {};
   const session = readSessionAnchor(root);
   const ledgerWatermark = currentLedgerWatermark(root) + 1;
   const at = now();
   const event = {
     schema: "nogra.ledger.event.v1",
-    eventId: `ledger-event-${timestamp()}-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
+    eventId: stableEventId || `ledger-event-${timestamp()}-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
     ledgerWatermark,
     generatedAt: at,
     createdAt: at,
@@ -2356,13 +3436,11 @@ function diagnosticLedgerSmoke(root, options = {}) {
 }
 
 function safeTransportRunId(value) {
-  const runId = cleanInline(value);
-  if (!/^transport-[A-Za-z0-9_.-]+$/.test(runId)) throw new Error(`invalid transport run id: ${runId || "(empty)"}`);
-  return runId;
+  return safeCanonicalRunId(value);
 }
 
-function newTransportRunId() {
-  return `transport-${timestamp()}-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
+function newApprovalId() {
+  return `approval-${timestamp()}-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`;
 }
 
 function transportRunPath(root, runId) {
@@ -2375,6 +3453,10 @@ function transportEventsPath(root) {
 
 function transportArtifactPath(root, runId, name) {
   return path.join(nograDir(root), "transport", "artifacts", safeTransportRunId(runId), name);
+}
+
+function verdictPath(root, runId) {
+  return path.join(nograDir(root), "receipts", "verdicts", `verdict-${safeTransportRunId(runId)}.json`);
 }
 
 // Deterministic scratchRoots declaration for the dispatch receipt (additive
@@ -2422,6 +3504,133 @@ function transportEvent(runId, type, extra = {}) {
     runId,
     type,
     ...safeExtra
+  };
+}
+
+function appendRunEvent(root, eventType, run, extra = {}) {
+  const session = readSessionAnchor(root);
+  const at = cleanInline(extra.createdAt || extra.generatedAt) || now();
+  const ledgerWatermark = currentLedgerWatermark(root) + 1;
+  const event = {
+    schema: RUN_EVENT_SCHEMA_V2,
+    eventId: cleanInline(extra.eventId) || `run-event-${safeTransportRunId(run.runId)}-${eventType}-${ledgerWatermark}`,
+    eventType,
+    type: eventType,
+    workspaceId: run.workspaceId,
+    runId: run.runId,
+    briefId: run.briefId,
+    approvalId: run.approvalId,
+    approvalActionHash: run.approvalActionHash,
+    lifecycle: run.lifecycle,
+    outcome: run.outcome ?? null,
+    verdict: run.verdict ?? null,
+    ledgerWatermark,
+    createdAt: at,
+    generatedAt: at,
+    sessionId: cleanInline(extra.sessionId || session.sessionId),
+    transcriptId: cleanInline(extra.transcriptId || session.transcriptId),
+    summary: cleanText(extra.summary || run.summary || ""),
+    ...(cleanInline(extra.stopReason || run.stopReason) ? { stopReason: cleanInline(extra.stopReason || run.stopReason) } : {}),
+    ...(cleanInline(extra.returnReason || run.returnReason) ? { returnReason: cleanInline(extra.returnReason || run.returnReason) } : {}),
+    ...(extra.pendingState && typeof extra.pendingState === "object" ? { pendingState: extra.pendingState } : {}),
+    executionRole: cleanInline(run.executionRole),
+    executionRuntime: cleanInline(run.executionRuntime),
+    executionRuntimeSource: cleanInline(run.executionRuntimeSource),
+    executionLabel: cleanInline(run.executionLabel),
+    ...(cleanInline(run.verificationRole) ? { verificationRole: cleanInline(run.verificationRole) } : {}),
+    ...(cleanInline(run.verificationRuntime) ? { verificationRuntime: cleanInline(run.verificationRuntime) } : {}),
+    ...(cleanInline(run.verificationRuntimeSource) ? { verificationRuntimeSource: cleanInline(run.verificationRuntimeSource) } : {}),
+    ...(cleanInline(run.verificationStatus) ? { verificationStatus: cleanInline(run.verificationStatus) } : {}),
+    ...(cleanInline(run.verificationLabel) ? { verificationLabel: cleanInline(run.verificationLabel) } : {}),
+    nextOwner: cleanInline(extra.nextOwner || run.nextOwner)
+  };
+  assertRunEventSemantics(event);
+  appendJsonlIfMissing(ledgerEventsPath(root), event);
+  return event;
+}
+
+function createApproval(root, options = {}) {
+  const brief = readBriefDraft(root, options.briefId);
+  const validation = validateBriefPayload(root, brief);
+  if (!validation.valid) {
+    return { status: "invalid", errors: validation.errors, hostedMcpUsed: false };
+  }
+  const normalized = validation.normalized;
+  if (normalized.status !== "ready") {
+    return {
+      status: "blocked",
+      error: `brief must be ready before GO can be recorded (found ${normalized.status || "unknown"})`,
+      briefId: normalized.briefId,
+      nextOwner: "Manager",
+      hostedMcpUsed: false
+    };
+  }
+  const at = now();
+  const session = readSessionAnchor(root);
+  const approvalId = newApprovalId();
+  const predictedWatermark = currentLedgerWatermark(root) + 1;
+  const expiresAt = cleanInline(options.expiresAt) || null;
+  if (expiresAt && (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.parse(at))) {
+    return {
+      status: "blocked",
+      error: "approval expiry must be a future RFC 3339 date-time",
+      briefId: normalized.briefId,
+      nextOwner: "Manager",
+      hostedMcpUsed: false
+    };
+  }
+  const approval = {
+    schema: APPROVAL_SCHEMA_V1,
+    approvalId,
+    workspaceId: normalized.workspaceId,
+    briefId: normalized.briefId,
+    briefHash: briefAuthorityHash(normalized),
+    actionHash: approvalActionHash(normalized),
+    status: "available",
+    approvedAt: at,
+    approvedBy: cleanInline(options.approvedBy) || "operator",
+    source: "manager_observed_explicit_go",
+    singleUse: true,
+    createdAt: at,
+    updatedAt: at,
+    expiresAt,
+    consumedAt: null,
+    consumedByRunId: null,
+    sessionId: session.sessionId,
+    transcriptId: session.transcriptId,
+    ledgerWatermark: predictedWatermark,
+    redactions: [],
+    metadata: {
+      authority: "dispatch-only",
+      nativePermissionsRemainAuthoritative: true
+    }
+  };
+  assertApprovalSemantics(approval);
+  writeJsonAtomic(approvalPath(root, approvalId), approval);
+  const ledgerEvent = appendLedgerEvent(root, "approval_recorded", {
+    approvalId,
+    briefId: approval.briefId,
+    briefHash: approval.briefHash,
+    actionHash: approval.actionHash,
+    approvalStatus: approval.status,
+    approvedBy: approval.approvedBy,
+    source: approval.source,
+    singleUse: true,
+    nextOwner: "Manager"
+  });
+  if (ledgerEvent.ledgerWatermark !== predictedWatermark) {
+    throw new Error("approval ledger watermark changed during atomic approval write");
+  }
+  return {
+    status: "available",
+    approval,
+    approvalId,
+    briefId: approval.briefId,
+    briefHash: approval.briefHash,
+    actionHash: approval.actionHash,
+    ledgerWatermark: ledgerEvent.ledgerWatermark,
+    hostedMcpUsed: false,
+    nextOwner: "Manager"
   };
 }
 
@@ -2526,14 +3735,17 @@ function publicAgentProfile(wanted, frontmatter) {
     : !hasClaudeTool(disallowedTools, "Agent");
   return {
     tier: "public",
-    profile: "scoped-worker-no-nested-spawn",
+    profile: "strict-role-lease-v1",
     role: wanted,
     spawnPrimitive: "Agent",
     roleToolField: hasAllowlist ? "tools" : disallowedTools.length ? "disallowedTools" : "inherited",
     tools,
     disallowedTools,
     nestedSpawnAllowed,
-    wall: "Public executor/verifier role frontmatter must explicitly constrain tools and must not include Agent.",
+    arbitraryShellAllowed: hasClaudeTool(tools, "Bash"),
+    writeTools: tools.filter((tool) => ["Edit", "MultiEdit", "Write"].includes(tool)),
+    readOnly: !tools.some((tool) => ["Bash", "Edit", "MultiEdit", "Write"].includes(tool)),
+    wall: "Public executor/verifier role frontmatter must explicitly constrain tools, must not include Agent or arbitrary shell, and action tools remain subject to a Manager-issued run lease.",
     ifNestedSpawnNeeded: "Route to internal or enterprise orchestration. Do not widen the public role in place."
   };
 }
@@ -2739,148 +3951,38 @@ function briefSizingPreview(root, input) {
   };
 }
 
-function dispatch(root, options) {
-  const config = readWorkspaceConfig(root) || {};
-  const runtime = runtimePolicyState(config);
-  const brief = options.inputPayload || readDraftBrief(root, options.briefId);
-  const validation = validateBriefPayload(root, brief);
-  if (!validation.valid) {
-    return { status: "invalid", errors: validation.errors, hostedMcpUsed: false };
-  }
-  const normalized = validation.normalized;
-  const runId = newTransportRunId();
-  const artifactsDirRelative = `.nogra/transport/artifacts/${runId}`;
-  const scratchRoots = resolveDispatchScratchRoots(root, artifactsDirRelative, options.scratchRoots || []);
-  const target = cleanInline(options.target) || "executor";
-  const targetRuntimeRole = runtimeRoleForTarget(runtime, target);
-  const targetRuntimeRoleName = scopedNograRole(target).split(":").pop() || "executor";
-  const explicitTargetModel = cleanInline(options.targetModel);
-  const targetModel = explicitTargetModel || cleanInline(targetRuntimeRole.model) || normalized.targetModel || defaultTargetModel(config);
-  const runtimeSource = explicitTargetModel
-    ? "dispatch targetModel override"
-    : runtime.profile === "custom"
-      ? `runtimePolicy.roles.${targetRuntimeRoleName}`
-      : "release default";
-  const executionSizing = deriveExecutionSizing(normalized, targetRuntimeRole, {
-    maxTurns: options.maxTurns,
-    maxTurnsReason: options.maxTurnsReason
-  });
-  const executionPair = roleRuntimePair(scopedNograRole(target), targetModel, "queued");
-  const nextOwner = executionSizing.requiresManagerDecision ? "Manager" : executionPair.executionRole;
-  const executionNextStep = executionSizing.requiresManagerDecision
-    ? "Review dispatch sizing before spawning: split into phases when the approved brief/GO covers it, rerun with an explicit bounded override if the operator wants one larger run, or ask for a decision."
-    : `Spawn a subagent in the plugin-provided ${executionPair.executionRole} role with this run id and the full approved brief.`;
-  const at = now();
-  const ledgerEvent = appendLedgerEvent(root, "dispatch_created", {
-    runId,
-    briefId: normalized.briefId,
-    target,
-    targetRole: target,
-    targetModel,
-    executionRole: executionPair.executionRole,
-    executionRuntime: executionPair.executionRuntime,
-    executionEffort: targetRuntimeRole.effort,
-    executionContext: targetRuntimeRole.context,
-    nextOwner
-  });
-  const run = {
-    schema: "nogra.transport.run.v1",
-    runId,
-    createdAt: at,
-    updatedAt: at,
-    status: "queued",
-    phase: "queued",
-    owner: "Manager",
-    nextOwner,
-    target,
-    targetRole: target,
-    targetModel,
-    executionRole: executionPair.executionRole,
-    executionRuntime: executionPair.executionRuntime,
-    executionEffort: targetRuntimeRole.effort,
-    executionContext: targetRuntimeRole.context,
-    executionMaxTurns: executionSizing.maxTurns,
-    executionSizing,
-    executionRuntimePolicyProfile: runtime.profile,
-    executionRuntimeSource: runtimeSource,
-    executionLabel: executionPair.executionLabel,
-    ledgerWatermark: ledgerEvent.ledgerWatermark,
-    sessionId: ledgerEvent.sessionId,
-    transcriptId: ledgerEvent.transcriptId,
-    briefId: normalized.briefId,
-    scratchRoots,
-    metadata: {
-      mode: "local",
-      receiptType: "localDispatchReceipt",
-      targetRole: target,
-      targetModel,
-      scratchRoots,
-      scopeFiles: normalized.scope?.files || [],
-      successCriteria: normalized.successCriteria || [],
-      stopCriteria: normalized.stopCriteria || [],
-      executionRole: executionPair.executionRole,
-      executionRuntime: executionPair.executionRuntime,
-      executionEffort: targetRuntimeRole.effort,
-      executionContext: targetRuntimeRole.context,
-      executionMaxTurns: executionSizing.maxTurns,
-      executionSizing,
-      executionRuntimePolicyProfile: runtime.profile,
-      executionRuntimeSource: runtimeSource,
-      executionLabel: executionPair.executionLabel,
-      ledgerWatermark: ledgerEvent.ledgerWatermark,
-      sessionId: ledgerEvent.sessionId,
-      transcriptId: ledgerEvent.transcriptId,
-      nextOwner
-    },
-    paths: {
-      artifactsDir: artifactsDirRelative,
-      report: `${artifactsDirRelative}/report.md`,
-      output: `${artifactsDirRelative}/output.md`,
-      validation: `${artifactsDirRelative}/validation.json`
-    },
-    artifacts: {
-      reportExists: false,
-      outputExists: false,
-      validationExists: false
-    },
-    summary: "",
-    error: "",
-    redactions: []
-  };
-  writeJsonAtomic(transportRunPath(root, runId), run);
-  const event = transportEvent(runId, "local_dispatch_receipt_created", {
-    workspaceId: workspaceId(config),
-    owner: "Manager",
-    target,
-    targetRole: target,
-    targetModel,
-    executionRole: executionPair.executionRole,
-    executionRuntime: executionPair.executionRuntime,
-    executionEffort: targetRuntimeRole.effort,
-    executionContext: targetRuntimeRole.context,
-    executionMaxTurns: executionSizing.maxTurns,
-    executionSizing,
-    executionRuntimePolicyProfile: runtime.profile,
-    executionRuntimeSource: runtimeSource,
-    executionLabel: executionPair.executionLabel,
-    ledgerWatermark: ledgerEvent.ledgerWatermark,
-    sessionId: ledgerEvent.sessionId,
-    transcriptId: ledgerEvent.transcriptId,
-    briefId: normalized.briefId,
-    nextOwner
-  });
-  appendJsonlIfMissing(transportEventsPath(root), event);
-  return {
+function renderDispatchReceipt({
+  at,
+  normalized,
+  approval,
+  run,
+  targetRuntimeRole,
+  targetRuntimeRoleName,
+  runtime,
+  runtimeSource,
+  executionPair,
+  executionSizing,
+  executionNextStep,
+  scratchRoots,
+  idempotent = false
+}) {
+  const receipt = {
     generatedAt: at,
     status: "ready",
     mode: "local",
-    receiptType: "localDispatchReceipt",
-    runId,
+    receiptType: "canonicalDispatchReceipt",
+    idempotent,
+    schema: DISPATCH_RECEIPT_SCHEMA_V2,
+    runId: run.runId,
     briefId: normalized.briefId,
+    briefHash: run.briefHash,
+    approvalId: approval.approvalId,
+    actionHash: approval.actionHash,
+    approvalStatus: approval.status,
     owner: "Manager",
-    target,
-    targetRole: target,
-    targetModel,
+    target: run.target,
+    targetRole: run.targetRole,
+    targetModel: run.targetModel,
     executionRole: executionPair.executionRole,
     executionRuntime: executionPair.executionRuntime,
     executionEffort: targetRuntimeRole.effort,
@@ -2889,26 +3991,34 @@ function dispatch(root, options) {
     executionSizing,
     executionRuntimePolicyProfile: runtime.profile,
     executionRuntimeSource: runtimeSource,
-    executionLabel: executionPair.executionLabel,
-    ledgerWatermark: ledgerEvent.ledgerWatermark,
-    sessionId: ledgerEvent.sessionId,
-    transcriptId: ledgerEvent.transcriptId,
+    executionLabel: run.executionLabel,
+    lifecycle: run.lifecycle,
+    outcome: run.outcome,
+    verdict: run.verdict,
+    ledgerWatermark: run.ledgerWatermark,
+    sessionId: run.sessionId,
+    transcriptId: run.transcriptId,
     scratchRoots,
     hostedMcpUsed: false,
     transport: {
-      armed: true,
-      ledger: "local .nogra/",
+      armed: approval.status === "consumed",
+      ledger: "canonical .nogra/runs plus append-only .nogra/ledger",
       runtime: `customer-side subagent in ${targetRuntimeRoleName} role`,
-      localArtifacts: run.paths
+      localArtifacts: run.paths,
+      legacyTransportRunWritten: false
     },
     executionCrossing: {
       required: true,
       managerMayImplement: false,
       owner: "Manager",
-      nextOwner,
+      nextOwner: run.nextOwner,
       role: executionPair.executionRole,
       spawnPrimitive: "Agent",
       profile: "public-scoped-worker",
+      isolationProfile: "strict-role-lease-v1",
+      roleLeaseRequired: true,
+      arbitraryShellAllowed: false,
+      scopePatterns: run.scopePatterns || normalized.scope?.files || [],
       nestedSpawnAllowed: false,
       contextBundleRequired: true,
       priorFindingsRequiredWhenAvailable: true,
@@ -2929,8 +4039,1069 @@ function dispatch(root, options) {
       ifUnavailable: "Stop and surface the missing primitive. Do not execute inline unless the user explicitly leaves Nogra."
     },
     brief: normalized,
+    approval,
     run,
-    nextOwner
+    nextOwner: run.nextOwner
+  };
+  return assertContract(DISPATCH_RECEIPT_SCHEMA_V2, receipt);
+}
+
+function dispatch(root, options) {
+  const config = readWorkspaceConfig(root) || {};
+  const runtime = runtimePolicyState(config);
+  const brief = options.inputPayload || readDraftBrief(root, options.briefId);
+  const validation = validateBriefPayload(root, brief);
+  if (!validation.valid) {
+    return { status: "invalid", errors: validation.errors, hostedMcpUsed: false };
+  }
+  const normalized = validation.normalized;
+  if (normalized.status !== "ready") {
+    return {
+      status: "blocked",
+      error: `dispatch requires a ready brief (found ${normalized.status || "unknown"})`,
+      briefId: normalized.briefId,
+      nextOwner: "Manager",
+      hostedMcpUsed: false
+    };
+  }
+  let approvalId;
+  try {
+    approvalId = safeApprovalId(options.approvalId);
+  } catch {
+    return {
+      status: "blocked",
+      error: "dispatch requires a valid --approval-id recorded from explicit GO; a ready brief is not GO",
+      briefId: normalized.briefId,
+      nextOwner: "Manager",
+      hostedMcpUsed: false
+    };
+  }
+  const approvalFile = approvalPath(root, approvalId);
+  const approval = readContractJsonIfValid(approvalFile);
+  if (!approval) {
+    return {
+      status: "blocked",
+      error: "approval record is missing or invalid JSON",
+      approvalId,
+      briefId: normalized.briefId,
+      nextOwner: "Manager",
+      hostedMcpUsed: false
+    };
+  }
+  try {
+    assertApprovalSemantics(approval);
+  } catch (error) {
+    return {
+      status: "blocked",
+      error: error.message,
+      approvalId,
+      briefId: normalized.briefId,
+      nextOwner: "Manager",
+      hostedMcpUsed: false
+    };
+  }
+  const currentBriefHash = briefAuthorityHash(normalized);
+  const currentActionHash = approvalActionHash(normalized);
+  if (
+    approval.briefId !== normalized.briefId ||
+    approval.workspaceId !== normalized.workspaceId ||
+    approval.briefHash !== currentBriefHash ||
+    approval.actionHash !== currentActionHash
+  ) {
+    return {
+      status: "blocked",
+      error: "approval does not match the current ready brief revision",
+      approvalId,
+      briefId: normalized.briefId,
+      expectedBriefHash: approval.briefHash,
+      actualBriefHash: currentBriefHash,
+      expectedActionHash: approval.actionHash,
+      actualActionHash: currentActionHash,
+      nextOwner: "Manager",
+      hostedMcpUsed: false
+    };
+  }
+  if (approval.status === "available" && approval.expiresAt && Date.parse(approval.expiresAt) <= Date.now()) {
+    const expiredAt = now();
+    const predictedWatermark = currentLedgerWatermark(root) + 1;
+    const expiredApproval = {
+      ...approval,
+      status: "expired",
+      updatedAt: expiredAt,
+      ledgerWatermark: predictedWatermark
+    };
+    assertApprovalSemantics(expiredApproval);
+    writeJsonAtomic(approvalFile, expiredApproval);
+    const expiredEvent = appendLedgerEvent(root, "approval_expired", {
+      approvalId,
+      briefId: approval.briefId,
+      briefHash: approval.briefHash,
+      actionHash: approval.actionHash,
+      approvalStatus: "expired",
+      nextOwner: "Manager"
+    });
+    if (expiredEvent.ledgerWatermark !== predictedWatermark) {
+      throw new Error("approval ledger watermark changed during expiry write");
+    }
+    return {
+      status: "blocked",
+      error: "approval has expired",
+      approvalId,
+      briefId: normalized.briefId,
+      nextOwner: "Manager",
+      hostedMcpUsed: false
+    };
+  }
+  const requestedTarget = cleanInline(options.target) || normalized.targetRole || "executor";
+  const target = cleanInline(normalized.targetRole) || "executor";
+  if (requestedTarget !== target) {
+    return {
+      status: "blocked",
+      error: `dispatch target ${requestedTarget} is outside the approved brief target ${target}`,
+      approvalId,
+      briefId: normalized.briefId,
+      nextOwner: "Manager",
+      hostedMcpUsed: false
+    };
+  }
+  const requestedModel = cleanInline(options.targetModel);
+  if (requestedModel && requestedModel !== cleanInline(normalized.targetModel)) {
+    return {
+      status: "blocked",
+      error: "target model override changes the approved brief revision; update the brief and obtain a new GO",
+      approvalId,
+      briefId: normalized.briefId,
+      nextOwner: "Manager",
+      hostedMcpUsed: false
+    };
+  }
+  const runId = runIdForApproval(approvalId);
+  const artifactsDirRelative = `.nogra/transport/artifacts/${runId}`;
+  const scratchRoots = resolveDispatchScratchRoots(root, artifactsDirRelative, options.scratchRoots || []);
+  const targetRuntimeRole = runtimeRoleForTarget(runtime, target);
+  const targetRuntimeRoleName = scopedNograRole(target).split(":").pop() || "executor";
+  const targetModel = normalized.targetModel || cleanInline(targetRuntimeRole.model) || defaultTargetModel(config);
+  const runtimeSource = runtime.profile === "custom"
+      ? `runtimePolicy.roles.${targetRuntimeRoleName}`
+      : "release default";
+  const executionSizing = deriveExecutionSizing(normalized, targetRuntimeRole, {
+    maxTurns: options.maxTurns,
+    maxTurnsReason: options.maxTurnsReason
+  });
+  const executionPair = roleRuntimePair(scopedNograRole(target), targetModel, "queued");
+  const nextOwner = executionSizing.requiresManagerDecision ? "Manager" : executionPair.executionRole;
+  const executionNextStep = executionSizing.requiresManagerDecision
+    ? "Review dispatch sizing before spawning: split into phases when the approved brief/GO covers it, rerun with an explicit bounded override if the operator wants one larger run, or ask for a decision."
+    : `Spawn a subagent in the plugin-provided ${executionPair.executionRole} role with this run id and the full approved brief.`;
+  const at = now();
+  const existingRun = readContractJsonIfValid(canonicalRunPath(root, runId));
+  if (existingRun) {
+    try {
+      assertRunSemantics(existingRun);
+    } catch (error) {
+      return {
+        status: "blocked",
+        error: `existing canonical run is invalid: ${error.message}`,
+        runId,
+        approvalId,
+        nextOwner: "Manager",
+        hostedMcpUsed: false
+      };
+    }
+    if (
+      existingRun.approvalId !== approvalId ||
+      existingRun.briefHash !== approval.briefHash ||
+      existingRun.approvalActionHash !== approval.actionHash
+    ) {
+      return {
+        status: "blocked",
+        error: "deterministic run id is already bound to another approval or brief revision",
+        runId,
+        approvalId,
+        nextOwner: "Manager",
+        hostedMcpUsed: false
+      };
+    }
+    let resolvedRun = existingRun;
+    if (approval.status === "available") {
+      const reconciled = {
+        ...approval,
+        status: "consumed",
+        consumedAt: existingRun.createdAt,
+        consumedByRunId: existingRun.runId,
+        updatedAt: now(),
+        ledgerWatermark: existingRun.ledgerWatermark
+      };
+      assertApprovalSemantics(reconciled);
+      writeJsonAtomic(approvalFile, reconciled);
+      Object.assign(approval, reconciled);
+    }
+    const queuedEvent = findRunEvent(root, runId, "run_queued");
+    if (!queuedEvent) {
+      if (existingRun.lifecycle !== "queued") {
+        return {
+          status: "blocked",
+          error: "canonical run exists without its run_queued event and has already progressed; Manager reconciliation is required",
+          runId,
+          approvalId,
+          nextOwner: "Manager",
+          hostedMcpUsed: false
+        };
+      }
+      const recoveredWatermark = currentLedgerWatermark(root) + 1;
+      resolvedRun = {
+        ...existingRun,
+        ledgerWatermark: recoveredWatermark
+      };
+      const recoveredApproval = {
+        ...approval,
+        ledgerWatermark: recoveredWatermark,
+        updatedAt: approval.updatedAt || now()
+      };
+      assertRunSemantics(resolvedRun);
+      assertApprovalSemantics(recoveredApproval);
+      writeJsonAtomic(canonicalRunPath(root, runId), resolvedRun);
+      writeJsonAtomic(approvalFile, recoveredApproval);
+      Object.assign(approval, recoveredApproval);
+      const recoveredEvent = appendRunEvent(root, "run_queued", resolvedRun, { nextOwner: resolvedRun.nextOwner });
+      if (recoveredEvent.ledgerWatermark !== recoveredWatermark) {
+        throw new Error("run ledger watermark changed during dispatch recovery");
+      }
+    }
+    return renderDispatchReceipt({
+      at: resolvedRun.createdAt,
+      normalized,
+      approval,
+      run: resolvedRun,
+      targetRuntimeRole,
+      targetRuntimeRoleName,
+      runtime,
+      runtimeSource,
+      executionPair,
+      executionSizing,
+      executionNextStep,
+      scratchRoots: resolvedRun.scratchRoots || scratchRoots,
+      idempotent: true
+    });
+  }
+  if (approval.status !== "available") {
+    return {
+      status: "blocked",
+      error: `approval is ${approval.status} and cannot authorize another run`,
+      approvalId,
+      consumedByRunId: approval.consumedByRunId,
+      nextOwner: "Manager",
+      hostedMcpUsed: false
+    };
+  }
+  const predictedWatermark = currentLedgerWatermark(root) + 1;
+  const run = {
+    schema: RUN_SCHEMA_V2,
+    runId,
+    workspaceId: normalized.workspaceId,
+    briefId: normalized.briefId,
+    briefHash: currentBriefHash,
+    approvalId,
+    approvalActionHash: approval.actionHash,
+    createdAt: at,
+    updatedAt: at,
+    startedAt: null,
+    returnedAt: null,
+    verifiedAt: null,
+    acceptedAt: null,
+    endedAt: null,
+    lifecycle: "queued",
+    outcome: null,
+    verdict: null,
+    owner: "Manager",
+    nextOwner,
+    target,
+    targetRole: target,
+    targetModel,
+    executionRole: executionPair.executionRole,
+    executionRuntime: executionPair.executionRuntime,
+    executionEffort: targetRuntimeRole.effort,
+    executionContext: targetRuntimeRole.context,
+    executionMaxTurns: executionSizing.maxTurns,
+    executionSizing,
+    executionRuntimePolicyProfile: runtime.profile,
+    executionRuntimeSource: runtimeSource,
+    executionLabel: executionPair.executionLabel,
+    evidenceLevel: normalized.evidenceRequired || "reported",
+    ledgerWatermark: predictedWatermark,
+    sessionId: readSessionAnchor(root).sessionId,
+    transcriptId: readSessionAnchor(root).transcriptId,
+    scratchRoots,
+    authorizedBoundaries: ["workspace-write"],
+    scopePatterns: normalized.scope?.files || [],
+    metadata: {
+      mode: "local",
+      receiptType: "canonicalDispatchReceipt",
+      targetRole: target,
+      targetModel,
+      scratchRoots,
+      scopeFiles: normalized.scope?.files || [],
+      authorizedBoundaries: ["workspace-write"],
+      scopePatterns: normalized.scope?.files || [],
+      successCriteria: normalized.successCriteria || [],
+      stopCriteria: normalized.stopCriteria || [],
+      executionRole: executionPair.executionRole,
+      executionRuntime: executionPair.executionRuntime,
+      executionEffort: targetRuntimeRole.effort,
+      executionContext: targetRuntimeRole.context,
+      executionMaxTurns: executionSizing.maxTurns,
+      executionSizing,
+      executionRuntimePolicyProfile: runtime.profile,
+      executionRuntimeSource: runtimeSource,
+      executionLabel: executionPair.executionLabel,
+      ledgerWatermark: predictedWatermark,
+      sessionId: readSessionAnchor(root).sessionId,
+      transcriptId: readSessionAnchor(root).transcriptId,
+      nextOwner
+    },
+    paths: {
+      artifactsDir: artifactsDirRelative,
+      report: `${artifactsDirRelative}/report.md`,
+      output: `${artifactsDirRelative}/output.md`,
+      validation: `${artifactsDirRelative}/validation.json`
+    },
+    artifacts: {
+      reportExists: false,
+      outputExists: false,
+      validationExists: false
+    },
+    summary: "",
+    error: "",
+    redactions: []
+  };
+  assertRunSemantics(run);
+  writeJsonAtomic(canonicalRunPath(root, runId), run);
+  const consumedApproval = {
+    ...approval,
+    status: "consumed",
+    consumedAt: at,
+    consumedByRunId: runId,
+    updatedAt: at,
+    ledgerWatermark: predictedWatermark
+  };
+  assertApprovalSemantics(consumedApproval);
+  writeJsonAtomic(approvalFile, consumedApproval);
+  const event = appendRunEvent(root, "run_queued", run, { nextOwner });
+  if (event.ledgerWatermark !== predictedWatermark) {
+    throw new Error("run ledger watermark changed during canonical dispatch write");
+  }
+  return renderDispatchReceipt({
+    at,
+    normalized,
+    approval: consumedApproval,
+    run,
+    targetRuntimeRole,
+    targetRuntimeRoleName,
+    runtime,
+    runtimeSource,
+    executionPair,
+    executionSizing,
+    executionNextStep,
+    scratchRoots
+  });
+}
+
+function newRoleLeaseId(runId, role) {
+  return `role-lease-${safeTransportRunId(runId)}-${normalizeRole(role)}-${timestamp()}-${crypto.randomUUID().replaceAll("-", "").slice(0, 6)}`;
+}
+
+function roleReportId(runId, role, leaseId) {
+  const leaseSuffix = cleanInline(leaseId).split("-").slice(-2).join("-");
+  return `role-report-${safeTransportRunId(runId)}-${normalizeRole(role)}-${leaseSuffix || "unbound"}`;
+}
+
+function roleLeaseEventId(leaseId, event) {
+  return `ledger-event-${leaseId}-${event}`;
+}
+
+function roleReportEventId(reportId) {
+  return `ledger-event-${reportId}-recorded`;
+}
+
+function roleLeaseExpiry(minutes) {
+  const requested = positiveIntegerOrNull(minutes) || 120;
+  if (requested > 480) {
+    throw new Error("role lease cannot exceed 480 minutes");
+  }
+  return new Date(Date.now() + requested * 60 * 1000).toISOString();
+}
+
+function closeExpiredRoleLease(root, lease) {
+  if (!lease || lease.status !== "active" || Date.parse(lease.expiresAt) > Date.now()) return lease;
+  const at = now();
+  const predictedWatermark = currentLedgerWatermark(root) + 1;
+  const expired = {
+    ...lease,
+    status: "expired",
+    updatedAt: at,
+    closedAt: at,
+    closeReason: "expired",
+    ledgerWatermark: predictedWatermark
+  };
+  writeRoleLease(root, expired);
+  const event = appendLedgerEvent(root, "role_lease_expired", {
+    eventId: roleLeaseEventId(lease.leaseId, "expired"),
+    leaseId: lease.leaseId,
+    runId: lease.runId,
+    briefId: lease.briefId,
+    role: lease.role,
+    nextOwner: "Manager"
+  });
+  if (event.ledgerWatermark !== predictedWatermark) {
+    throw new Error("role lease expiry watermark changed during canonical write");
+  }
+  return expired;
+}
+
+function enterRole(root, options = {}) {
+  const role = normalizeRole(options.role);
+  if (!role) {
+    return {
+      schema: ROLE_LEASE_SCHEMA_V1,
+      status: "blocked",
+      error: "role-enter requires --role executor or verifier",
+      owner: "Manager",
+      nextOwner: "Manager"
+    };
+  }
+  const runId = safeTransportRunId(options.runId);
+  const located = readRunRecord(root, runId);
+  if (!located || located.legacy) {
+    return {
+      schema: ROLE_LEASE_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      role,
+      error: located ? "role isolation requires a canonical run" : "run not found",
+      owner: "Manager",
+      nextOwner: "Manager"
+    };
+  }
+  const run = readContractJsonIfValid(located.sourcePath);
+  assertRunSemantics(run);
+
+  let active = readActiveRoleLease(root);
+  active = closeExpiredRoleLease(root, active);
+  if (active?.status === "active") {
+    if (active.runId === runId && active.role === role) {
+      const eventId = roleLeaseEventId(active.leaseId, "entered");
+      let recovered = false;
+      if (!readLedgerEvents(root).some((event) => event.eventId === eventId)) {
+        const event = appendLedgerEvent(root, "role_lease_entered", {
+          eventId,
+          leaseId: active.leaseId,
+          runId,
+          briefId: run.briefId,
+          role,
+          scopePatterns: active.scopePatterns,
+          allowedTools: active.allowedTools,
+          nextOwner: `nogra:${role}`
+        });
+        if (event.ledgerWatermark !== active.ledgerWatermark) {
+          throw new Error("role lease recovery watermark changed");
+        }
+        recovered = true;
+      }
+      return {
+        ...active,
+        idempotent: true,
+        recovered,
+        nextOwner: `nogra:${role}`
+      };
+    }
+    return {
+      schema: ROLE_LEASE_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      role,
+      activeLeaseId: active.leaseId,
+      error: `another role lease is active for ${active.runId}/${active.role}`,
+      owner: "Manager",
+      nextOwner: "Manager"
+    };
+  }
+
+  if (role === "executor" && !["queued", "running"].includes(run.lifecycle)) {
+    return {
+      schema: ROLE_LEASE_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      role,
+      error: `executor role requires queued or recoverable running lifecycle (found ${run.lifecycle})`,
+      owner: "Manager",
+      nextOwner: "Manager"
+    };
+  }
+  if (role === "verifier" && run.lifecycle !== "returned") {
+    return {
+      schema: ROLE_LEASE_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      role,
+      error: `verifier role requires returned lifecycle (found ${run.lifecycle})`,
+      owner: "Manager",
+      nextOwner: "Manager"
+    };
+  }
+
+  let scopePatterns = [];
+  if (role === "executor") {
+    try {
+      scopePatterns = normalizeScopePatterns(
+        root,
+        run.scopePatterns || run.metadata?.scopeFiles || []
+      );
+    } catch (error) {
+      return {
+        schema: ROLE_LEASE_SCHEMA_V1,
+        status: "blocked",
+        runId,
+        role,
+        error: error.message,
+        owner: "Manager",
+        nextOwner: "Manager"
+      };
+    }
+  }
+
+  const at = now();
+  const session = readSessionAnchor(root);
+  const leaseId = newRoleLeaseId(runId, role);
+  const predictedWatermark = currentLedgerWatermark(root) + 1;
+  const lease = {
+    schema: ROLE_LEASE_SCHEMA_V1,
+    leaseId,
+    workspaceId: run.workspaceId,
+    runId,
+    briefId: run.briefId,
+    briefHash: run.briefHash,
+    role,
+    owner: "Manager",
+    status: "active",
+    agentId: null,
+    scopePatterns,
+    allowedTools: [...ROLE_TOOL_POLICY[role]],
+    createdAt: at,
+    updatedAt: at,
+    expiresAt: roleLeaseExpiry(options.expiresInMinutes),
+    closedAt: null,
+    closeReason: "",
+    ledgerWatermark: predictedWatermark,
+    sessionId: session.sessionId,
+    transcriptId: session.transcriptId,
+    metadata: {
+      source: "manager_role_enter",
+      runLifecycleAtEntry: run.lifecycle,
+      strictPublicProfile: true,
+      arbitraryShellAllowed: false,
+      controlPlaneWritesAllowed: false,
+      readOnly: role === "verifier",
+      recoveredRunningRun: role === "executor" && run.lifecycle === "running"
+    }
+  };
+  assertRoleLeaseSemantics(lease);
+  writeRoleLease(root, lease);
+
+  const nextRun = {
+    ...run,
+    updatedAt: at,
+    startedAt: role === "executor" ? (run.startedAt || at) : run.startedAt,
+    lifecycle: role === "executor" ? "running" : run.lifecycle,
+    owner: "Manager",
+    nextOwner: `nogra:${role}`,
+    ledgerWatermark: predictedWatermark,
+    metadata: {
+      ...(run.metadata || {}),
+      activeRoleLeaseId: lease.leaseId,
+      activeRole: role,
+      ledgerWatermark: predictedWatermark,
+      nextOwner: `nogra:${role}`
+    }
+  };
+  assertRunTransition(run.lifecycle, nextRun.lifecycle);
+  assertRunSemantics(nextRun);
+  writeJsonAtomic(canonicalRunPath(root, runId), nextRun);
+  const event = appendLedgerEvent(root, "role_lease_entered", {
+    eventId: roleLeaseEventId(leaseId, "entered"),
+    leaseId,
+    runId,
+    briefId: run.briefId,
+    role,
+    scopePatterns,
+    allowedTools: ROLE_TOOL_POLICY[role],
+    nextOwner: `nogra:${role}`
+  });
+  if (event.ledgerWatermark !== predictedWatermark) {
+    throw new Error("role lease entry watermark changed during canonical write");
+  }
+  return {
+    ...lease,
+    runLifecycle: nextRun.lifecycle,
+    idempotent: false,
+    nextOwner: `nogra:${role}`
+  };
+}
+
+function exitRole(root, options = {}) {
+  const leaseId = cleanInline(options.leaseId);
+  const active = readActiveRoleLease(root);
+  if (!active) {
+    return {
+      schema: ROLE_LEASE_SCHEMA_V1,
+      status: "blocked",
+      leaseId,
+      error: "no role lease exists",
+      owner: "Manager",
+      nextOwner: "Manager"
+    };
+  }
+  if (active.leaseId !== leaseId) {
+    const prior = readContractJsonIfValid(roleLeaseReceiptPath(root, leaseId));
+    if (prior?.status === "closed" || prior?.status === "expired") {
+      assertRoleLeaseSemantics(prior);
+      return { ...prior, idempotent: true, nextOwner: "Manager" };
+    }
+    return {
+      schema: ROLE_LEASE_SCHEMA_V1,
+      status: "blocked",
+      leaseId,
+      activeLeaseId: active.leaseId,
+      error: "lease id does not match the current role lease",
+      owner: "Manager",
+      nextOwner: "Manager"
+    };
+  }
+  if (active.status !== "active") {
+    const eventName = active.status === "expired" ? "expired" : "closed";
+    const eventType = active.status === "expired" ? "role_lease_expired" : "role_lease_closed";
+    const eventId = roleLeaseEventId(active.leaseId, eventName);
+    let recovered = false;
+    if (!readLedgerEvents(root).some((event) => event.eventId === eventId)) {
+      const event = appendLedgerEvent(root, eventType, {
+        eventId,
+        leaseId: active.leaseId,
+        runId: active.runId,
+        briefId: active.briefId,
+        role: active.role,
+        reason: active.closeReason,
+        nextOwner: "Manager"
+      });
+      if (event.ledgerWatermark !== active.ledgerWatermark) {
+        throw new Error("role lease closure recovery watermark changed");
+      }
+      recovered = true;
+    }
+    return { ...active, idempotent: true, recovered, nextOwner: "Manager" };
+  }
+
+  const reason = cleanInline(options.reason) || "role returned control to Manager";
+  const at = now();
+  const predictedWatermark = currentLedgerWatermark(root) + 1;
+  const closed = {
+    ...active,
+    status: "closed",
+    updatedAt: at,
+    closedAt: at,
+    closeReason: reason,
+    ledgerWatermark: predictedWatermark
+  };
+  assertRoleLeaseSemantics(closed);
+  writeRoleLease(root, closed);
+
+  const run = readContractJsonIfValid(canonicalRunPath(root, active.runId));
+  if (run) {
+    assertRunSemantics(run);
+    const updatedRun = {
+      ...run,
+      updatedAt: at,
+      owner: "Manager",
+      nextOwner: "Manager",
+      ledgerWatermark: predictedWatermark,
+      metadata: {
+        ...(run.metadata || {}),
+        activeRoleLeaseId: "",
+        activeRole: "",
+        lastRoleLeaseId: leaseId,
+        ledgerWatermark: predictedWatermark,
+        nextOwner: "Manager"
+      }
+    };
+    assertRunSemantics(updatedRun);
+    writeJsonAtomic(canonicalRunPath(root, active.runId), updatedRun);
+  }
+  const event = appendLedgerEvent(root, "role_lease_closed", {
+    eventId: roleLeaseEventId(leaseId, "closed"),
+    leaseId,
+    runId: active.runId,
+    briefId: active.briefId,
+    role: active.role,
+    reason,
+    nextOwner: "Manager"
+  });
+  if (event.ledgerWatermark !== predictedWatermark) {
+    throw new Error("role lease closure watermark changed during canonical write");
+  }
+  return { ...closed, idempotent: false, nextOwner: "Manager" };
+}
+
+function roleReportContract(root, kind, options = {}) {
+  const role = normalizeRole(kind);
+  if (!role) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "invalid",
+      error: "unknown role report kind",
+      availableKinds: ["executor", "verifier"],
+      nextOwner: "Manager"
+    };
+  }
+  const runId = cleanInline(options.runId);
+  const run = runId ? readRunRecord(root, runId) : null;
+  const currentLease = runId ? readActiveRoleLease(root) : null;
+  const leaseId = cleanInline(options.leaseId) || (
+    currentLease?.runId === runId && currentLease?.role === role
+      ? currentLease.leaseId
+      : ""
+  );
+  return {
+    schema: ROLE_REPORT_SCHEMA_V1,
+    status: "ready",
+    role,
+    contract: contractJson("schemas/role-report-v1.schema.json"),
+    template: {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      reportId: runId && leaseId ? roleReportId(runId, role, leaseId) : "role-report-<runId>-<role>-<lease>",
+      workspaceId: run?.workspaceId || workspaceId(readWorkspaceConfig(root) || {}),
+      runId: run?.runId || runId || "run-<id>",
+      briefId: run?.briefId || "brief-<id>",
+      leaseId: leaseId || "role-lease-<runId>-<role>",
+      role,
+      status: "blocked",
+      summary: "",
+      claims: [],
+      evidenceIds: [],
+      filesChanged: [],
+      requestedProbes: [],
+      scopeCheck: {
+        status: "blocked",
+        checkedPatterns: run?.scopePatterns || run?.metadata?.scopeFiles || [],
+        deviations: []
+      },
+      mutationAttempted: false,
+      recommendation: role === "verifier" ? "unverified" : "none",
+      reason: "",
+      generatedAt: now(),
+      nextOwner: "Manager",
+      contentHash: "sha256:<computed-by-runtime>",
+      ledgerWatermark: 0,
+      sessionId: "",
+      transcriptId: "",
+      redactions: [],
+      metadata: {}
+    },
+    truthBoundary: role === "executor"
+      ? "Executor output is a claim surface and cannot issue a verdict."
+      : "Verifier output is a read-only recommendation; Manager owns the canonical verdict.",
+    nextOwner: "Manager"
+  };
+}
+
+function normalizeRoleReportInput(root, input, run, lease) {
+  const role = normalizeRole(input.role);
+  const session = readSessionAnchor(root);
+  const claims = Array.isArray(input.claims) ? input.claims.map((claim) => ({
+    claim: cleanText(claim?.claim),
+    verificationStatus: cleanInline(claim?.verificationStatus) || "claimed",
+    evidenceIds: normalizeTextList(claim?.evidenceIds)
+  })) : [];
+  const evidenceIds = normalizeTextList(input.evidenceIds);
+  const scopeCheck = input.scopeCheck && typeof input.scopeCheck === "object" ? input.scopeCheck : {};
+  const report = {
+    schema: ROLE_REPORT_SCHEMA_V1,
+    reportId: roleReportId(run.runId, role, lease.leaseId),
+    workspaceId: run.workspaceId,
+    runId: run.runId,
+    briefId: run.briefId,
+    leaseId: lease.leaseId,
+    role,
+    status: cleanInline(input.status).toLowerCase(),
+    summary: cleanText(input.summary),
+    claims,
+    evidenceIds,
+    filesChanged: normalizeTextList(input.filesChanged),
+    requestedProbes: normalizeTextList(input.requestedProbes),
+    scopeCheck: {
+      status: cleanInline(scopeCheck.status).toLowerCase(),
+      checkedPatterns: normalizeTextList(scopeCheck.checkedPatterns),
+      deviations: normalizeTextList(scopeCheck.deviations)
+    },
+    mutationAttempted: Boolean(input.mutationAttempted),
+    recommendation: cleanInline(input.recommendation || (role === "executor" ? "none" : "unverified")).toLowerCase(),
+    reason: cleanText(input.reason),
+    generatedAt: cleanInline(input.generatedAt) || now(),
+    nextOwner: "Manager",
+    contentHash: "",
+    ledgerWatermark: currentLedgerWatermark(root) + 1,
+    sessionId: session.sessionId,
+    transcriptId: session.transcriptId,
+    redactions: normalizeTextList(input.redactions),
+    metadata: {
+      ...(input.metadata && typeof input.metadata === "object" ? input.metadata : {}),
+      source: "manager_persisted_role_return",
+      selfReportIsVerdict: false
+    }
+  };
+  report.contentHash = roleReportContentHash(report);
+  return report;
+}
+
+function saveRoleReport(root, input = {}) {
+  const role = normalizeRole(input.role);
+  if (!role) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "blocked",
+      error: "role-report-save requires role executor or verifier",
+      nextOwner: "Manager"
+    };
+  }
+  let runId;
+  try {
+    runId = safeTransportRunId(input.runId);
+  } catch (error) {
+    return { schema: ROLE_REPORT_SCHEMA_V1, status: "blocked", error: error.message, nextOwner: "Manager" };
+  }
+  const located = readRunRecord(root, runId);
+  if (!located || located.legacy) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      error: located ? "role reports require a canonical run" : "run not found",
+      nextOwner: "Manager"
+    };
+  }
+  const run = readContractJsonIfValid(located.sourcePath);
+  assertRunSemantics(run);
+  const leaseId = cleanInline(input.leaseId);
+  if (!leaseId) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      error: "role report requires the exact leaseId returned by role-enter",
+      nextOwner: "Manager"
+    };
+  }
+  const expectedReportId = roleReportId(runId, role, leaseId);
+  const boundaryMismatches = [
+    ["schema", cleanInline(input.schema), ROLE_REPORT_SCHEMA_V1],
+    ["reportId", cleanInline(input.reportId), expectedReportId],
+    ["workspaceId", cleanInline(input.workspaceId), run.workspaceId],
+    ["briefId", cleanInline(input.briefId), run.briefId],
+    ["nextOwner", cleanInline(input.nextOwner), "Manager"]
+  ].filter(([, supplied, expected]) => supplied && supplied !== expected);
+  if (boundaryMismatches.length) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      leaseId,
+      error: `role report boundary mismatch: ${boundaryMismatches.map(([field]) => field).join(", ")}`,
+      nextOwner: "Manager"
+    };
+  }
+  const lease = readContractJsonIfValid(roleLeaseReceiptPath(root, leaseId));
+  if (!lease) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      leaseId,
+      error: "role report has no schema-valid lease receipt",
+      nextOwner: "Manager"
+    };
+  }
+  try {
+    assertRoleLeaseSemantics(lease);
+  } catch (error) {
+    return { schema: ROLE_REPORT_SCHEMA_V1, status: "blocked", runId, leaseId, error: error.message, nextOwner: "Manager" };
+  }
+  if (
+    lease.status !== "closed" ||
+    lease.runId !== runId ||
+    lease.briefId !== run.briefId ||
+    lease.briefHash !== run.briefHash ||
+    lease.role !== role
+  ) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      leaseId,
+      error: "role report does not match a closed lease for this run revision and role",
+      nextOwner: "Manager"
+    };
+  }
+
+  const report = normalizeRoleReportInput(root, input, run, lease);
+  try {
+    assertRoleReportSemantics(report);
+  } catch (error) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      leaseId,
+      error: error.message,
+      nextOwner: "Manager"
+    };
+  }
+  const expectedScopePatterns = normalizeTextList(run.scopePatterns || run.metadata?.scopeFiles);
+  if (
+    report.scopeCheck.status === "met" &&
+    !expectedScopePatterns.every((pattern) => report.scopeCheck.checkedPatterns.includes(pattern))
+  ) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      leaseId,
+      error: "role report scope check does not cover every approved run pattern",
+      nextOwner: "Manager"
+    };
+  }
+  if (
+    role === "executor" &&
+    !report.filesChanged.every((file) => matchesRoleScope(root, file, lease.scopePatterns))
+  ) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      leaseId,
+      error: "executor report names a changed file outside its approved role lease",
+      nextOwner: "Manager"
+    };
+  }
+
+  let evidenceRecords;
+  try {
+    evidenceRecords = report.evidenceIds.map((evidenceId) => readEvidenceRecord(root, evidenceId));
+  } catch (error) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      leaseId,
+      error: error.message,
+      nextOwner: "Manager"
+    };
+  }
+  for (const evidence of evidenceRecords) {
+    if ((evidence.runId && evidence.runId !== runId) || (evidence.briefId && evidence.briefId !== run.briefId)) {
+      return {
+        schema: ROLE_REPORT_SCHEMA_V1,
+        status: "blocked",
+        runId,
+        leaseId,
+        error: `evidence ${evidence.evidenceId} is not bound to this run and brief`,
+        nextOwner: "Manager"
+      };
+    }
+  }
+  const declaredEvidence = new Set(report.evidenceIds);
+  if (report.claims.some((claim) => claim.evidenceIds.some((evidenceId) => !declaredEvidence.has(evidenceId)))) {
+    return {
+      schema: ROLE_REPORT_SCHEMA_V1,
+      status: "blocked",
+      runId,
+      leaseId,
+      error: "claim evidenceIds must also appear in the report evidenceIds set",
+      nextOwner: "Manager"
+    };
+  }
+
+  const file = roleReportReceiptPath(root, report.reportId);
+  const existing = readContractJsonIfValid(file);
+  if (existing) {
+    try {
+      assertRoleReportSemantics(existing);
+    } catch (error) {
+      return { schema: ROLE_REPORT_SCHEMA_V1, status: "blocked", runId, error: error.message, nextOwner: "Manager" };
+    }
+    if (existing.contentHash !== report.contentHash) {
+      return {
+        schema: ROLE_REPORT_SCHEMA_V1,
+        status: "blocked",
+        runId,
+        reportId: report.reportId,
+        error: "role report already exists with different content",
+        nextOwner: "Manager"
+      };
+    }
+    const eventId = roleReportEventId(existing.reportId);
+    let recovered = false;
+    if (!readLedgerEvents(root).some((event) => event.eventId === eventId)) {
+      const event = appendLedgerEvent(root, "role_report_recorded", {
+        eventId,
+        reportId: existing.reportId,
+        leaseId: existing.leaseId,
+        runId,
+        briefId: run.briefId,
+        role,
+        reportStatus: existing.status,
+        recommendation: existing.recommendation,
+        contentHash: existing.contentHash,
+        evidenceIds: existing.evidenceIds,
+        nextOwner: "Manager"
+      });
+      if (event.ledgerWatermark !== existing.ledgerWatermark) {
+        throw new Error("role report recovery watermark changed");
+      }
+      recovered = true;
+    }
+    return {
+      status: "ok",
+      idempotent: !recovered,
+      recovered,
+      report: existing,
+      reportId: existing.reportId,
+      path: localPath(root, file),
+      nextOwner: "Manager"
+    };
+  }
+
+  writeJsonAtomic(file, report);
+  const event = appendLedgerEvent(root, "role_report_recorded", {
+    eventId: roleReportEventId(report.reportId),
+    reportId: report.reportId,
+    leaseId: report.leaseId,
+    runId,
+    briefId: run.briefId,
+    role,
+    reportStatus: report.status,
+    recommendation: report.recommendation,
+    contentHash: report.contentHash,
+    evidenceIds: report.evidenceIds,
+    nextOwner: "Manager"
+  });
+  if (event.ledgerWatermark !== report.ledgerWatermark) {
+    throw new Error("role report ledger watermark changed during canonical write");
+  }
+  return {
+    status: "ok",
+    idempotent: false,
+    report,
+    reportId: report.reportId,
+    path: localPath(root, file),
+    ledgerWatermark: event.ledgerWatermark,
+    nextOwner: "Manager"
   };
 }
 
@@ -2958,7 +5129,13 @@ function handoffContract(root, kind, options = {}) {
   const runtimeSource = runtime.profile === "custom" ? `runtimePolicy.roles.${wanted}` : "release default";
   const pair = roleRuntimePair(scopedRole, modelHint);
   const runId = cleanInline(options.runId || "");
-  const run = runId ? readJson(transportRunPath(root, runId)) : null;
+  const run = runId ? readRunRecord(root, runId) : null;
+  const currentLease = runId ? readActiveRoleLease(root) : null;
+  const expectedLeaseId = currentLease?.status === "active" &&
+    currentLease.runId === runId &&
+    currentLease.role === wanted
+      ? currentLease.leaseId
+      : "";
   const runMaxTurns = wanted === "executor"
     ? positiveIntegerOrNull(run?.executionMaxTurns ?? run?.metadata?.executionMaxTurns)
     : null;
@@ -2993,6 +5170,29 @@ function handoffContract(root, kind, options = {}) {
       maxTurnsHintSource
     },
     publicProfile: agentProfile,
+    roleIsolation: {
+      profile: "strict-role-lease-v1",
+      mechanicallyEnforced: true,
+      leaseRequired: Boolean(runId),
+      leaseActive: Boolean(expectedLeaseId),
+      expectedLeaseId,
+      enterCommand: runId
+        ? `role-enter --run-id ${runId} --role ${wanted}`
+        : "",
+      exitCommand: expectedLeaseId
+        ? `role-exit --lease-id ${expectedLeaseId}`
+        : "",
+      arbitraryShellAllowed: false,
+      controlPlaneWritesAllowed: false,
+      readOnly: wanted === "verifier",
+      scopePatterns: wanted === "executor"
+        ? (run?.scopePatterns || run?.metadata?.scopeFiles || [])
+        : []
+    },
+    roleReport: roleReportContract(root, wanted, {
+      runId,
+      leaseId: expectedLeaseId
+    }),
     contextBundle: contextBundleContract(wanted),
     findingContract: findingContract(),
     agenticLoop: agenticLoopContract(maxTurnsHint || null),
@@ -3015,12 +5215,15 @@ function handoffContract(root, kind, options = {}) {
     prompt,
     managerInstructions: [
       "Use this contract at dispatch or verification boundaries only.",
+      "Before spawning, Manager must create the run-bound role lease named in roleIsolation. A role without that lease fails closed on action tools.",
       `Spawn with the Claude Code Agent primitive into the plugin-provided ${scopedRole} role.`,
       "Include the complete context bundle in the Agent prompt; spawned agents do not inherit parent conversation, shared memory or files read by Manager.",
       "Pass complete prior findings with attribution when they matter. Use structured fields such as claim, evidence, source URL/document/page or file/line, verificationStatus, confidence and agent id.",
       "Public executor/verifier roles intentionally omit Agent from their frontmatter tools. They must not spawn nested subagents; route fan-out to internal or enterprise orchestration instead.",
+      "Public executor/verifier roles intentionally omit Bash. Manager runs requested command probes and persists their canonical evidence.",
       "Manager is not the role-runtime. If the role primitive is unavailable, stop and surface the missing primitive.",
       "Keep Nogra bookkeeping in Manager. The spawned role-runtime receives the brief, scope and evidence contract and returns a report.",
+      "After the role returns, Manager closes the lease, validates and saves the exact structured role report, then performs any Manager-owned probes or verdict write.",
       "If runtimePolicy is custom and the client supports per-invocation model/effort overrides, request the configured model and effort; otherwise rely on the release default resolved by the local runtime and report the limitation plainly.",
       "If targetSubagent.maxTurnsHint is present and the client supports per-invocation turn limits, pass that value to the spawn primitive. Prefer dispatch receipt sizing when a run id is available; role frontmatter is only a generic fallback.",
       "For agentic loop control, continue when stop_reason=tool_use and terminate only when stop_reason=end_turn returns the role report.",
@@ -3087,7 +5290,7 @@ function inferVerificationVerdict(evidence) {
   return "unverified";
 }
 
-function verifySupport(root, options) {
+function verifyLegacySupport(root, options) {
   const runId = safeTransportRunId(options.runId);
   const runFile = transportRunPath(root, runId);
   const run = readJson(runFile);
@@ -3207,6 +5410,428 @@ function verifySupport(root, options) {
   };
 }
 
+function normalizeAcceptanceEvidence(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    if (item && typeof item === "object" && !Array.isArray(item)) return item;
+    return { criterion: cleanText(item), status: "unknown" };
+  });
+}
+
+function normalizeTextList(value) {
+  return Array.isArray(value) ? value.map((item) => cleanText(item)).filter(Boolean) : [];
+}
+
+function verdictAuthorityView(value) {
+  return {
+    verdict: value.verdict,
+    reason: value.reason,
+    summary: value.summary,
+    acceptance: value.acceptance,
+    briefDeviations: value.briefDeviations,
+    decisionRequired: value.decisionRequired,
+    evidenceIds: value.evidenceIds,
+    evidenceRefs: value.evidenceRefs,
+    executionRole: value.executionRole,
+    executionRuntime: value.executionRuntime,
+    verificationRole: value.verificationRole,
+    verificationRuntime: value.verificationRuntime,
+    roleReportId: value.roleReportId || ""
+  };
+}
+
+function verifyCanonicalSupport(root, record, options) {
+  const runId = safeTransportRunId(record.runId);
+  const runFile = canonicalRunPath(root, runId);
+  const run = readContractJsonIfValid(runFile);
+  assertRunSemantics(run);
+  let evidence = options.inputPayload || {};
+  const requestedRoleReportId = cleanInline(evidence.roleReportId);
+  let roleReport = null;
+  if (requestedRoleReportId) {
+    roleReport = readContractJsonIfValid(roleReportReceiptPath(root, requestedRoleReportId));
+    try {
+      assertRoleReportSemantics(roleReport);
+    } catch (error) {
+      return {
+        status: "blocked",
+        mode: "local",
+        hostedMcpUsed: false,
+        run,
+        validation: null,
+        verdict: "unverified",
+        reason: "The verifier return is missing or invalid.",
+        error: error.message,
+        nextOwner: "Manager"
+      };
+    }
+    if (
+      roleReport.role !== "verifier" ||
+      roleReport.runId !== runId ||
+      roleReport.briefId !== run.briefId
+    ) {
+      return {
+        status: "blocked",
+        mode: "local",
+        hostedMcpUsed: false,
+        run,
+        validation: null,
+        verdict: "unverified",
+        reason: "The verifier return belongs to another role, run or brief.",
+        error: "role report boundary mismatch",
+        nextOwner: "Manager"
+      };
+    }
+    evidence = {
+      ...evidence,
+      status: roleReport.status,
+      verdict: roleReport.recommendation,
+      reason: roleReport.reason,
+      summary: roleReport.summary,
+      evidenceIds: roleReport.evidenceIds,
+      acceptance: roleReport.claims.map((claim) => ({
+        criterion: claim.claim,
+        status: claim.verificationStatus === "verified" ? "met" : "unclear",
+        evidenceIds: claim.evidenceIds
+      })),
+      briefDeviations: roleReport.scopeCheck.deviations,
+      decisionRequired: roleReport.recommendation === "decision_required",
+      verificationRole: "nogra:verifier"
+    };
+  }
+  const requestedVerificationRole = normalizeRole(evidence.verificationRole);
+  if (requestedVerificationRole === "verifier" && !roleReport) {
+    return {
+      status: "blocked",
+      mode: "local",
+      hostedMcpUsed: false,
+      run,
+      validation: null,
+      verdict: "unverified",
+      reason: "Verifier output was not supplied as a schema-valid role report.",
+      error: "nogra:verifier verification requires roleReportId",
+      nextOwner: "Manager"
+    };
+  }
+  const verificationStatus = inferVerificationStatus(evidence);
+  const verdict = inferVerificationVerdict(evidence);
+  const reason = cleanText(evidence.reason || "");
+  if (verdict !== "ship" && !reason) {
+    return {
+      status: "blocked",
+      mode: "local",
+      hostedMcpUsed: false,
+      run,
+      validation: null,
+      verdict,
+      reason,
+      error: "Verification reason is required before returning a non-ship verdict to Manager.",
+      nextOwner: "Manager"
+    };
+  }
+  if (run.lifecycle !== "returned" && run.lifecycle !== "verified") {
+    return {
+      status: "blocked",
+      mode: "local",
+      hostedMcpUsed: false,
+      run,
+      validation: null,
+      verdict,
+      reason,
+      error: `verification requires a returned run (found lifecycle ${run.lifecycle})`,
+      nextOwner: "Manager"
+    };
+  }
+  if (!run.outcome) {
+    return {
+      status: "blocked",
+      mode: "local",
+      hostedMcpUsed: false,
+      run,
+      validation: null,
+      verdict,
+      reason,
+      error: "verification requires a recorded executor outcome",
+      nextOwner: "Manager"
+    };
+  }
+
+  const acceptance = normalizeAcceptanceEvidence(evidence.acceptance);
+  const briefDeviations = normalizeTextList(evidence.briefDeviations);
+  const evidenceIds = normalizeTextList(evidence.evidenceIds);
+  let evidenceRecords = [];
+  try {
+    evidenceRecords = evidenceIds.map((evidenceId) => readEvidenceRecord(root, evidenceId));
+  } catch (error) {
+    return {
+      status: "blocked",
+      mode: "local",
+      hostedMcpUsed: false,
+      run,
+      validation: null,
+      verdict,
+      reason,
+      error: error.message,
+      nextOwner: "Manager"
+    };
+  }
+  if (verdict === "ship" && evidenceRecords.length === 0) {
+    return {
+      status: "blocked",
+      mode: "local",
+      hostedMcpUsed: false,
+      run,
+      validation: null,
+      verdict: "unverified",
+      reason: "No canonical evidence receipt was supplied.",
+      error: "ship requires at least one schema-valid evidenceId; free-text evidence references cannot satisfy verification",
+      nextOwner: "Manager"
+    };
+  }
+  for (const record of evidenceRecords) {
+    if (record.runId && record.runId !== runId) {
+      return {
+        status: "blocked",
+        mode: "local",
+        hostedMcpUsed: false,
+        run,
+        validation: null,
+        verdict: "unverified",
+        reason: `Evidence ${record.evidenceId} belongs to another run.`,
+        error: `evidence run mismatch: expected ${runId}, received ${record.runId}`,
+        nextOwner: "Manager"
+      };
+    }
+    if (record.briefId && record.briefId !== run.briefId) {
+      return {
+        status: "blocked",
+        mode: "local",
+        hostedMcpUsed: false,
+        run,
+        validation: null,
+        verdict: "unverified",
+        reason: `Evidence ${record.evidenceId} belongs to another brief.`,
+        error: `evidence brief mismatch: expected ${run.briefId}, received ${record.briefId}`,
+        nextOwner: "Manager"
+      };
+    }
+  }
+  const evidenceRank = new Map([["reported", 0], ["edited", 1], ["tested", 2], ["verified", 3]]);
+  const requestedLevel = cleanInline(run.evidenceLevel || "reported");
+  const requiredSupportingRank = requestedLevel === "verified" ? evidenceRank.get("tested") : (evidenceRank.get(requestedLevel) ?? 0);
+  if (verdict === "ship" && !evidenceRecords.some((item) => (evidenceRank.get(item.evidenceLevel) ?? -1) >= requiredSupportingRank)) {
+    return {
+      status: "blocked",
+      mode: "local",
+      hostedMcpUsed: false,
+      run,
+      validation: null,
+      verdict: "unverified",
+      reason: `Available evidence does not satisfy requested level ${requestedLevel}.`,
+      error: `ship requires ${requestedLevel === "verified" ? "tested evidence plus this verification verdict" : `${requestedLevel}-or-stronger evidence`}`,
+      nextOwner: "Manager"
+    };
+  }
+  const evidenceRefs = [...new Set(evidenceRecords.flatMap((item) => item.artifacts.map((artifact) => artifact.ref)))];
+  const summary = cleanText(evidence.summary || "Local verification support recorded. Manager remains final verification authority.");
+  const decisionRequired = Boolean(evidence.decisionRequired);
+  const verificationState = {
+    verificationRole: cleanInline(evidence.verificationRole || run.verificationRole || run.metadata?.verificationRole || "Manager"),
+    verificationRuntime: cleanInline(evidence.verificationRuntime || run.verificationRuntime || run.metadata?.verificationRuntime || ""),
+    verificationRuntimeSource: cleanInline(evidence.verificationRuntimeSource || run.verificationRuntimeSource || run.metadata?.verificationRuntimeSource || ""),
+    verificationStatus: cleanInline(evidence.verificationStatus || run.verificationStatus || run.metadata?.verificationStatus || verificationStatus)
+  };
+  verificationState.verificationLabel = [
+    roleDisplayName(verificationState.verificationRole),
+    runtimeDisplayName(verificationState.verificationRuntime),
+    statusDisplayName(verificationState.verificationStatus)
+  ].filter(Boolean).join(" · ");
+  const existingVerdict = readContractJsonIfValid(verdictPath(root, runId));
+  const candidateAuthority = {
+    verdict,
+    reason,
+    summary,
+    acceptance,
+    briefDeviations,
+    decisionRequired,
+    evidenceIds,
+    evidenceRefs,
+    executionRole: run.executionRole,
+    executionRuntime: run.executionRuntime,
+    verificationRole: verificationState.verificationRole,
+    verificationRuntime: verificationState.verificationRuntime,
+    roleReportId: roleReport?.reportId || ""
+  };
+  if (existingVerdict) {
+    assertVerdictSemantics(existingVerdict);
+    if (canonicalJson(verdictAuthorityView(existingVerdict)) !== canonicalJson(candidateAuthority)) {
+      return {
+        status: "blocked",
+        mode: "local",
+        hostedMcpUsed: false,
+        run,
+        validation: readContractJsonIfValid(transportArtifactPath(root, runId, "validation.json")),
+        verdict: existingVerdict.verdict,
+        reason: existingVerdict.reason,
+        error: "run already has a different canonical verdict; changing it requires an explicit Manager decision",
+        nextOwner: "Manager"
+      };
+    }
+    const existingValidation = readContractJsonIfValid(transportArtifactPath(root, runId, "validation.json"));
+    const existingEvent = findRunEvent(root, runId, "run_verified");
+    if (run.lifecycle === "verified" && existingValidation && existingEvent) {
+      return {
+        status: verificationStatus,
+        mode: "local",
+        hostedMcpUsed: false,
+        idempotent: true,
+        run,
+        validation: existingValidation,
+        verdict: existingVerdict.verdict,
+        verdictRecord: existingVerdict,
+        reason: existingVerdict.reason,
+        nextOwner: "Manager"
+      };
+    }
+  }
+
+  const at = now();
+  const verdictGeneratedAt = cleanInline(existingVerdict?.generatedAt) || at;
+  const session = readSessionAnchor(root);
+  const predictedWatermark = currentLedgerWatermark(root) + 1;
+  const verdictRecord = {
+    schema: VERDICT_SCHEMA_V1,
+    verdictId: `verdict-${runId}`,
+    workspaceId: run.workspaceId,
+    runId,
+    briefId: run.briefId,
+    briefHash: run.briefHash,
+    verdict,
+    reason,
+    generatedAt: verdictGeneratedAt,
+    owner: "Manager",
+    nextOwner: "Manager",
+    summary,
+    acceptance,
+    briefDeviations,
+    decisionRequired,
+    evidenceIds,
+    evidenceRefs,
+    executionRole: run.executionRole,
+    executionRuntime: run.executionRuntime,
+    verificationRole: verificationState.verificationRole,
+    verificationRuntime: verificationState.verificationRuntime,
+    roleReportId: roleReport?.reportId || "",
+    ledgerWatermark: predictedWatermark,
+    sessionId: session.sessionId,
+    transcriptId: session.transcriptId,
+    redactions: [],
+    metadata: {
+      verificationStatus,
+      roleReportId: roleReport?.reportId || "",
+      source: roleReport ? "verifier_role_report" : "manager_verification"
+    }
+  };
+  assertVerdictSemantics(verdictRecord);
+  const validation = {
+    schema: "nogra.local.validation.v1",
+    generatedAt: at,
+    runId,
+    briefId: run.briefId,
+    status: verificationStatus,
+    verdict,
+    hostedMcpUsed: false,
+    summary,
+    reason,
+    executionRole: run.executionRole,
+    executionRuntime: run.executionRuntime,
+    executionEffort: run.executionEffort || "",
+    executionContext: run.executionContext || "",
+    executionRuntimePolicyProfile: run.executionRuntimePolicyProfile || "",
+    executionLabel: run.executionLabel || "",
+    ...verificationState,
+    acceptance,
+    briefDeviations,
+    decisionRequired,
+    evidenceIds,
+    evidenceRefs,
+    roleReportId: roleReport?.reportId || "",
+    ledgerWatermark: predictedWatermark,
+    sessionId: session.sessionId,
+    transcriptId: session.transcriptId,
+    canonicalVerdictPath: localPath(root, verdictPath(root, runId)),
+    nextOwner: "Manager"
+  };
+  const updatedRun = {
+    ...run,
+    updatedAt: at,
+    verifiedAt: run.verifiedAt || at,
+    lifecycle: "verified",
+    verdict,
+    owner: "Manager",
+    nextOwner: "Manager",
+    verificationRole: verificationState.verificationRole,
+    verificationRuntime: verificationState.verificationRuntime,
+    verificationRuntimeSource: verificationState.verificationRuntimeSource,
+    verificationStatus: verificationState.verificationStatus,
+    verificationLabel: verificationState.verificationLabel,
+    roleReportId: roleReport?.reportId || "",
+    artifacts: {
+      ...run.artifacts,
+      validationExists: true
+    },
+    ledgerWatermark: predictedWatermark,
+    sessionId: session.sessionId || run.sessionId,
+    transcriptId: session.transcriptId || run.transcriptId,
+    summary
+  };
+  assertRunTransition(run.lifecycle, updatedRun.lifecycle);
+  assertRunSemantics(updatedRun);
+  writeJsonAtomic(verdictPath(root, runId), verdictRecord);
+  writeJsonAtomic(transportArtifactPath(root, runId, "validation.json"), validation);
+  writeJsonAtomic(runFile, updatedRun);
+  const event = appendRunEvent(root, "run_verified", updatedRun, {
+    summary,
+    nextOwner: "Manager",
+    sessionId: session.sessionId,
+    transcriptId: session.transcriptId
+  });
+  if (event.ledgerWatermark !== predictedWatermark) {
+    throw new Error("run ledger watermark changed during canonical verification write");
+  }
+  return {
+    status: verificationStatus,
+    mode: "local",
+    hostedMcpUsed: false,
+    idempotent: Boolean(existingVerdict),
+    recovered: Boolean(existingVerdict),
+    run: updatedRun,
+    validation,
+    verdict,
+    verdictRecord,
+    reason,
+    nextOwner: "Manager"
+  };
+}
+
+function verifySupport(root, options) {
+  const runId = safeTransportRunId(options.runId);
+  const record = readRunRecord(root, runId);
+  if (!record) {
+    return {
+      status: "missing",
+      mode: "local",
+      hostedMcpUsed: false,
+      runId,
+      error: "run not found",
+      nextOwner: "Manager"
+    };
+  }
+  return record.legacy
+    ? verifyLegacySupport(root, { ...options, runId })
+    : verifyCanonicalSupport(root, record, { ...options, runId });
+}
+
 function printText(payload) {
   if (payload.schema === "nogra.local.status.v1") {
     console.log("Nogra local status");
@@ -3224,14 +5849,13 @@ function printText(payload) {
       const intent = payload.continuity.activeIntent;
       console.log(`- Active intent: ${intent.active ? "active" : intent.status || "inactive"}${intent.objective ? ` - ${intent.objective}` : ""}`);
     }
-    if (payload.continuity?.sessionQuality?.exists) {
-      console.log(`- Session quality: ${payload.continuity.sessionQuality.latestStatus || "unknown"} (${payload.continuity.sessionQuality.patternCount || 0})`);
-    }
+    console.log(`- Anchor: ${payload.ledger?.anchorStatus || "unknown"}${payload.ledger?.currentAnchorId ? ` (${payload.ledger.currentAnchorId})` : ""}`);
+    console.log(`- Facts: ${payload.ledger?.factProjectionStatus || "unknown"} (${payload.ledger?.activeFacts || 0} active)`);
     for (const warning of payload.plugin.diagnostics?.warnings || []) {
       console.log(`- Warning: ${warning.message}`);
     }
     console.log(`- Recent briefs: ${payload.recent.briefs.length}`);
-    console.log(`- Recent transport runs: ${payload.recent.transportRuns.length}`);
+    console.log(`- Recent runs: ${(payload.recent.runs || payload.recent.transportRuns || []).length}`);
     return;
   }
   if (payload.schema === "nogra.local.watch.v1") {
@@ -3309,25 +5933,68 @@ function main() {
       briefId: options["brief-id"] || "",
       inputPayload: options.input ? readInput(options) : null
     });
+  } else if (command === "approval-create") {
+    payload = createApproval(root, {
+      briefId: options["brief-id"] || "",
+      approvedBy: options["approved-by"] || options.approvedBy || "",
+      expiresAt: options["expires-at"] || options.expiresAt || ""
+    });
+  } else if (command === "anchor-contract") {
+    payload = anchorContract();
+  } else if (command === "anchor-validate") {
+    payload = validateAnchorPayload(root, readInput(options));
+  } else if (command === "anchor-save") {
+    payload = saveAnchor(root, readInput(options));
+  } else if (command === "evidence-contract") {
+    payload = evidenceContract();
+  } else if (command === "evidence-save") {
+    payload = saveEvidenceRecord(root, readInput(options));
+  } else if (command === "fact-contract") {
+    payload = factContract();
+  } else if (command === "fact-record") {
+    payload = recordFact(root, readInput(options));
+  } else if (command === "fact-status") {
+    payload = factStatus(root);
   } else if (command === "ledger-smoke") {
     payload = diagnosticLedgerSmoke(root, {
       label: options.label || ""
     });
-  } else if (command === "quality" || command === "session-quality") {
-    const receipt = analyzeSessionQuality(root, {
+  } else if (command === "transcript-diagnostic") {
+    const diagnostic = analyzeTranscriptDiagnostic(root, {
       transcriptPath: options.transcript || options["transcript-path"] || "",
       sessionId: options["session-id"] || options.sessionId || ""
     });
-    payload = options.write ? writeSessionQualityReceipt(root, receipt) : receipt;
+    payload = options.write ? writeTranscriptDiagnosticReceipt(root, diagnostic) : diagnostic;
   } else if (command === "handoff-contract") {
     payload = handoffContract(root, options.kind || "executor", {
       runId: options["run-id"] || options.runId || ""
     });
+  } else if (command === "role-enter") {
+    payload = enterRole(root, {
+      runId: options["run-id"] || options.runId || "",
+      role: options.role || options.kind || "",
+      expiresInMinutes: options["expires-in-minutes"] || options.expiresInMinutes || ""
+    });
+  } else if (command === "role-status") {
+    payload = roleLeaseStatus(root);
+  } else if (command === "role-exit") {
+    payload = exitRole(root, {
+      leaseId: options["lease-id"] || options.leaseId || "",
+      reason: options.reason || ""
+    });
+  } else if (command === "role-report-contract") {
+    payload = roleReportContract(root, options.kind || options.role || "executor", {
+      runId: options["run-id"] || options.runId || "",
+      leaseId: options["lease-id"] || options.leaseId || ""
+    });
+  } else if (command === "role-report-save") {
+    payload = saveRoleReport(root, readInput(options));
   } else if (command === "dispatch") {
     payload = dispatch(root, {
       briefId: options["brief-id"] || "",
+      approvalId: options["approval-id"] || options.approvalId || "",
       inputPayload: options.input ? readInput(options) : null,
-      target: options.target || "executor",
+      target: options.target || "",
       targetModel: options["target-model"] || options.targetModel || "",
       maxTurns: options["max-turns"] || options.maxTurns || "",
       maxTurnsReason: options["max-turns-reason"] || options.maxTurnsReason || "",

@@ -14,6 +14,13 @@ const repoRoot = path.resolve(pluginRoot, "..", "..");
 const localRuntime = path.join(pluginRoot, "scripts", "nogra-local.mjs");
 const ledgerRuntime = path.join(pluginRoot, "scripts", "nogra-ledger.mjs");
 const skillQualityCheck = path.join(pluginRoot, "scripts", "check-skill-quality.mjs");
+const contractSpineCheck = path.join(pluginRoot, "scripts", "smoke-contract-spine-v2.mjs");
+const contractRuntimeCheck = path.join(pluginRoot, "scripts", "smoke-contract-runtime-v2.mjs");
+const anchorCheck = path.join(pluginRoot, "scripts", "smoke-anchor-v1.mjs");
+const evidenceFactCheck = path.join(pluginRoot, "scripts", "smoke-evidence-fact-v1.mjs");
+const roleIsolationCheck = path.join(pluginRoot, "scripts", "smoke-role-isolation-v1.mjs");
+const bootMemoryCheck = path.join(pluginRoot, "scripts", "smoke-boot-memory-v1.mjs");
+const hiddenScoringIsolationCheck = path.join(pluginRoot, "scripts", "smoke-hidden-scoring-isolation-v1.mjs");
 const gateTriadCheck = path.join(pluginRoot, "scripts", "smoke-gate-triad.mjs");
 const gateVisibilityCheck = path.join(pluginRoot, "scripts", "smoke-gate-visibility.mjs");
 const gateArmingCheck = path.join(pluginRoot, "scripts", "smoke-gate-arming.mjs");
@@ -125,6 +132,47 @@ function run(args, input, env = {}) {
     env: { ...process.env, ...env }
   });
   return JSON.parse(output);
+}
+
+function createApproval(root, briefId) {
+  const approval = run(["approval-create", "--root", root, "--brief-id", briefId, "--approved-by", "smoke"]);
+  assert(approval.status === "available", `approval-create should authorize ready brief ${briefId}`);
+  return approval;
+}
+
+function dispatchApproved(root, briefId, extraArgs = []) {
+  const approval = createApproval(root, briefId);
+  return run([
+    "dispatch", "--root", root, "--brief-id", briefId, "--approval-id", approval.approvalId,
+    ...extraArgs
+  ]);
+}
+
+function finalizeForVerification(root, runId, status = "ok") {
+  return runLedger(["finalize-run", "--root", root], {
+    runId,
+    status,
+    summary: "Executor evidence returned for verification smoke.",
+    reportText: `# Verification smoke report\n\nRun ${runId} returned ${status}.`
+  });
+}
+
+function saveVerificationEvidence(root, runId, briefId, subject) {
+  return run(["evidence-save", "--root", root], {
+    subject,
+    summary: `The canonical executor report for ${runId} was exercised by the local runtime smoke.`,
+    evidenceLevel: "tested",
+    producer: { type: "tool", ref: "smoke-local-runtime" },
+    method: { type: "test", description: "Run the local runtime verification fixture.", command: "node smoke-local-runtime.mjs" },
+    result: { status: "pass", exitCode: 0 },
+    artifacts: [{ ref: `.nogra/transport/artifacts/${runId}/report.md`, mediaType: "text/markdown" }],
+    sourceRefs: [],
+    verdictIds: [],
+    runId,
+    briefId,
+    redactions: [],
+    metadata: {}
+  });
 }
 
 function runLedger(args, input, cwd = repoRoot) {
@@ -262,6 +310,42 @@ function resolveManagerRoot() {
 }
 
 function main() {
+  execFileSync(process.execPath, [contractSpineCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  execFileSync(process.execPath, [contractRuntimeCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  execFileSync(process.execPath, [anchorCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  execFileSync(process.execPath, [evidenceFactCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+
+  execFileSync(process.execPath, [roleIsolationCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  execFileSync(process.execPath, [bootMemoryCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  execFileSync(process.execPath, [hiddenScoringIsolationCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
   execFileSync(process.execPath, [skillQualityCheck], {
     cwd: pluginRoot,
     encoding: "utf8",
@@ -341,10 +425,15 @@ function main() {
   const executorFrontmatter = agentFrontmatter("executor.md");
   const verifierFrontmatter = agentFrontmatter("verifier.md");
   const executorPrompt = agentText("executor.md");
+  const verifierPrompt = agentText("verifier.md");
   const dispatchSkill = pluginText(path.join("skills", "dispatch", "SKILL.md"));
   const verifySkill = pluginText(path.join("skills", "verify", "SKILL.md"));
   const expectedExecutorRuntime = "anthropic:sonnet";
   const expectedExecutorRuntimeDisplay = displayRuntime(expectedExecutorRuntime);
+  const sessionStartCommands = (hooksConfig.hooks?.SessionStart || [])
+    .flatMap((group) => (group.hooks || []).map((hook) => hook.command || ""));
+  assert(sessionStartCommands.filter((command) => command.includes("sync-pull.mjs")).length === 1, "SessionStart should use one ordered sync/memory adapter");
+  assert(!sessionStartCommands.some((command) => command.includes("memory-load.mjs")), "SessionStart should not race a parallel memory-load hook against sync pull");
   const expectedVerifierRuntime = "opus";
   // Cross-model verify (default profile): the verifier resolves to a different
   // model than the executor so the "done" check does not inherit the executor's
@@ -355,6 +444,7 @@ function main() {
   assert(!Object.hasOwn(hooksConfig.hooks ?? {}, "PostCompact"), "PostCompact event should not be wired (side-effect-only in Claude Code 2.1.x; re-homed onto SessionStart/compact)");
   assert(Boolean(hooksConfig.hooks?.SessionEnd?.[0]), "SessionEnd should record lifecycle anchor");
   assert(hooksConfig.hooks?.PreToolUse?.[0]?.matcher === "Bash|Edit|Write|MultiEdit", "PreToolUse should gate only write/action tools");
+  assert(hooksConfig.hooks?.PreToolUse?.[1]?.matcher === "Read|Grep|Glob", "PreToolUse should require role leases for the read-only role operation set");
   const stopHookCommands = (hooksConfig.hooks?.Stop || []).flatMap((group) => (group.hooks || []).map((hook) => hook.command || ""));
   assert(stopHookCommands.some((command) => command.includes("observe-event.mjs")), "Stop should still record lifecycle events");
   assert(stopHookCommands.some((command) => command.includes("stop-nudge.mjs")), "Stop should run the observe-only verify nudge");
@@ -367,13 +457,13 @@ function main() {
   const verifierTools = commaList(verifierFrontmatter.tools);
   assert(executorTools.length > 0, "public executor should use an explicit tools allowlist");
   assert(verifierTools.length > 0, "public verifier should use an explicit tools allowlist");
-  for (const expectedTool of ["Read", "Edit", "MultiEdit", "Write", "Bash", "Grep", "Glob"]) {
+  for (const expectedTool of ["Read", "Edit", "MultiEdit", "Write", "Grep", "Glob"]) {
     assert(executorTools.includes(expectedTool), `public executor tools should include ${expectedTool}`);
   }
-  for (const expectedTool of ["Read", "Bash", "Grep", "Glob"]) {
+  for (const expectedTool of ["Read", "Grep", "Glob"]) {
     assert(verifierTools.includes(expectedTool), `public verifier tools should include ${expectedTool}`);
   }
-  for (const forbiddenTool of ["Agent", "Skill"]) {
+  for (const forbiddenTool of ["Agent", "Skill", "Bash"]) {
     assert(!hasClaudeTool(executorTools, forbiddenTool), `public executor tools should not include ${forbiddenTool}`);
     assert(!hasClaudeTool(verifierTools, forbiddenTool), `public verifier tools should not include ${forbiddenTool}`);
   }
@@ -381,11 +471,14 @@ function main() {
     assert(!verifierTools.includes(writeTool), `public verifier tools should not include ${writeTool}`);
   }
   assert(executorPrompt.includes("## Pre-flight Blocks"), "executor role contract should define pre-flight block behavior");
-  assert(executorPrompt.includes("## Safe Continuation"), "executor report should include a Safe Continuation section");
   assert(executorPrompt.includes("return it explicitly"), "executor should return known safe continuations when blocked");
-  assert(executorPrompt.includes("Start the final response exactly with `# Executor Report`"), "executor should front-load the report title");
+  assert(executorPrompt.includes("Return exactly one JSON object"), "executor should return a structured role report");
+  assert(executorPrompt.includes("recommendation` must be `none`"), "executor report must not recommend a verdict");
   assert(executorPrompt.includes("starts with isolated context"), "executor should not rely on inherited parent context");
   assert(executorPrompt.includes("not granted the Claude Code"), "executor should document the public no-nested-spawn wall");
+  assert(verifierPrompt.includes("Use only the narrow read-only operation set"), "verifier should declare its narrow read-only runner");
+  assert(verifierPrompt.includes("`Agent`, `Bash`, `Edit`, `Write` or `MultiEdit`"), "verifier should explicitly deny arbitrary shell and mutation tools");
+  assert(verifierPrompt.includes("Return exactly one JSON object"), "verifier should return a structured role report");
   assert(dispatchSkill.includes("Executor self-report is never verdict evidence"), "dispatch skill should keep verdicts independent from executor self-report quality");
   assert(verifySkill.includes("Executor self-report is never verdict evidence"), "verify skill should keep verdicts independent from executor self-report quality");
   for (const relativePath of [
@@ -468,6 +561,8 @@ function main() {
     "fresh bootPolicy hintSources should not reference the retired memory/local store"
   );
   assert(freshConfig.connectionMode === "local", "fresh config should declare local mode");
+  assert(freshConfig.paths?.currentAnchor === ".nogra/state/CURRENT-ANCHOR.json", "fresh config should declare the canonical current Anchor path");
+  assert(freshConfig.paths?.currentFacts === ".nogra/state/CURRENT-FACTS.json", "fresh config should declare the rebuildable current fact projection path");
   assert(freshConfig.releaseVersion === "v1.0.0", "fresh config should persist workspace config release identity");
   assert(!Object.hasOwn(freshConfig, "version"), "fresh config should not write root version");
   assert(!Object.hasOwn(freshConfig, ["play", "book", "Version"].join("")), "fresh config should not write legacy workspace field");
@@ -475,6 +570,12 @@ function main() {
   assert(Object.keys(freshConfig.runtimePolicy?.roles || {}).length === 0, "fresh default config should not write concrete role runtime choices");
   assert(freshConfig.runtimePolicy?.budget?.mode === "default", "fresh default config should use default budget mode");
   assert(freshConfig.routingPolicy?.defaultLanguage === "en", "fresh config should be English-first");
+  assert(freshConfig.bootPolicy?.schema === "nogra.boot_policy.v2", "fresh config should use explicit boot policy v2");
+  assert(
+    JSON.stringify(freshConfig.bootPolicy?.stateMachine) === JSON.stringify(["fresh", "detected", "focused", "resumed", "recovering"]),
+    "fresh config should declare the explicit boot state machine"
+  );
+  assert(freshConfig.bootPolicy?.checkpointSemantics === "detection-only", "fresh config should make checkpoint semantics detection-only");
   assert(!Object.hasOwn(freshConfig.routingPolicy || {}, "autoOfferEnabled"), "fresh config should not write automatic offer controls");
   assert(!Object.hasOwn(freshConfig.routingPolicy || {}, "sensitivityPercent"), "fresh config should not write sensitivity controls");
   assert(!Object.hasOwn(freshConfig.routingPolicy || {}, "scoring"), "fresh config should not write scoring controls");
@@ -493,6 +594,7 @@ function main() {
   assert(status.ledger?.watermark === 0, "fresh status should expose empty ledger watermark");
   assert(status.ledger?.checkpointSourceWatermark === 0, "fresh status should expose checkpoint source watermark zero");
   assert(status.ledger?.checkpointStatus === "fresh", "fresh status should report checkpoint fresh against an empty ledger");
+  assert(status.ledger?.anchorStatus === "missing", "fresh status should report that no semantic Anchor has been saved yet");
   assert(status.index?.ready === true, "fresh status should report five-anchor index ready");
   assert(status.index?.files?.length === 5, "fresh status should expose five index anchors");
   assert(status.continuity?.status === "ready", "fresh status should report continuity layout ready");
@@ -831,7 +933,7 @@ function main() {
   assert(statusline.includes(`Nogra:${liveStatus.workspace.workspaceId}`), "statusline should project the same workspace id as status");
   assert(statusline.includes(liveStatus.plugin.version), "statusline should project the same plugin version as status");
   assert(statusline.includes("hook:PostToolUse"), "statusline should project latest hook event from status");
-  assert(statusline.includes(`checkpoint:${liveStatus.ledger.checkpointStatus}`), "statusline should project checkpoint freshness from status");
+  assert(statusline.includes(`anchor:${liveStatus.ledger.anchorStatus}`), "statusline should project Anchor freshness from status");
   assert(statusline.includes(`bridge:${liveStatus.bridge.status}`), "statusline should project bridge state from status");
   const expectedDirty = liveStatus.git.status === "dirty" ? String(liveStatus.git.dirtyCount) : liveStatus.git.status;
   assert(statusline.includes(`dirty:${expectedDirty}`), "statusline should project git dirtiness from status");
@@ -845,177 +947,6 @@ function main() {
     }
   });
   assert(missingStatusline.startsWith("Nogra:"), "statusline should fail open with a compact Nogra line");
-
-  const qualityTranscript = path.join(temp, "quality-transcript.jsonl");
-  fs.writeFileSync(qualityTranscript, [
-    JSON.stringify({
-      type: "user",
-      message: {
-        role: "user",
-        content: "STOP. One shot. Ingen agents uden GO."
-      }
-    }),
-    JSON.stringify({
-      type: "assistant",
-      message: {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu-quality-agent",
-            name: "Agent",
-            input: {
-              description: "Audit funnel drift"
-            }
-          }
-        ]
-      }
-    }),
-    JSON.stringify({
-      type: "assistant",
-      message: {
-        role: "assistant",
-        content: "Affiliate revenue is the biggest MRR lever at 79 kr/md."
-      }
-    })
-  ].join("\n") + "\n", "utf8");
-  const qualityReceipt = run(["quality", "--root", temp, "--transcript", qualityTranscript, "--write"]);
-  assert(qualityReceipt.schema === "nogra.sessionQualityReceipt.v1", "quality command should return a session quality receipt");
-  assert(qualityReceipt.status === "intervention", "quality command should classify stop+agent drift as intervention");
-  assert(qualityReceipt.blocking === false, "quality receipt should remain advisory and non-blocking");
-  const qualityPatternIds = qualityReceipt.patterns.map((entry) => entry.id);
-  assert(qualityPatternIds.includes("stop_boundary_followed_by_tools"), "quality command should detect tool work after a stop boundary");
-  assert(qualityPatternIds.includes("agent_spawn_after_stop_boundary"), "quality command should detect agent spawn after a stop boundary");
-  assert(qualityPatternIds.includes("business_claim_without_source_marker"), "quality command should detect business claims without source markers");
-  assert(qualityPatternIds.includes("truth_ledger_missing_for_risky_session"), "quality command should require a truth ledger for risky sessions");
-  assert(qualityReceipt.remedyPolicy?.blocking === false, "quality remedy policy should not turn into a hard runtime lock");
-  assert(fs.existsSync(path.join(temp, qualityReceipt.path)), "quality --write should persist a compact receipt");
-  const statusAfterQuality = run(["status", "--root", temp]);
-  assert(statusAfterQuality.continuity?.sessionQuality?.latestStatus === "intervention", "status should expose latest session quality status");
-  assert(statusAfterQuality.continuity?.sessionQuality?.patternCount === qualityReceipt.patternCount, "status should expose latest session quality pattern count");
-  const qualityStatusline = runStatusline({
-    cwd: temp,
-    workspace: {
-      current_dir: temp,
-      project_dir: temp,
-      added_dirs: []
-    },
-    context_window: {
-      used_percentage: 13
-    }
-  });
-  assert(qualityStatusline.includes("quality:intervention"), "statusline should expose latest session quality status when present");
-
-  const qualityAgentWithoutStopTranscript = path.join(temp, "quality-agent-without-stop-transcript.jsonl");
-  writeTranscript(qualityAgentWithoutStopTranscript, [
-    {
-      type: "user",
-      message: {
-        role: "user",
-        content: "Please audit this with a helper agent if useful."
-      }
-    },
-    {
-      type: "assistant",
-      message: {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu-quality-agent-without-stop",
-            name: "Agent",
-            input: {
-              description: "Fresh-eyes review"
-            }
-          }
-        ]
-      }
-    },
-    {
-      type: "assistant",
-      message: {
-        role: "assistant",
-        content: "Observed: helper agent was requested by the user. User-provided: helper allowed. Inferred: warning only. Unknown: no blockers."
-      }
-    }
-  ]);
-  const qualityAgentWithoutStop = run(["quality", "--root", temp, "--transcript", qualityAgentWithoutStopTranscript]);
-  assert(qualityAgentWithoutStop.status === "watch", "quality should warn, not intervene, for agent use without a stop boundary");
-  assert(qualityAgentWithoutStop.patterns.map((entry) => entry.id).includes("agent_spawn_observed"), "quality should record agent spawn without stop as observed");
-  assert(!qualityAgentWithoutStop.patterns.map((entry) => entry.id).includes("truth_ledger_missing_for_risky_session"), "truth ledger should suppress missing-ledger warning");
-
-  const qualityResumeTranscript = path.join(temp, "quality-resume-after-stop-transcript.jsonl");
-  writeTranscript(qualityResumeTranscript, [
-    {
-      type: "user",
-      message: {
-        role: "user",
-        content: "STOP. Ingen agents uden GO."
-      }
-    },
-    {
-      type: "assistant",
-      message: {
-        role: "assistant",
-        content: "Afventer GO."
-      }
-    },
-    {
-      type: "user",
-      message: {
-        role: "user",
-        content: "GO, continue."
-      }
-    },
-    {
-      type: "assistant",
-      message: {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu-quality-resume-agent",
-            name: "Agent",
-            input: {
-              description: "Now allowed"
-            }
-          }
-        ]
-      }
-    },
-    {
-      type: "assistant",
-      message: {
-        role: "assistant",
-        content: "Observed: GO came after stop. User-provided: continue. Inferred: stop window cleared. Unknown: none."
-      }
-    }
-  ]);
-  const qualityResume = run(["quality", "--root", temp, "--transcript", qualityResumeTranscript]);
-  const qualityResumeIds = qualityResume.patterns.map((entry) => entry.id);
-  assert(!qualityResumeIds.includes("stop_boundary_followed_by_tools"), "quality should not flag tools after a later GO clears the stop boundary");
-  assert(!qualityResumeIds.includes("agent_spawn_after_stop_boundary"), "quality should not treat agent use after explicit GO as after-stop drift");
-  assert(qualityResumeIds.includes("agent_spawn_observed"), "quality should still record agent usage after GO as a watch item");
-
-  const qualitySourcedBusinessTranscript = path.join(temp, "quality-sourced-business-transcript.jsonl");
-  writeTranscript(qualitySourcedBusinessTranscript, [
-    {
-      type: "user",
-      message: {
-        role: "user",
-        content: "Summarize revenue from DB evidence."
-      }
-    },
-    {
-      type: "assistant",
-      message: {
-        role: "assistant",
-        content: "Observed: DB query returned 319 unlocks and 79 kr/md price. User-provided: target CR is 8%. Inferred: MRR depends on conversion. Unknown: Vercel attribution."
-      }
-    }
-  ]);
-  const qualitySourcedBusiness = run(["quality", "--root", temp, "--transcript", qualitySourcedBusinessTranscript]);
-  assert(qualitySourcedBusiness.status === "ok", "quality should allow business claims when source markers and truth ledger are present");
 
   runObserveEventHook({
     cwd: temp,
@@ -1510,8 +1441,8 @@ function main() {
   assert(Object.keys(sessionEndOutput).length === 0, "SessionEnd should stay silent");
   const sessionEndAnchor = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "runtime", "session-anchor.json"), "utf8"));
   assert(sessionEndAnchor.hookEventName === "SessionEnd", "SessionEnd should update session anchor only");
-  const cleanQualityTranscript = path.join(temp, "quality-clean-transcript.jsonl");
-  fs.writeFileSync(cleanQualityTranscript, [
+  const cleanTranscript = path.join(temp, "session-end-clean-transcript.jsonl");
+  fs.writeFileSync(cleanTranscript, [
     JSON.stringify({
       type: "user",
       message: {
@@ -1531,13 +1462,12 @@ function main() {
     cwd: temp,
     workspace_roots: [temp],
     source: "prompt_input_exit",
-    session_id: "session-quality-clean-001",
-    transcript_path: cleanQualityTranscript
+    session_id: "session-end-clean-001",
+    transcript_path: cleanTranscript
   });
-  assert(Object.keys(cleanSessionEndOutput).length === 0, "SessionEnd quality capture should stay silent");
-  const cleanQualityReceipt = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "runtime", "session-quality.latest.json"), "utf8"));
-  assert(cleanQualityReceipt.status === "ok", "SessionEnd should write an ok quality receipt for clean transcripts");
-  assert(cleanQualityReceipt.transcript?.id === "quality-clean-transcript", "SessionEnd quality receipt should identify the transcript");
+  assert(Object.keys(cleanSessionEndOutput).length === 0, "SessionEnd continuity capture should stay silent");
+  assert(!fs.existsSync(path.join(temp, ".nogra", "runtime", "session-quality.latest.json")), "SessionEnd should not write a session-quality receipt");
+  assert(!fs.existsSync(path.join(temp, ".nogra", "runtime", "transcript-diagnostic.latest.json")), "SessionEnd should not write an explicit transcript diagnostic");
   captureSessionAnchor(temp, {
     session_id: "session-smoke-001",
     transcript_path: "/tmp/transcript-smoke-001.jsonl",
@@ -1676,15 +1606,19 @@ function main() {
   assert(promoted.openBriefLink === `[Open brief](${promotedFileUrl})`, "brief-promote should expose a bare Open brief markdown link");
   assert(!promoted.openBriefLink.includes(":1)"), "Open brief file:// link should not include a line-number suffix");
 
-  const receipt = run(["dispatch", "--root", temp, "--brief-id", saved.briefId]);
+  const receipt = dispatchApproved(temp, saved.briefId);
   assert(receipt.status === "ready", "dispatch should create a local receipt");
   assert(receipt.hostedMcpUsed === false, "dispatch should remain local");
   assert(receipt.target === "executor", "dispatch should default target to executor");
-  assert(receipt.ledgerWatermark === 3, "dispatch should append ledger watermark 3");
+  assert(receipt.schema === "nogra.dispatch.receipt.v2", "dispatch should emit the canonical dispatch receipt v2 projection");
+  assert(receipt.run?.schema === "nogra.run.v2", "dispatch receipt should embed the canonical run v2 contract");
+  assert(receipt.approvalStatus === "consumed", "dispatch should consume its single-use approval");
+  assert(receipt.ledgerWatermark === 4, "approval plus dispatch should advance the ledger to watermark 4");
   assert(receipt.sessionId === "session-smoke-001", "dispatch should carry current session id anchor");
   assert(receipt.transcriptId === "transcript-smoke-001", "dispatch should carry current transcript id anchor");
-  const runFile = path.join(temp, ".nogra", "transport", "runs", `${receipt.runId}.json`);
-  assert(fs.existsSync(runFile), "dispatch should write local transport run");
+  const runFile = path.join(temp, ".nogra", "runs", `${receipt.runId}.json`);
+  assert(fs.existsSync(runFile), "dispatch should write the canonical local run");
+  assert(!fs.existsSync(path.join(temp, ".nogra", "transport", "runs", `${receipt.runId}.json`)), "v2 dispatch should not write a shadow legacy transport run");
   const receiptRun = JSON.parse(fs.readFileSync(runFile, "utf8"));
   assert(receiptRun.ledgerWatermark === receipt.ledgerWatermark, "run state should persist dispatch ledger watermark");
   assert(receiptRun.sessionId === "session-smoke-001", "run state should persist session id anchor");
@@ -1722,7 +1656,13 @@ function main() {
   assert(receipt.executionCrossing?.agenticLoop?.maxTurnsStopReason === "maxTurns_exhausted", "execution crossing should name maxTurns exhaustion stop reason");
   assert(receipt.executionCrossing?.sizingDecisionRequired === false, "normal execution crossing should not require sizing decision");
 
-  const verifierDispatch = run(["dispatch", "--root", temp, "--brief-id", saved.briefId, "--target", "verifier"]);
+  const verifierSaved = run(["brief-save", "--root", temp, "--source", "smoke"], {
+    ...brief,
+    title: "Local verifier smoke brief",
+    targetRole: "verifier"
+  });
+  run(["brief-promote", "--root", temp, "--brief-id", verifierSaved.briefId]);
+  const verifierDispatch = dispatchApproved(temp, verifierSaved.briefId);
   assert(verifierDispatch.status === "ready", "verifier dispatch should create a local receipt");
   assert(verifierDispatch.targetRole === "verifier", "verifier dispatch should preserve targetRole");
   assert(verifierDispatch.executionRole === "nogra:verifier", "verifier dispatch should expose verifier executionRole");
@@ -1738,15 +1678,13 @@ function main() {
     summary: "Verifier run finalized by smoke."
   });
   assert(finalizedVerifier.status === "ok", "ledger finalize-run should complete verifier run");
-  const finalizedVerifierRun = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "transport", "runs", `${verifierDispatch.runId}.json`), "utf8"));
+  const finalizedVerifierRun = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "runs", `${verifierDispatch.runId}.json`), "utf8"));
   assert(finalizedVerifierRun.ledgerWatermark > verifierDispatch.ledgerWatermark, "ledger finalize-run should append a newer ledger watermark");
   assert(finalizedVerifierRun.workspaceId === freshConfig.workspaceId, "ledger finalize-run should preserve config workspaceId on run state without explicit input workspaceId");
   const finalizedVerifierLedgerEvent = readJsonl(path.join(temp, ".nogra", "ledger", "events.jsonl"))
-    .find((event) => event.eventId === `ledger-event-${verifierDispatch.runId}-terminal-ok`);
-  const finalizedVerifierTransportEvent = readJsonl(path.join(temp, ".nogra", "transport", "events.jsonl"))
-    .find((event) => event.eventId === `transport-event-${verifierDispatch.runId}-terminal-ok`);
+    .find((event) => event.eventId === `run-event-${verifierDispatch.runId}-run_returned-ok`);
   assert(finalizedVerifierLedgerEvent?.workspaceId === freshConfig.workspaceId, "terminal ledger event should use config workspaceId without explicit input workspaceId");
-  assert(finalizedVerifierTransportEvent?.workspaceId === freshConfig.workspaceId, "terminal transport event should use config workspaceId without explicit input workspaceId");
+  assert(finalizedVerifierLedgerEvent?.schema === "nogra.run.event.v2", "terminal event should use the canonical run event v2 contract");
 
   const nestedCwd = path.join(temp, "nested", "verification-cwd");
   fs.mkdirSync(nestedCwd, { recursive: true });
@@ -1803,9 +1741,12 @@ function main() {
   assert(handoff.agenticLoop?.ifMaxTurnsHit?.includes("stopReason=maxTurns_exhausted"), "executor handoff should tell Manager how to carry maxTurns exhaustion");
   assert(handoff.dispatchContext?.runId === receipt.runId, "executor handoff should expose run dispatch context");
   assert(handoff.prompt?.includes("## Pre-flight Blocks"), "delivered executor handoff prompt should include pre-flight block behavior");
-  assert(handoff.prompt?.includes("## Safe Continuation"), "delivered executor handoff prompt should include Safe Continuation report section");
   assert(handoff.prompt?.includes("return it explicitly"), "delivered executor handoff prompt should require known safe continuations");
-  assert(handoff.prompt?.includes("Start the final response exactly with `# Executor Report`"), "delivered executor handoff prompt should front-load the report title");
+  assert(handoff.prompt?.includes("Return exactly one JSON object"), "delivered executor handoff prompt should require the structured role report");
+  assert(handoff.roleIsolation?.profile === "strict-role-lease-v1", "executor handoff should expose strict role isolation");
+  assert(handoff.roleIsolation?.leaseRequired === true, "run-bound executor handoff should require a lease");
+  assert(handoff.roleIsolation?.arbitraryShellAllowed === false, "executor handoff should deny arbitrary shell");
+  assert(handoff.roleReport?.schema === "nogra.role.report.v1", "executor handoff should expose the role report contract");
   assert(
     handoff.managerInstructions?.some((line) => line.includes("plugin-provided nogra:executor role")),
     "executor handoff should instruct Manager to spawn the plugin-scoped role"
@@ -1831,7 +1772,7 @@ function main() {
     "executor handoff should instruct Manager to return maxTurns exhaustion reason"
   );
 
-  const exhaustedReceipt = run(["dispatch", "--root", temp, "--brief-id", saved.briefId]);
+  const exhaustedReceipt = dispatchApproved(temp, saved.briefId);
   const exhaustedFinalize = runLedger(["finalize-run", "--root", temp], {
     runId: exhaustedReceipt.runId,
     status: "blocked",
@@ -1844,7 +1785,7 @@ function main() {
     }
   });
   assert(exhaustedFinalize.status === "ok", "ledger finalize-run should persist maxTurns exhaustion as a blocked return");
-  const exhaustedRun = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "transport", "runs", `${exhaustedReceipt.runId}.json`), "utf8"));
+  const exhaustedRun = JSON.parse(fs.readFileSync(path.join(temp, ".nogra", "runs", `${exhaustedReceipt.runId}.json`), "utf8"));
   assert(exhaustedRun.stopReason === "maxTurns_exhausted", "run state should preserve maxTurns stop reason");
   assert(exhaustedRun.returnReason?.includes("stopped before completion"), "run state should preserve plain continuation reason");
   assert(!exhaustedRun.returnReason?.includes("maxTurns"), "run state return reason should not expose internal maxTurns label");
@@ -1886,7 +1827,7 @@ function main() {
   assert(decomposedLargerSizingPreview.sizingPreview?.requiresPreApprovalDecision === false, "operator-decomposed preview should not block approval");
   const largerSaved = run(["brief-save", "--root", temp, "--source", "smoke"], largerBrief);
   run(["brief-promote", "--root", temp, "--brief-id", largerSaved.briefId]);
-  const largerReceipt = run(["dispatch", "--root", temp, "--brief-id", largerSaved.briefId]);
+  const largerReceipt = dispatchApproved(temp, largerSaved.briefId);
   assert(largerReceipt.executionMaxTurns > Number(executorFrontmatter.maxTurns), "larger verified dispatch should size above generic role frontmatter fallback");
   const largerHandoff = run(["handoff-contract", "--root", temp, "--kind", "executor", "--run-id", largerReceipt.runId]);
   assert(largerHandoff.targetSubagent?.maxTurnsHint === largerReceipt.executionMaxTurns, "larger executor handoff should carry the larger dispatch-derived maxTurns");
@@ -1997,7 +1938,7 @@ function main() {
   assert(decomposedOversizedSizingPreview.sizingPreview?.userSurface === "ask", "operator-decomposed clamped preview should still ask");
   const oversizedSaved = run(["brief-save", "--root", temp, "--source", "smoke"], oversizedBrief);
   run(["brief-promote", "--root", temp, "--brief-id", oversizedSaved.briefId]);
-  const oversizedDefaultReceipt = run(["dispatch", "--root", temp, "--brief-id", oversizedSaved.briefId]);
+  const oversizedDefaultReceipt = dispatchApproved(temp, oversizedSaved.briefId);
   assert(oversizedDefaultReceipt.executionMaxTurns === 96, "oversized default dispatch should clamp at the default executor ceiling");
   assert(oversizedDefaultReceipt.executionSizing?.factors?.clamped === true, "oversized default dispatch should record clamping");
   assert(oversizedDefaultReceipt.executionSizing?.requiresManagerDecision === true, "clamped dispatch should require Manager decision before spawn");
@@ -2058,6 +1999,8 @@ function main() {
   assert(legacyMigration.status === "ok", "legacy init migration should apply cleanly");
   const legacyConfigAfter = JSON.parse(fs.readFileSync(path.join(legacyWorkspace, ".nogra", "config.json"), "utf8"));
   assert(legacyConfigAfter.workspaceId === "legacy-workspace", "legacy migration should preserve workspaceId");
+  assert(legacyConfigAfter.paths?.currentAnchor === ".nogra/state/CURRENT-ANCHOR.json", "legacy migration should add the canonical current Anchor path");
+  assert(legacyConfigAfter.paths?.currentFacts === ".nogra/state/CURRENT-FACTS.json", "legacy migration should add the current fact projection path without inventing facts");
   assert(legacyConfigAfter.routingPolicy?.defaultLanguage === "en", "legacy migration should merge routingPolicy defaults");
   assert(legacyConfigAfter.runtimePolicy?.profile === "default", "legacy migration should merge runtimePolicy defaults");
   const legacyCheckpointAfter = fs.readFileSync(path.join(legacyWorkspace, ".nogra", "state", "SESSION-CHECKPOINT.md"), "utf8");
@@ -2065,6 +2008,7 @@ function main() {
   assert(fs.existsSync(path.join(legacyWorkspace, ".nogra", "ledger", ".gitkeep")), "legacy migration should create ledger lane");
   const legacyAfter = run(["status", "--root", legacyWorkspace]);
   assert(legacyAfter.continuity?.status === "ready", "legacy status should report ready after migration");
+  assert(legacyAfter.ledger?.anchorStatus === "missing", "legacy Markdown must not auto-upgrade into a semantic Anchor");
 
   const staleRoutingWorkspace = path.join(temp, "stale-routing-workspace");
   fs.mkdirSync(path.join(staleRoutingWorkspace, ".nogra"), { recursive: true });
@@ -2158,12 +2102,23 @@ function main() {
   writeJson(path.join(temp, ".nogra", "config.json"), customConfig);
   const customStatus = run(["status", "--root", temp]);
   assert(customStatus.runtimePolicy?.profile === "custom", "status should expose runtimePolicy profile custom");
-  const customReceipt = run(["dispatch", "--root", temp, "--brief-id", saved.briefId]);
+  const customExecutorSaved = run(["brief-save", "--root", temp, "--source", "smoke"], {
+    ...brief,
+    title: "Custom executor runtime smoke brief"
+  });
+  run(["brief-promote", "--root", temp, "--brief-id", customExecutorSaved.briefId]);
+  const customReceipt = dispatchApproved(temp, customExecutorSaved.briefId);
   assert(customReceipt.targetModel === "opus", "custom dispatch should prefer roles.executor.model over brief default targetModel");
   assert(customReceipt.executionEffort === "high", "custom dispatch should carry roles.executor.effort");
   assert(customReceipt.executionRuntimePolicyProfile === "custom", "custom dispatch should carry custom profile");
   assert(customReceipt.executionRuntimeSource === "runtimePolicy.roles.executor", "custom dispatch should record executor runtime source");
-  const customVerifierReceipt = run(["dispatch", "--root", temp, "--brief-id", saved.briefId, "--target", "verifier"]);
+  const customVerifierSaved = run(["brief-save", "--root", temp, "--source", "smoke"], {
+    ...brief,
+    title: "Custom verifier runtime smoke brief",
+    targetRole: "verifier"
+  });
+  run(["brief-promote", "--root", temp, "--brief-id", customVerifierSaved.briefId]);
+  const customVerifierReceipt = dispatchApproved(temp, customVerifierSaved.briefId);
   assert(customVerifierReceipt.targetModel === "sonnet", "custom verifier dispatch should prefer roles.verifier.model");
   assert(customVerifierReceipt.executionRole === "nogra:verifier", "custom verifier dispatch should expose verifier executionRole");
   assert(customVerifierReceipt.executionEffort === "low", "custom verifier dispatch should carry roles.verifier.effort");
@@ -2171,7 +2126,7 @@ function main() {
   assert(customVerifierReceipt.executionRuntimeSource === "runtimePolicy.roles.verifier", "custom verifier dispatch should record verifier runtime source");
   assert(customVerifierReceipt.executionCrossing?.effort === "low", "custom verifier execution crossing should carry roles.verifier.effort");
   assert(customVerifierReceipt.executionCrossing?.context === "tight", "custom verifier execution crossing should carry roles.verifier.context");
-  const customLargerReceipt = run(["dispatch", "--root", temp, "--brief-id", largerSaved.briefId]);
+  const customLargerReceipt = dispatchApproved(temp, largerSaved.briefId);
   assert(customLargerReceipt.executionMaxTurns === largerReceipt.executionMaxTurns, "custom executor maxTurns below brief-derived sizing should not clamp down");
   assert(customLargerReceipt.executionSizing?.factors?.configuredCeiling === 40, "custom lower maxTurns should be recorded as configured ceiling");
   assert(customLargerReceipt.executionSizing?.factors?.cap === 96, "custom lower maxTurns should not reduce the default ceiling");
@@ -2181,12 +2136,19 @@ function main() {
 
   customConfig.runtimePolicy.roles.executor.maxTurns = 128;
   writeJson(path.join(temp, ".nogra", "config.json"), customConfig);
-  const customRaisedReceipt = run(["dispatch", "--root", temp, "--brief-id", oversizedSaved.briefId]);
+  const customRaisedReceipt = dispatchApproved(temp, oversizedSaved.briefId);
   assert(customRaisedReceipt.executionMaxTurns === 128, "custom executor maxTurns above default should raise the dispatch ceiling");
   assert(customRaisedReceipt.executionSizing?.factors?.cap === 128, "custom raised maxTurns should become the recorded ceiling below the absolute cap");
   assert(customRaisedReceipt.executionSizing?.requiresManagerDecision === true, "custom raised but still clamped dispatch should still require Manager decision");
-  assertRunFails(["dispatch", "--root", temp, "--brief-id", saved.briefId, "--max-turns", "5000"], "dispatch override above safety ceiling should fail");
+  const oversizedOverrideApproval = createApproval(temp, saved.briefId);
+  assertRunFails(
+    ["dispatch", "--root", temp, "--brief-id", saved.briefId, "--approval-id", oversizedOverrideApproval.approvalId, "--max-turns", "5000"],
+    "dispatch override above safety ceiling should fail"
+  );
 
+  const verifiedFinalize = finalizeForVerification(temp, receipt.runId);
+  assert(verifiedFinalize.status === "ok", "executor run should return before canonical verification");
+  const verifiedEvidence = saveVerificationEvidence(temp, receipt.runId, receipt.briefId, "runtime.verify.explicit");
   const verified = run(
     ["verify", "--root", temp, "--run-id", receipt.runId],
     {
@@ -2198,7 +2160,8 @@ function main() {
           status: "met",
           evidence: "Draft and promoted files exist."
         }
-      ]
+      ],
+      evidenceIds: [verifiedEvidence.evidence.evidenceId]
     }
   );
   assert(verified.status === "ok", "verify support should record ok status");
@@ -2212,7 +2175,9 @@ function main() {
   assert(staleStatus.ledger?.watermark > staleStatus.ledger?.checkpointSourceWatermark, "status should detect ledger ahead of checkpoint");
   assert(staleStatus.ledger?.checkpointStatus === "stale", "status should report stale checkpoint when ledger is ahead");
 
-  const reasonlessReceipt = run(["dispatch", "--root", temp, "--brief-id", saved.briefId]);
+  const reasonlessReceipt = dispatchApproved(temp, saved.briefId);
+  const reasonlessFinalize = finalizeForVerification(temp, reasonlessReceipt.runId);
+  assert(reasonlessFinalize.status === "ok", "reasonless verification fixture should first record executor outcome");
   const reasonlessVerification = run(
     ["verify", "--root", temp, "--run-id", reasonlessReceipt.runId],
     {
@@ -2229,7 +2194,9 @@ function main() {
     "reasonless non-ship verify should not write validation artifact"
   );
 
-  const reasonedReceipt = run(["dispatch", "--root", temp, "--brief-id", saved.briefId]);
+  const reasonedReceipt = dispatchApproved(temp, saved.briefId);
+  const reasonedFinalize = finalizeForVerification(temp, reasonedReceipt.runId);
+  assert(reasonedFinalize.status === "ok", "reasoned verification fixture should first record executor outcome");
   const reasonedVerification = run(
     ["verify", "--root", temp, "--run-id", reasonedReceipt.runId],
     {
@@ -2247,7 +2214,10 @@ function main() {
     "reasoned non-ship verify should write validation artifact"
   );
 
-  const inferredReceipt = run(["dispatch", "--root", temp, "--brief-id", saved.briefId]);
+  const inferredReceipt = dispatchApproved(temp, saved.briefId);
+  const inferredFinalize = finalizeForVerification(temp, inferredReceipt.runId);
+  assert(inferredFinalize.status === "ok", "inferred verification fixture should first record executor outcome");
+  const inferredEvidence = saveVerificationEvidence(temp, inferredReceipt.runId, inferredReceipt.briefId, "runtime.verify.inferred");
   const inferredVerified = run(
     ["verify", "--root", temp, "--run-id", inferredReceipt.runId],
     {
@@ -2258,7 +2228,8 @@ function main() {
           status: "met",
           evidence: "Draft and promoted files exist."
         }
-      ]
+      ],
+      evidenceIds: [inferredEvidence.evidence.evidenceId]
     }
   );
   assert(inferredVerified.status === "ok", "verify support should infer ok when all acceptance rows are met");
@@ -2289,6 +2260,8 @@ function main() {
           "dispatch receipt local with default/custom runtime policy mapping",
           "ledger events and finalize-run carry monotonic watermarks and session anchors",
           "dispatch and handoff expose explicit role/runtime/effort facts",
+          "strict role leases bind agent/run/scope and fail closed on escalation",
+          "structured Executor/Verifier reports bind canonical evidence before Manager verdict",
           "agentic loop turn-limit exhaustion carries plain return reason and pending state",
           "nested cwd resolves to nearest Nogra root with no-.nogra fallback",
           "nested setup targets requested root instead of parent Nogra root",

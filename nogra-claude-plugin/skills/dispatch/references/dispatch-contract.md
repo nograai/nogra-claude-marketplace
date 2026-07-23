@@ -27,9 +27,19 @@ The public plugin ships a scoped-worker profile:
 - spawn primitive: Claude Code `Agent`;
 - public `executor` and `verifier` frontmatter must use an explicit `tools`
   allowlist;
-- public `executor` and `verifier` must omit `Agent` from that allowlist, so
+- public `executor` and `verifier` must omit `Agent` and `Bash` from that
+  allowlist, so
   they cannot spawn nested subagents;
 - do not use `permissionMode` as the spawn wall for plugin agents;
+- Manager must create a single active `nogra.role.lease.v1` before spawn;
+- the global PreToolUse hook binds that lease to `agent_type` plus `agent_id`,
+  denies agent swaps and denies Executor writes outside canonical
+  `scopePatterns`;
+- Verifier has only Read, Grep and Glob. Manager owns every command/test probe
+  and persists its result as canonical evidence before verification;
+- both roles return `nogra.role.report.v1`; Executor reports claims only,
+  Verifier returns a bounded recommendation, and Manager alone writes the
+  canonical verdict;
 - if fan-out, fork synthesis or nested delegation is required, route to an
   internal or enterprise orchestration profile instead of widening the public
   worker role.
@@ -135,9 +145,27 @@ only when the gap changes the route, stop criteria or approval decision.
 
 ## Run Records
 
-Local dispatch writes a queued transport run and event under
-`.nogra/transport/`. Dispatch state must keep role and runtime paired, for
-example `executionRole: "nogra:executor"` with
+After the Manager observes explicit GO, local dispatch first persists a
+brief-hashed and action-hashed `nogra.approval.v1`. The approval is single-use and authorizes
+dispatch only; Claude Code's native permissions remain authoritative for tool
+calls.
+
+Dispatch consumes that approval and writes `nogra.run.v2` under
+`.nogra/runs/`. Canonical run events use `nogra.run.event.v2` in the append-only
+`.nogra/ledger/events.jsonl`. `.nogra/transport/` remains the
+execution-artifact lane and frozen legacy read lane; v2 writers do not create a
+shadow transport run.
+
+The canonical run keeps three facts separate:
+
+- `lifecycle`: queued/running/returning/returned/verified/accepted/cancelled/archived;
+- `outcome`: executor result (`ok`, `partial`, `blocked`, `failed`, `cancelled`);
+- `verdict`: verification result (`ship`, `deviation`, `blocked`,
+  `decision_required`, `unverified`).
+
+Finalizing executor evidence sets `outcome`; verification sets `verdict`.
+Neither may overwrite the other. Dispatch state must keep role and runtime
+paired, for example `executionRole: "nogra:executor"` with
 `executionRuntime: "anthropic:sonnet"`.
 `owner` remains `Manager`. `nextOwner` is the next role id, for example
 `nogra:executor`; when dispatch sizing requires a Manager decision, `nextOwner`

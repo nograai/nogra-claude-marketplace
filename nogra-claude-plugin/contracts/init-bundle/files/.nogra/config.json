@@ -31,6 +31,8 @@
   "paths": {
     "hiddenRoot": ".nogra",
     "stateRoot": ".nogra/state",
+    "currentAnchor": ".nogra/state/CURRENT-ANCHOR.json",
+    "currentFacts": ".nogra/state/CURRENT-FACTS.json",
     "currentCheckpoint": ".nogra/state/SESSION-CHECKPOINT.md",
     "currentTasks": ".nogra/state/CURRENT-TASKS.md",
     "decisions": ".nogra/state/DECISIONS.md",
@@ -52,8 +54,10 @@
     "runtimeMetadata": ".nogra/memory/runtime"
   },
   "bootPolicy": {
-    "schema": "nogra.boot_policy.v1",
+    "schema": "nogra.boot_policy.v2",
     "mode": "detect",
+    "stateMachine": ["fresh", "detected", "focused", "resumed", "recovering"],
+    "checkpointSemantics": "detection-only",
     "cwdResolution": "nearest-nogra-then-workspace-index",
     "autoLoad": false,
     "writeOnSessionStart": false,

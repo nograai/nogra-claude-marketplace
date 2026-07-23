@@ -1,6 +1,6 @@
 ---
 name: nogra-ground
-description: Re-ground the session before proposing or acting — read the plan and state, verify claims against facts (never guess), put the hat on, and match the operator's register. Use when the user runs /nogra:ground, or when the session has drifted: proposed off-plan, guessed instead of checked, misread context, or lost the operator's register.
+description: "Re-ground the session before proposing or acting — read the plan and state, verify claims against facts (never guess), put the hat on, and match the operator's register. Use when the user runs /nogra:ground, or when the session has drifted: proposed off-plan, guessed instead of checked, misread context, or lost the operator's register."
 ---
 
 # Nogra Ground
@@ -29,7 +29,7 @@ Use this skill when the user:
 ## Flow
 
 1. **Read before you propose.** Before suggesting a next step, read the actual plan and state —
-   `CLAUDE.md` and the workspace map (`.nogra/index/`), the current checkpoint and tasks
+   `CLAUDE.md` and the workspace map (`.nogra/index/`), the current Anchor projections and tasks
    (`.nogra/state/`, treated as PROJECTIONS — the ledger is truth), and durable memory. Do not
    propose from conversation-memory alone.
 2. **Read the drawings for the domain you are about to touch.** If the workspace keeps a

@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/run-event-v2.schema.json",
+  "title": "Nogra Run Event v2",
+  "type": "object",
+  "required": [
+    "schema",
+    "eventId",
+    "eventType",
+    "type",
+    "workspaceId",
+    "runId",
+    "briefId",
+    "approvalId",
+    "approvalActionHash",
+    "lifecycle",
+    "outcome",
+    "verdict",
+    "ledgerWatermark",
+    "createdAt",
+    "generatedAt"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nogra.run.event.v2"
+    },
+    "eventId": {
+      "type": "string",
+      "pattern": "^run-event-[A-Za-z0-9_.-]+$"
+    },
+    "eventType": {
+      "type": "string",
+      "enum": ["run_queued", "run_started", "run_returning", "run_returned", "run_verified", "run_accepted", "run_cancelled", "run_archived"]
+    },
+    "type": {
+      "type": "string",
+      "enum": ["run_queued", "run_started", "run_returning", "run_returned", "run_verified", "run_accepted", "run_cancelled", "run_archived"]
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_.-]+$"
+    },
+    "briefId": {
+      "type": "string",
+      "pattern": "^brief-[A-Za-z0-9_.-]+$"
+    },
+    "approvalId": {
+      "type": "string",
+      "pattern": "^approval-[A-Za-z0-9_.-]+$"
+    },
+    "approvalActionHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "lifecycle": {
+      "type": "string",
+      "enum": ["queued", "running", "returning", "returned", "verified", "accepted", "cancelled", "archived"]
+    },
+    "outcome": {
+      "type": ["string", "null"],
+      "enum": [null, "ok", "partial", "blocked", "failed", "cancelled"]
+    },
+    "verdict": {
+      "type": ["string", "null"],
+      "enum": [null, "ship", "deviation", "blocked", "decision_required", "unverified"]
+    },
+    "ledgerWatermark": {
+      "type": "integer"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sessionId": {
+      "type": "string"
+    },
+    "transcriptId": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "stopReason": {
+      "type": "string"
+    },
+    "returnReason": {
+      "type": "string"
+    },
+    "pendingState": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "executionRole": {
+      "type": "string"
+    },
+    "executionRuntime": {
+      "type": "string"
+    },
+    "executionRuntimeSource": {
+      "type": "string"
+    },
+    "executionLabel": {
+      "type": "string"
+    },
+    "verificationRole": {
+      "type": "string"
+    },
+    "verificationRuntime": {
+      "type": "string"
+    },
+    "verificationRuntimeSource": {
+      "type": "string"
+    },
+    "verificationStatus": {
+      "type": "string"
+    },
+    "verificationLabel": {
+      "type": "string"
+    },
+    "nextOwner": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

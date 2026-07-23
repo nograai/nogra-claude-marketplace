@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/evidence-v1.schema.json",
+  "title": "Nogra Evidence v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "evidenceId",
+    "workspaceId",
+    "createdAt",
+    "subject",
+    "summary",
+    "evidenceLevel",
+    "producer",
+    "method",
+    "result",
+    "artifacts",
+    "sourceRefs",
+    "verdictIds",
+    "runId",
+    "briefId",
+    "contentHash",
+    "redactions",
+    "metadata"
+  ],
+  "properties": {
+    "schema": { "const": "nogra.evidence.v1" },
+    "evidenceId": { "type": "string", "pattern": "^evidence-[a-f0-9]{20}$" },
+    "workspaceId": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "subject": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string", "minLength": 1 },
+    "evidenceLevel": {
+      "type": "string",
+      "enum": ["reported", "edited", "tested", "verified"]
+    },
+    "producer": {
+      "type": "object",
+      "required": ["type", "ref"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["operator", "manager", "executor", "verifier", "tool", "repository"]
+        },
+        "ref": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "method": {
+      "type": "object",
+      "required": ["type", "description", "command"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["report", "edit", "inspection", "command", "test", "verification", "operator_record"]
+        },
+        "description": { "type": "string", "minLength": 1 },
+        "command": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": ["status", "exitCode"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["observed", "pass", "fail", "partial", "inconclusive"]
+        },
+        "exitCode": { "type": ["integer", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ref", "sha256", "mediaType"],
+        "properties": {
+          "ref": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "mediaType": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "sourceRefs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "verdictIds": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^verdict-[A-Za-z0-9_.-]+$" }
+    },
+    "runId": { "type": ["string", "null"], "pattern": "^run-[A-Za-z0-9_.-]+$" },
+    "briefId": { "type": ["string", "null"], "pattern": "^brief-[A-Za-z0-9_.-]+$" },
+    "contentHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "redactions": { "type": "array", "items": { "type": "string" } },
+    "metadata": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": false
+}

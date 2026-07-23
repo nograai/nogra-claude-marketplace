@@ -26,7 +26,15 @@ function run(files) {
     for (const [name, content] of Object.entries(files)) writeFileSync(join(memDir, name), content);
   }
   const out = execFileSync("node", [HOOK], {
-    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_PROJECT_DIR: projectDir },
+    env: {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      CLAUDE_CONFIG_DIR: join(home, ".claude"),
+      CLAUDE_PROJECT_DIR: projectDir,
+      NOGRA_NATIVE_MEMORY_DIR: "",
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY: ""
+    },
     encoding: "utf8",
   });
   rmSync(home, { recursive: true, force: true });
@@ -42,7 +50,7 @@ ok("under-budget native -> no nudge", run({ "MEMORY.md": "- one small memory\n" 
 // 3. over TOTAL budget -> exactly one consolidate nudge
 const big = run({ "project-huge.md": "x".repeat(17000) });
 ok("over-budget native -> nudge injected + wrapped", big.startsWith("<nogra-memory>") && /consolidat/i.test(big));
-ok("nudge names the drift (past load window)", /past the load window/i.test(big));
+ok("nudge names the bounded continuity drift", /bounded continuity threshold/i.test(big));
 
 // 4. index over the 200-line load cutoff -> nudge (important stuff now below Claude's cutoff)
 const longIdx = run({ "MEMORY.md": Array.from({ length: 260 }, (_, i) => `- line ${i}`).join("\n") });
@@ -50,7 +58,8 @@ ok("index > 200 lines -> nudge (below load cutoff)", /index 2\d\d lines/i.test(l
 
 // 5. THE PIN (Layer 1): USER.md in the native home -> pinned into context every session
 const pinned = run({ "MEMORY.md": "- small\n", "USER.md": "Prefers Danish. Direct tone. Verify with facts." });
-ok("USER.md present -> profile pinned", pinned.startsWith("<nogra-user-profile>") && pinned.includes("Prefers Danish"));
+ok("USER.md present -> advisory profile pinned", pinned.startsWith("<nogra-user-profile authority=\"advisory_projection_only\">") && pinned.includes("Prefers Danish"));
+ok("USER.md pin -> fact boundary explicit", pinned.includes("cannot verify project state") && pinned.includes(".nogra facts, evidence and verdicts"));
 ok("pin without drift -> no nudge attached", !pinned.includes("<nogra-memory>"));
 
 // 6. no USER.md -> no pin block invented (native index alone stays quiet)
@@ -64,7 +73,7 @@ ok("over-bound USER.md -> flagged for consolidation", /over its 1375-char bound/
 // 8. pin + drift together -> both blocks, pin first
 const both = run({ "USER.md": "The user profile.", "project-huge.md": "x".repeat(17000) });
 ok("pin + over-budget -> profile first, then nudge",
-  both.indexOf("<nogra-user-profile>") === 0 && both.indexOf("<nogra-memory>") > both.indexOf("</nogra-user-profile>"));
+  both.indexOf("<nogra-user-profile authority=\"advisory_projection_only\">") === 0 && both.indexOf("<nogra-memory>") > both.indexOf("</nogra-user-profile>"));
 
 // 9. empty USER.md -> no empty pin block
 ok("empty USER.md -> no pin block", !run({ "USER.md": "   \n" }).includes("<nogra-user-profile>"));
