@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0-internal.2 — 2026-07-24 — Quality Pass 0 unified candidate
+## 0.9.0-internal.3 — 2026-07-24 — Quality Pass 0 unified candidate
 
 - Added the canonical contract spine
   `brief.v1 -> approval.v1 -> run.v2 -> run-event.v2 -> evidence.v1 -> verdict.v1` with
