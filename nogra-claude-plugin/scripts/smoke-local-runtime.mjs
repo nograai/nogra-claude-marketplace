@@ -21,6 +21,8 @@ const evidenceFactCheck = path.join(pluginRoot, "scripts", "smoke-evidence-fact-
 const roleIsolationCheck = path.join(pluginRoot, "scripts", "smoke-role-isolation-v1.mjs");
 const bootMemoryCheck = path.join(pluginRoot, "scripts", "smoke-boot-memory-v1.mjs");
 const hiddenScoringIsolationCheck = path.join(pluginRoot, "scripts", "smoke-hidden-scoring-isolation-v1.mjs");
+const treeSyncCheck = path.join(pluginRoot, "scripts", "smoke-tree-sync.mjs");
+const changelogLoopCheck = path.join(pluginRoot, "scripts", "smoke-changelog-loop.mjs");
 const gateTriadCheck = path.join(pluginRoot, "scripts", "smoke-gate-triad.mjs");
 const gateVisibilityCheck = path.join(pluginRoot, "scripts", "smoke-gate-visibility.mjs");
 const gateArmingCheck = path.join(pluginRoot, "scripts", "smoke-gate-arming.mjs");
@@ -342,6 +344,16 @@ function main() {
     stdio: "inherit"
   });
   execFileSync(process.execPath, [hiddenScoringIsolationCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  execFileSync(process.execPath, [treeSyncCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  execFileSync(process.execPath, [changelogLoopCheck], {
     cwd: pluginRoot,
     encoding: "utf8",
     stdio: "inherit"

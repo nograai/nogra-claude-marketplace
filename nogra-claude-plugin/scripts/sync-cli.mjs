@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Nogra Sync CLI — the human handle on the sync edges (backs the /nogra:sync skill).
 //
-// Verbs: status (default) · run · pull · push · bind <endpoint> · off
+// Verbs: status (default) · run · pull · push · doctor · tree [pull|push] · bind <endpoint> · off
 //
 // Contract (binding):
 // - The token NEVER passes through this tool: not as an argument, not in output. Status
@@ -17,6 +17,15 @@ import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } fr
 import { join, dirname } from "node:path";
 import { syncPull, syncPush, syncDir } from "../runtime/local/sync-client.mjs";
 import { resolveNativeMemory } from "../runtime/local/native-memory.mjs";
+import {
+  gitRun,
+  treeFetch,
+  treeState,
+  readLocalLedger,
+  readRemoteLedger,
+  ledgerCheck,
+  treePlan,
+} from "../runtime/local/tree-sync.mjs";
 
 // S-A (16/07, cwd-fælden): roden findes OPAD — nærmeste .nogra/ fra cwd og op. Kørt fra en
 // undermappe virker alt; kørt UDENFOR workspacet siger vi det HØJT i stedet for det stille
@@ -421,7 +430,157 @@ async function main() {
     return 0;
   }
 
-  console.error(`unknown verb: ${verb} — use status | run | pull | push | doctor | bind <endpoint> | off`);
+  if (verb === "tree") {
+    // Tree movement is never automatic. The empty sub-verb is a read/check;
+    // pull and push require the operator to name the movement explicitly.
+    const sub = (arg || "").trim();
+    if (sub && !["pull", "push"].includes(sub)) {
+      console.error(`tree: unknown subcommand '${sub}' — use tree | tree pull | tree push`);
+      return 1;
+    }
+
+    const fetched = treeFetch(root);
+    if (!fetched.ok) {
+      console.log(
+        `fetch: FAILED (${fetched.error}) — ahead/behind is based on the last successful fetch`,
+      );
+    }
+    const state = treeState(root);
+    if (!state) {
+      console.log("tree: no git tree or upstream is available here");
+      receipt({ op: "tree", ok: false, error: "no-tree-or-upstream" });
+      return 1;
+    }
+    const check = ledgerCheck(
+      readLocalLedger(root),
+      readRemoteLedger(root, state.upstream),
+    );
+    const plan = treePlan(state, check);
+
+    console.log(`upstream: ${state.upstream}`);
+    console.log(
+      `tree:     ${
+        state.behind === 0 && state.ahead === 0
+          ? "converged"
+          : `behind ${state.behind} · ahead ${state.ahead}`
+      }`,
+    );
+    for (const commit of state.incomingCommits.slice(0, 12)) {
+      console.log(`  ← ${commit}`);
+    }
+    for (const commit of state.outgoingCommits.slice(0, 12)) {
+      console.log(`  → ${commit}`);
+    }
+    if (state.incomingFiles.length) {
+      console.log(
+        `reading plan (incoming, ${state.incomingFiles.length} files):\n${state.incomingFiles
+          .slice(0, 20)
+          .map((file) => `  ${file}`)
+          .join("\n")}`,
+      );
+    }
+    if (state.outgoingFiles.length) {
+      console.log(
+        `outgoing (${state.outgoingFiles.length} files):\n${state.outgoingFiles
+          .slice(0, 20)
+          .map((file) => `  ${file}`)
+          .join("\n")}`,
+      );
+    }
+    console.log(
+      `ledger:   ${check.verdict === "clean" ? "clean" : "COLLISION"} ` +
+        `(max watermark ${check.maxWatermark} · local-only ${check.localOnly} · remote-only ${check.remoteOnly})`,
+    );
+    for (const cure of check.cures) console.log(`  cure: ${cure}`);
+    console.log(
+      `plan:     ${plan.move}${plan.gated ? " [GATED]" : ""} — ${plan.reason}`,
+    );
+
+    if (!sub) {
+      receipt({
+        op: "tree",
+        ok: check.verdict === "clean",
+        plan: plan.move,
+        behind: state.behind,
+        ahead: state.ahead,
+        collisions: check.collisions.length,
+      });
+      return check.verdict === "clean" ? 0 : 1;
+    }
+
+    if (plan.gated) {
+      console.log(
+        `tree ${sub}: DENIED — ${
+          plan.move === "consolidate"
+            ? "the tree diverged"
+            : "the ledger check found a collision"
+        }; follow the named cure first`,
+      );
+      receipt({
+        op: `tree-${sub}`,
+        ok: false,
+        error: plan.move === "consolidate" ? "diverged" : "ledger-collision",
+      });
+      return 1;
+    }
+
+    if (sub === "pull") {
+      if (plan.move !== "pull") {
+        console.log(`tree pull: nothing to pull (plan is ${plan.move})`);
+        receipt({ op: "tree-pull", ok: true, skipped: plan.move });
+        return 0;
+      }
+      try {
+        gitRun(root, ["pull", "--ff-only"], { timeoutMs: 30000 });
+        console.log(
+          `tree pull: ok — fetched ${state.behind} commit(s); review the diff before the next move`,
+        );
+        receipt({ op: "tree-pull", ok: true, pulled: state.behind });
+        return 0;
+      } catch (error) {
+        const message = (error && error.message) || String(error);
+        console.log(`tree pull: FAILED — ${message}`);
+        receipt({
+          op: "tree-pull",
+          ok: false,
+          error: String(message).slice(0, 200),
+        });
+        return 1;
+      }
+    }
+
+    if (sub === "push") {
+      if (plan.move === "pull" || state.behind > 0) {
+        console.log("tree push: DENIED — the tree is behind; pull and review first");
+        receipt({ op: "tree-push", ok: false, error: "behind-pull-first" });
+        return 1;
+      }
+      if (plan.move !== "push") {
+        console.log(`tree push: nothing to push (plan is ${plan.move})`);
+        receipt({ op: "tree-push", ok: true, skipped: plan.move });
+        return 0;
+      }
+      try {
+        gitRun(root, ["push"], { timeoutMs: 30000 });
+        console.log(`tree push: ok — pushed ${state.ahead} commit(s)`);
+        receipt({ op: "tree-push", ok: true, pushed: state.ahead });
+        return 0;
+      } catch (error) {
+        const message = (error && error.message) || String(error);
+        console.log(`tree push: FAILED — ${message}`);
+        receipt({
+          op: "tree-push",
+          ok: false,
+          error: String(message).slice(0, 200),
+        });
+        return 1;
+      }
+    }
+  }
+
+  console.error(
+    `unknown verb: ${verb} — use status | run | pull | push | doctor | tree [pull|push] | bind <endpoint> | off`,
+  );
   return 1;
 }
 

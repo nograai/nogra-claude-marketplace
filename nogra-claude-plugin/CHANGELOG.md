@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Quality Pass 0
+## 0.9.0-internal.1 — 2026-07-24 — Quality Pass 0 unified candidate
 
 - Added the canonical contract spine
   `brief.v1 -> approval.v1 -> run.v2 -> run-event.v2 -> evidence.v1 -> verdict.v1` with
@@ -59,6 +59,14 @@
   `/nogra:transcript-diagnostic` skill. It reports bounded lexical observations
   and limitations with `authority=none`, neutral control/truth effects and no
   score or verdict. Preview writes nothing; saving requires explicit `--write`.
+- Restored the post-0.8.8 TREE sync leg on top of the Quality Pass runtime.
+  `tree` is a read/check, while `tree pull` and `tree push` remain explicit,
+  collision-gated operator actions with receipts. Hooks never move git.
+- Preserved the sync fingerprint's NUL domain separator as a visible source
+  escape so forensic text tools no longer classify `sync-client.mjs` as binary.
+- Restored the Claude Code changelog watcher as an explicit, fail-open
+  diagnostic. It is intentionally not a SessionStart hook: detection-only boot
+  must not hide network calls or state writes.
 
 ## 0.8.8 — 2026-07-17 "the adopt release" (the house's truth wins)
 
