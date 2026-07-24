@@ -1,6 +1,6 @@
 ---
 name: nogra-sync
-description: Show, run or configure Nogra Sync (the hosted-brain edges) — status with receipts, run the full pull→push cycle, pull/push on demand, bind a seat, or turn sync off. Use only when the user runs /nogra:sync or explicitly asks about Nogra sync state, syncing now, pulling/pushing the brain, or connecting this machine to their sync endpoint.
+description: Show, run or configure both Nogra Sync legs — brain status/run/pull/push with receipts, bind a seat, turn sync off, or inspect and explicitly move the git tree with its deterministic ledger check. Use only when the user runs /nogra:sync or explicitly asks about sync state, the brain, the tree between seats, or wiring this machine.
 ---
 
 # Nogra Sync
@@ -77,6 +77,25 @@ composing the secret.
 
 After a bind with a present token, offer a `pull` as the handshake proof — the
 first receipt with this seat's own timestamp is the "it works" moment.
+
+### `/nogra:sync tree` · `tree pull` · `tree push`
+
+The TREE leg moves workspace history between seats through git. It is never
+automatic:
+
+- `tree` fetches read-only, reports ahead/behind, shows commits and files as the
+  reading plan, and checks both ledger tails for watermark collisions.
+- `tree pull` performs a fast-forward pull only when the check is clean and the
+  local tree is strictly behind.
+- `tree push` pushes only when the check is clean and the local tree is strictly
+  ahead.
+- A diverged tree or watermark collision is gated. Report the named cure; there
+  is no force flag or implicit conflict resolution.
+
+Fetch is a read, but pull and push are state changes and require the operator to
+name the movement explicitly. Every check and movement writes a receipt with
+`op:"tree"`, `tree-pull`, or `tree-push`. Hooks and automatic sync edges must
+never invoke this leg.
 
 ### `/nogra:sync off`
 
