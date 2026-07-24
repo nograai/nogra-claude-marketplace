@@ -2032,7 +2032,19 @@ function main() {
     connectionMode: "local",
     customOperatorValue: "preserve-me",
     paths: {
-      currentCheckpoint: ".nogra/state/SESSION-CHECKPOINT.md"
+      currentCheckpoint: ".nogra/state/SESSION-CHECKPOINT.md",
+      memoryLocal: ".nogra/memory/local",
+      memoryIndex: ".nogra/memory/local/MEMORY.md",
+      memorySummaries: ".nogra/memory/local/summaries"
+    },
+    bootPolicy: {
+      schema: "nogra.boot_policy.v1",
+      mode: "project-local",
+      hintSources: [
+        ".nogra/state/SESSION-CHECKPOINT.md",
+        ".nogra/memory/local/MEMORY.md"
+      ],
+      customOperatorBootValue: "preserve-me"
     }
   });
   fs.writeFileSync(
@@ -2056,6 +2068,11 @@ function main() {
   assert(projectMigrationConfig.paths?.currentAnchor === ".nogra/state/CURRENT-ANCHOR.json", "workspace-migrate should add the canonical Anchor projection path");
   assert(projectMigrationConfig.paths?.currentFacts === ".nogra/state/CURRENT-FACTS.json", "workspace-migrate should add the canonical fact projection path");
   assert(projectMigrationConfig.bootPolicy?.schema === "nogra.boot_policy.v2", "workspace-migrate should add the boot state-machine contract");
+  assert(!Object.hasOwn(projectMigrationConfig.paths || {}, "memoryLocal"), "workspace-migrate should remove the retired memoryLocal path");
+  assert(!Object.hasOwn(projectMigrationConfig.paths || {}, "memoryIndex"), "workspace-migrate should remove the retired memoryIndex path");
+  assert(!Object.hasOwn(projectMigrationConfig.paths || {}, "memorySummaries"), "workspace-migrate should remove the retired memorySummaries path");
+  assert(!projectMigrationConfig.bootPolicy.hintSources.includes(".nogra/memory/local/MEMORY.md"), "workspace-migrate should remove the retired local-memory boot hint");
+  assert(projectMigrationConfig.bootPolicy.customOperatorBootValue === "preserve-me", "workspace-migrate should preserve unknown boot-policy values");
   const projectMigrationCheckpoint = fs.readFileSync(
     path.join(projectLocalMigration, ".nogra", "state", "SESSION-CHECKPOINT.md"),
     "utf8"

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0-internal.3 — 2026-07-24 — Quality Pass 0 unified candidate
+## 0.9.0-internal.4 — 2026-07-24 — Quality Pass 0 unified candidate
 
 - Added the canonical contract spine
   `brief.v1 -> approval.v1 -> run.v2 -> run-event.v2 -> evidence.v1 -> verdict.v1` with
@@ -71,6 +71,9 @@
   workspaces. It merge-preserves config and updates only `.nogra/` contract
   lanes, preventing full setup from copying hub-owned `brain/`, `inbox/` or
   `projects/` surfaces into project-local seats.
+- The migration explicitly upgrades known `nogra.boot_policy.v1` configs to
+  v2 and removes only the retired parallel-memory path/hint keys. Unknown
+  operator config remains preserved.
 
 ## 0.8.8 — 2026-07-17 "the adopt release" (the house's truth wins)
 

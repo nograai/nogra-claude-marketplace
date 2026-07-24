@@ -1568,7 +1568,28 @@ function mergeConfig(existing, incoming, options = {}, pathKey = "") {
       out[key] = mergeConfig(out[key], value, options, key);
     }
   }
-  return pathKey === "routingPolicy" ? stripObsoleteRoutingPolicy(out) : out;
+  if (pathKey === "routingPolicy") {
+    return stripObsoleteRoutingPolicy(out);
+  }
+  if (pathKey === "paths") {
+    // Phase 5 retired the parallel .nogra/memory/local store in favor of
+    // Claude Code's observable native Auto Memory. These are known obsolete
+    // config keys, not operator extensions.
+    delete out.memoryLocal;
+    delete out.memoryIndex;
+    delete out.memorySummaries;
+  }
+  if (pathKey === "bootPolicy") {
+    if (out.schema === "nogra.boot_policy.v1") {
+      out.schema = "nogra.boot_policy.v2";
+    }
+    if (Array.isArray(out.hintSources)) {
+      out.hintSources = out.hintSources.filter(
+        (source) => cleanInline(source) !== ".nogra/memory/local/MEMORY.md"
+      );
+    }
+  }
+  return out;
 }
 
 function applyInit(root, workspaceName, options = {}) {
