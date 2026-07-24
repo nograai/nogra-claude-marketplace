@@ -1616,7 +1616,7 @@ function applyInit(root, workspaceName, options = {}) {
         }
       } else if (normalized === ".nogra/state/SESSION-CHECKPOINT.md" && fs.existsSync(target)) {
         const current = readText(target);
-        const next = ensureCheckpointSourceWatermark(current, currentLedgerWatermark(root));
+        const next = normalizeCheckpointSourceWatermark(current);
         if (current !== next) {
           writeTextAtomic(target, next);
           action = "updated";
@@ -1721,12 +1721,12 @@ function workspaceMigrationPayload(root, options = {}) {
   const checkpointFile = checkpointPath(root, merged);
   if (fs.existsSync(checkpointFile)) {
     const current = readText(checkpointFile);
-    const next = ensureCheckpointSourceWatermark(current, currentLedgerWatermark(root));
+    const next = normalizeCheckpointSourceWatermark(current);
     if (current !== next) {
       changes.push({
         path: localPath(root, checkpointFile),
         action: "update",
-        reason: "add the factual ledger source watermark without replacing checkpoint content"
+        reason: "add or correct the checkpoint's own conservative source watermark without claiming current ledger freshness"
       });
     }
   }
@@ -1752,7 +1752,7 @@ function workspaceMigrationPayload(root, options = {}) {
         const current = readText(checkpointFile);
         writeTextAtomic(
           checkpointFile,
-          ensureCheckpointSourceWatermark(current, currentLedgerWatermark(root))
+          normalizeCheckpointSourceWatermark(current)
         );
       } else {
         writeTextAtomic(target, "");
@@ -2546,6 +2546,37 @@ function ensureCheckpointSourceWatermark(text, watermark = 0) {
     return normalized.replace(/^Created:\s*.+$/imu, (match) => `${match}\n${line}`);
   }
   return `${line}\n${normalized}`;
+}
+
+function declaredLegacyCheckpointWatermark(text) {
+  const heading = String(text || "")
+    .split(/\r?\n/u)
+    .slice(0, 8)
+    .join("\n");
+  const match = heading.match(/\bwm\s*[:#=-]?\s*(\d+)\b/iu);
+  return match ? Math.max(0, Number(match[1]) || 0) : null;
+}
+
+function normalizeCheckpointSourceWatermark(text) {
+  const declared = declaredLegacyCheckpointWatermark(text);
+  const explicit = String(text || "").match(/^SourceWatermark:\s*(\d+)\s*$/imu);
+
+  if (declared != null) {
+    if (explicit) {
+      const current = Number(explicit[1]);
+      if (current === declared) return text;
+      return String(text).replace(
+        /^SourceWatermark:\s*\d+\s*$/imu,
+        `SourceWatermark: ${declared}`
+      );
+    }
+    return ensureCheckpointSourceWatermark(text, declared);
+  }
+
+  // A legacy Markdown checkpoint without a self-declared watermark cannot be
+  // proven current merely because a ledger exists. Zero means unknown
+  // provenance; adapt or Anchor save may later advance it with evidence.
+  return ensureCheckpointSourceWatermark(text, 0);
 }
 
 function currentAnchorPath(root, config = {}) {
