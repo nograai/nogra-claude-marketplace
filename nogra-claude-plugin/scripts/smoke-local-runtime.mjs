@@ -2052,6 +2052,12 @@ function main() {
     "# Session Checkpoint\n\nUpdated: 2026-07-24\n\nOperator-owned content.\n",
     "utf8"
   );
+  fs.mkdirSync(path.join(projectLocalMigration, ".nogra", "ledger"), { recursive: true });
+  fs.writeFileSync(
+    path.join(projectLocalMigration, ".nogra", "ledger", "events.jsonl"),
+    `${JSON.stringify({ type: "legacy-event", ledgerWatermark: 1 })}\n`,
+    "utf8"
+  );
   const projectMigrationPreview = run(["workspace-migrate", "--root", projectLocalMigration]);
   assert(projectMigrationPreview.status === "ok" && projectMigrationPreview.mode === "preview", "workspace-migrate should preview before writing");
   assert(projectMigrationPreview.boundaries?.writesOnlyUnder === ".nogra/", "workspace-migrate should bind every write to .nogra");
@@ -2078,13 +2084,61 @@ function main() {
     "utf8"
   );
   assert(projectMigrationCheckpoint.includes("Operator-owned content."), "workspace-migrate should preserve checkpoint content");
-  assert(/^SourceWatermark: 0$/m.test(projectMigrationCheckpoint), "workspace-migrate should add a factual checkpoint watermark");
-  assert(fs.existsSync(path.join(projectLocalMigration, ".nogra", "ledger", ".gitkeep")), "workspace-migrate should create missing contract lanes under .nogra");
+  assert(
+    /^SourceWatermark: 0$/m.test(projectMigrationCheckpoint),
+    "workspace-migrate should mark unknown legacy checkpoint provenance as zero instead of guessing current ledger freshness"
+  );
+  assert(
+    !fs.existsSync(path.join(projectLocalMigration, ".nogra", "ledger", ".gitkeep")),
+    "workspace-migrate should not add a redundant lane marker when the ledger directory already exists"
+  );
   for (const forbiddenRootPath of ["brain", "inbox", "projects", "CLAUDE.md"]) {
     assert(!fs.existsSync(path.join(projectLocalMigration, forbiddenRootPath)), `workspace-migrate should not create ${forbiddenRootPath}`);
   }
   const projectMigrationSecondPass = run(["workspace-migrate", "--root", projectLocalMigration, "--apply"]);
   assert(projectMigrationSecondPass.changes.length === 0, "workspace-migrate should be idempotent");
+
+  const declaredWatermarkMigration = path.join(temp, "declared-watermark-migration");
+  fs.mkdirSync(path.join(declaredWatermarkMigration, ".nogra", "state"), { recursive: true });
+  fs.mkdirSync(path.join(declaredWatermarkMigration, ".nogra", "ledger"), { recursive: true });
+  writeJson(path.join(declaredWatermarkMigration, ".nogra", "config.json"), {
+    schema: "nogra.workspace.config.v1",
+    workspaceName: "Declared Watermark Migration",
+    workspaceId: "declared-watermark-migration",
+    connectionMode: "local",
+    paths: {
+      currentCheckpoint: ".nogra/state/SESSION-CHECKPOINT.md"
+    }
+  });
+  fs.writeFileSync(
+    path.join(declaredWatermarkMigration, ".nogra", "state", "SESSION-CHECKPOINT.md"),
+    "SourceWatermark: 400\n# SESSION-CHECKPOINT (wm 296) · stale-after: 2026-07-21\n\nOperator-owned legacy content.\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(declaredWatermarkMigration, ".nogra", "ledger", "events.jsonl"),
+    `${Array.from({ length: 400 }, (_, index) => JSON.stringify({ type: "legacy-event", ledgerWatermark: index + 1 })).join("\n")}\n`,
+    "utf8"
+  );
+  const declaredWatermarkPreview = run(["workspace-migrate", "--root", declaredWatermarkMigration]);
+  assert(
+    declaredWatermarkPreview.changes.some((change) => change.path === ".nogra/state/SESSION-CHECKPOINT.md"),
+    "workspace-migrate should detect a falsely current watermark that conflicts with the checkpoint heading"
+  );
+  run(["workspace-migrate", "--root", declaredWatermarkMigration, "--apply"]);
+  const declaredWatermarkCheckpoint = fs.readFileSync(
+    path.join(declaredWatermarkMigration, ".nogra", "state", "SESSION-CHECKPOINT.md"),
+    "utf8"
+  );
+  assert(
+    /^SourceWatermark: 296$/m.test(declaredWatermarkCheckpoint),
+    "workspace-migrate should preserve the watermark declared by legacy checkpoint content"
+  );
+  const declaredWatermarkStatus = run(["status", "--root", declaredWatermarkMigration]);
+  assert(
+    declaredWatermarkStatus.ledger?.checkpointStatus === "stale",
+    "a legacy checkpoint behind its ledger must remain visibly stale after migration"
+  );
 
   const staleRoutingWorkspace = path.join(temp, "stale-routing-workspace");
   fs.mkdirSync(path.join(staleRoutingWorkspace, ".nogra"), { recursive: true });
