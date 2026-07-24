@@ -92,6 +92,7 @@ function usage() {
     "  node scripts/nogra-local.mjs registry [--root <dir>] [--json]",
     "  node scripts/nogra-local.mjs init-bundle [--root <dir>] [--workspace-name <name>] [--json]",
     "  node scripts/nogra-local.mjs init --apply [--root <dir>] [--workspace-name <name>] [--json]",
+    "  node scripts/nogra-local.mjs workspace-migrate [--apply] [--root <existing-nogra-dir>] [--json]",
     "  node scripts/nogra-local.mjs create-project <name> [--root <hub-dir>] [--workspace-id <id>] [--project-path <relative-dir>] [--apply] [--json]",
     "  node scripts/nogra-local.mjs brain-init [--apply] [--root <dir>] [--workspace-name <name>] [--json]",
     "  node scripts/nogra-local.mjs brief-contract [--root <dir>] [--json]",
@@ -1649,6 +1650,118 @@ const NOGRA_DOMAIN_DIRS = [
   "memory/runtime",
   "transport"
 ];
+
+function workspaceMigrationPayload(root, options = {}) {
+  const configFile = path.join(root, ".nogra", "config.json");
+  if (!fs.existsSync(configFile)) {
+    return {
+      schema: "nogra.workspace.migration.v1",
+      generatedAt: now(),
+      status: "blocked",
+      mode: options.apply ? "apply" : "preview",
+      root,
+      error: "missing-config",
+      guidance: "This command migrates an existing Nogra workspace. Run /nogra:setup for a new workspace."
+    };
+  }
+
+  let existing;
+  try {
+    existing = readJson(configFile);
+  } catch (error) {
+    return {
+      schema: "nogra.workspace.migration.v1",
+      generatedAt: now(),
+      status: "blocked",
+      mode: options.apply ? "apply" : "preview",
+      root,
+      error: "invalid-config",
+      detail: error.message,
+      guidance: "The existing config is invalid JSON. No files were changed."
+    };
+  }
+
+  const bundle = initBundlePayload(root, existing.workspaceName || "");
+  const configEntry = bundle.files.find((file) => file.path === ".nogra/config.json");
+  const incoming = JSON.parse(configEntry.content);
+  const merged = mergeConfig(existing, incoming, { migrateLocal: true });
+  const currentConfigText = readText(configFile);
+  const nextConfigText = `${JSON.stringify(merged, null, 2)}\n`;
+  const changes = [];
+
+  if (currentConfigText !== nextConfigText) {
+    changes.push({
+      path: ".nogra/config.json",
+      action: "update",
+      reason: "merge missing release defaults while preserving user values and unknown keys"
+    });
+  }
+
+  const checkpointFile = checkpointPath(root, merged);
+  if (fs.existsSync(checkpointFile)) {
+    const current = readText(checkpointFile);
+    const next = ensureCheckpointSourceWatermark(current, currentLedgerWatermark(root));
+    if (current !== next) {
+      changes.push({
+        path: localPath(root, checkpointFile),
+        action: "update",
+        reason: "add the factual ledger source watermark without replacing checkpoint content"
+      });
+    }
+  }
+
+  for (const directory of NOGRA_DOMAIN_DIRS) {
+    const keepFile = path.join(root, ".nogra", directory, ".gitkeep");
+    if (!fs.existsSync(keepFile)) {
+      changes.push({
+        path: localPath(root, keepFile),
+        action: "create",
+        reason: "create the missing Nogra contract lane marker"
+      });
+    }
+  }
+
+  if (options.apply) {
+    for (const change of changes) {
+      const target = resolveWorkspacePath(root, change.path).target;
+      if (change.path === ".nogra/config.json") {
+        writeTextAtomic(target, nextConfigText);
+      } else if (target === checkpointFile) {
+        const current = readText(checkpointFile);
+        writeTextAtomic(
+          checkpointFile,
+          ensureCheckpointSourceWatermark(current, currentLedgerWatermark(root))
+        );
+      } else {
+        writeTextAtomic(target, "");
+      }
+    }
+  }
+
+  return {
+    schema: "nogra.workspace.migration.v1",
+    generatedAt: now(),
+    status: "ok",
+    mode: options.apply ? "apply" : "preview",
+    root,
+    workspaceId: cleanInline(existing.workspaceId),
+    changes,
+    counts: {
+      updated: changes.filter((change) => change.action === "update").length,
+      created: changes.filter((change) => change.action === "create").length,
+      preserved: changes.length ? 0 : 1
+    },
+    boundaries: {
+      writesOnlyUnder: ".nogra/",
+      appFilesChanged: false,
+      rootClaudeChanged: false,
+      brainChanged: false,
+      inboxChanged: false,
+      projectsLaneChanged: false,
+      factsInvented: false
+    }
+  };
+}
 
 function workspaceIndexEntry(values) {
   return {
@@ -5892,7 +6005,7 @@ function main() {
     console.log(usage());
     return 0;
   }
-  const targetsRequestedRoot = new Set(["init", "init-bundle"]);
+  const targetsRequestedRoot = new Set(["init", "init-bundle", "workspace-migrate"]);
   const root = workspaceRoot(options, { nearestNogra: !targetsRequestedRoot.has(command) });
   let payload;
   if (command === "status") {
@@ -5909,6 +6022,8 @@ function main() {
     } else {
       payload = applyInit(root, options["workspace-name"] || "", { migrateLocal: Boolean(options["migrate-local"]) });
     }
+  } else if (command === "workspace-migrate") {
+    payload = workspaceMigrationPayload(root, { apply: Boolean(options.apply) });
   } else if (command === "create-project" || command === "create") {
     payload = createProject(root, {
       name: options._[1] || options.name || "",
