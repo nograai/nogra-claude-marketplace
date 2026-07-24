@@ -51,6 +51,27 @@ the folder being set up.
 1. Confirm the current working directory in one short sentence.
 2. Inspect the folder and report whether it is empty, already Nogra-enabled or
    an existing project.
+   - If `.nogra/config.json` already exists, this is an upgrade, not first
+     setup. Do not run the full init bundle: that could scaffold hub-level
+     `brain/`, `inbox/` or `projects/` surfaces inside a project-local seat.
+     Instead preview the bounded migration:
+
+     ```bash
+     node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" workspace-migrate --root "<absolute-workspace-root>" --json
+     ```
+
+     Show every returned change and the `boundaries` object. Ask for explicit
+     GO, then apply only that preview:
+
+     ```bash
+     node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" workspace-migrate --apply --root "<absolute-workspace-root>" --json
+     ```
+
+     The migration writes only under the existing `.nogra/`: it merge-preserves
+     config values, adds missing contract lanes and checkpoint watermark
+     metadata, and never creates root `CLAUDE.md`, `brain/`, `inbox/` or
+     `projects/`. Report the result and stop this setup flow. `/nogra:adapt`
+     remains the separate project-understanding step.
 3. Ask the user to proceed with value-first language and make the merge-safe
    boundary explicit. Use wording like:
 

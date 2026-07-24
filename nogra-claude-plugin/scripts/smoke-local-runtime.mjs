@@ -2022,6 +2022,53 @@ function main() {
   assert(legacyAfter.continuity?.status === "ready", "legacy status should report ready after migration");
   assert(legacyAfter.ledger?.anchorStatus === "missing", "legacy Markdown must not auto-upgrade into a semantic Anchor");
 
+  const projectLocalMigration = path.join(temp, "project-local-migration");
+  fs.mkdirSync(path.join(projectLocalMigration, ".nogra", "state"), { recursive: true });
+  writeJson(path.join(projectLocalMigration, ".nogra", "config.json"), {
+    schema: "nogra.workspace.config.v1",
+    releaseVersion: "v1.0.0",
+    workspaceName: "Project Local Migration",
+    workspaceId: "project-local-migration",
+    connectionMode: "local",
+    customOperatorValue: "preserve-me",
+    paths: {
+      currentCheckpoint: ".nogra/state/SESSION-CHECKPOINT.md"
+    }
+  });
+  fs.writeFileSync(
+    path.join(projectLocalMigration, ".nogra", "state", "SESSION-CHECKPOINT.md"),
+    "# Session Checkpoint\n\nUpdated: 2026-07-24\n\nOperator-owned content.\n",
+    "utf8"
+  );
+  const projectMigrationPreview = run(["workspace-migrate", "--root", projectLocalMigration]);
+  assert(projectMigrationPreview.status === "ok" && projectMigrationPreview.mode === "preview", "workspace-migrate should preview before writing");
+  assert(projectMigrationPreview.boundaries?.writesOnlyUnder === ".nogra/", "workspace-migrate should bind every write to .nogra");
+  assert(projectMigrationPreview.boundaries?.brainChanged === false, "workspace-migrate should explicitly preserve the hub-owned brain boundary");
+  assert(!fs.existsSync(path.join(projectLocalMigration, "brain")), "workspace-migrate preview should not scaffold a project-local brain");
+  assert(
+    !JSON.parse(fs.readFileSync(path.join(projectLocalMigration, ".nogra", "config.json"), "utf8")).paths?.currentAnchor,
+    "workspace-migrate preview should not change config"
+  );
+  const projectMigrationApply = run(["workspace-migrate", "--root", projectLocalMigration, "--apply"]);
+  assert(projectMigrationApply.status === "ok" && projectMigrationApply.mode === "apply", "workspace-migrate should apply after the explicit flag");
+  const projectMigrationConfig = JSON.parse(fs.readFileSync(path.join(projectLocalMigration, ".nogra", "config.json"), "utf8"));
+  assert(projectMigrationConfig.customOperatorValue === "preserve-me", "workspace-migrate should preserve unknown operator config");
+  assert(projectMigrationConfig.paths?.currentAnchor === ".nogra/state/CURRENT-ANCHOR.json", "workspace-migrate should add the canonical Anchor projection path");
+  assert(projectMigrationConfig.paths?.currentFacts === ".nogra/state/CURRENT-FACTS.json", "workspace-migrate should add the canonical fact projection path");
+  assert(projectMigrationConfig.bootPolicy?.schema === "nogra.boot_policy.v2", "workspace-migrate should add the boot state-machine contract");
+  const projectMigrationCheckpoint = fs.readFileSync(
+    path.join(projectLocalMigration, ".nogra", "state", "SESSION-CHECKPOINT.md"),
+    "utf8"
+  );
+  assert(projectMigrationCheckpoint.includes("Operator-owned content."), "workspace-migrate should preserve checkpoint content");
+  assert(/^SourceWatermark: 0$/m.test(projectMigrationCheckpoint), "workspace-migrate should add a factual checkpoint watermark");
+  assert(fs.existsSync(path.join(projectLocalMigration, ".nogra", "ledger", ".gitkeep")), "workspace-migrate should create missing contract lanes under .nogra");
+  for (const forbiddenRootPath of ["brain", "inbox", "projects", "CLAUDE.md"]) {
+    assert(!fs.existsSync(path.join(projectLocalMigration, forbiddenRootPath)), `workspace-migrate should not create ${forbiddenRootPath}`);
+  }
+  const projectMigrationSecondPass = run(["workspace-migrate", "--root", projectLocalMigration, "--apply"]);
+  assert(projectMigrationSecondPass.changes.length === 0, "workspace-migrate should be idempotent");
+
   const staleRoutingWorkspace = path.join(temp, "stale-routing-workspace");
   fs.mkdirSync(path.join(staleRoutingWorkspace, ".nogra"), { recursive: true });
   writeJson(path.join(staleRoutingWorkspace, ".nogra", "config.json"), {

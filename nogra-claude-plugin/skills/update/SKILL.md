@@ -62,9 +62,17 @@ with the confirmed absolute path of the workspace.
      `/nogra:verify`, `/nogra:status`, `/nogra:watch`, `/nogra:update`,
      `/nogra:help`;
    - whether the response suggests a local workspace action is needed.
-4. If the user asks to refresh local workspace skeleton files, ask for explicit
-   GO before running the local init bundle/apply path. Do not do this as part
-   of a normal update check.
+4. If the workspace already has `.nogra/config.json` and the user asks to
+   refresh its local contract layout, preview `workspace-migrate` first:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" workspace-migrate --root "<absolute-workspace-root>" --json
+   ```
+
+   Ask for explicit GO before repeating it with `--apply`. This upgrade lane
+   writes only under the existing `.nogra/` and never scaffolds root
+   `CLAUDE.md`, `brain/`, `inbox/` or `projects/`. Use the full setup/init flow
+   only when `.nogra/config.json` does not exist.
 
 ## Output
 
