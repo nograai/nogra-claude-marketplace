@@ -1711,8 +1711,9 @@ function workspaceMigrationPayload(root, options = {}) {
   }
 
   for (const directory of NOGRA_DOMAIN_DIRS) {
+    const laneDirectory = path.join(root, ".nogra", directory);
     const keepFile = path.join(root, ".nogra", directory, ".gitkeep");
-    if (!fs.existsSync(keepFile)) {
+    if (!fs.existsSync(laneDirectory)) {
       changes.push({
         path: localPath(root, keepFile),
         action: "create",
