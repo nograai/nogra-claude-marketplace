@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.9 — 2026-08-05 "the dayclose release" (close the day like the ledger opened it)
+
+- **New skill: `/nogra:dayclose`** — the evening counterpart to the morning brief. Seven
+  measured steps: sweep every open thread (agents, background jobs, dev services, overnight
+  wakers — each survivor checked against the pinned-model law), stamp the day in the ledger,
+  update every projection in the same move, run the memory write-loop, inbox hygiene, git
+  honesty (every touched repo named committed-or-PARKED), and a final Pinocchio pass where
+  everything claimed closed is measured closed. `--weekly` extends the close with a
+  week-level digest incl. north-star metric delta. Graded KEEP on live-run evidence
+  (first real close 2026-08-04) before publish.
+- **Honesty rule hardened by the first live run:** predictions about what happens after
+  close ("drains by itself", "resolves overnight") require a mechanism receipt or must be
+  written as an OPEN item — the first close carried one such line and the morning proved
+  it false. The rule now ships in the skill.
+- **`/nogra:status` invocation discipline** — fixes the operator-ruled failure where a
+  pinned headless seat ran ad-hoc tool calls instead of loading the skill first
+  (pre-measuring), or answered from session memory (stale render). The skill now states:
+  loading it is the FIRST action of the turn; the skill directs the measurements, never
+  the reverse; every shown value comes from a fresh, skill-directed read. Validated
+  headless on a pinned seat before publish: command-expansion first, references read
+  before any measurement, output in the spec form.
+
 ## 0.8.8 — 2026-07-17 "the adopt release" (the house's truth wins)
 
 - **Union seats now ADOPT the home's consolidated truth on pull — they no longer union-grow it.**

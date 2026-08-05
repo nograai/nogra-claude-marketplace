@@ -1,12 +1,31 @@
 ---
 name: nogra-status
-description: Show compact Nogra ledger, workspace, version and recent local records. Use only when the user runs /nogra:status or explicitly asks for Nogra state, version, briefs, runs or events.
+description: "Show compact Nogra ledger, workspace, version and recent local records. Loading this skill is the FIRST action of the turn — before any tool call or any answer from session context; it directs the measurements, never the reverse. Use only when the user runs /nogra:status or explicitly asks for Nogra state, version, briefs, runs or events."
 ---
 
 # Nogra Ledger State
 
 Show a compact, human-readable Nogra ledger/state view. Do not dump raw runtime
 payloads, and do not present this as Claude's session `/status` view.
+
+## Invocation Discipline (read first)
+
+`/nogra:status` means: load this skill FIRST, then measure. The two known
+failure modes (operator-ruled 02/08) are exactly the reverse order:
+
+- **Pre-measuring** — calling ad-hoc tools before the skill loads, then
+  treating the skill as decoration. The skill defines WHAT to read and HOW to
+  present it; tool calls come after it, directed by it.
+- **Stale render** — answering from session memory or an earlier status view
+  without fresh reads. A status without fresh, skill-directed measurements
+  from THIS turn is a stale render, not a status — however recent the session
+  context feels.
+
+Every value shown (plugin version, workspace config, ledger watermark, runtime
+records, warnings) comes from a tool read performed after this skill loaded.
+If the skill text is already in context via command expansion this turn,
+follow it directly — do not re-invoke it, and do not substitute your own
+measurement plan for its data-source list.
 
 ## Required Version Lines
 
