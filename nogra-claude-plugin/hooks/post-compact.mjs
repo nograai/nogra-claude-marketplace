@@ -88,8 +88,8 @@ if (!hasNograConfig(root)) {
 }
 
 captureSessionAnchor(root, input, "PostCompact");
-const boot = resolveBootContext({ cwd: root });
 const source = compactSource(input);
+const boot = resolveBootContext({ cwd: root, sessionSource: "compact" });
 captureLiveHookEvent(root, input, { eventName: "PostCompact", decision: "context", reason: source });
 
 emitContext(`<!-- nogra-plugin:post-compact source=${source} -->
@@ -97,8 +97,9 @@ emitContext(`<!-- nogra-plugin:post-compact source=${source} -->
 workspaceId=${boot.workspaceId || ""}
 workspaceRoot=${boot.workspaceRoot || root}
 status=${boot.status || ""}
+state=${boot.state || ""}
 
-This is a thin continuity pointer after context compaction. It is not workflow policy. Do not relitigate Nogra routing after compaction. If current-state claims matter, read project-local .nogra/state files and current git state before acting.
+This is a thin recovery pointer after context compaction. Recovery is not Nogra GO and does not authorize continuation. Do not relitigate Nogra routing after compaction. If current-state claims matter, read only the project-local .nogra/state files and current git state needed for those claims.
 </NOGRA_COMPACT_POINTER>
 
 ${renderCacheSafeConvergenceGuardContext({ root, eventName: "PostCompact" })}`);

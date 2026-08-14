@@ -121,11 +121,12 @@ function emitContext(context) {
   );
 }
 
-function bootContextBlock(root) {
-  const boot = resolveBootContext({ cwd: root });
+function bootContextBlock(root, source) {
+  const boot = resolveBootContext({ cwd: root, sessionSource: source });
   const lines = [
     "<NOGRA_BOOT_CONTEXT>",
     "Nogra workspace context is available locally. Dynamic ledger, checkpoint, run, and project-index state is intentionally not injected at session start to preserve prompt-cache prefixes.",
+    `state=${boot.state}`,
     `status=${boot.status}`,
     `workspaceId=${boot.workspaceId || ""}`,
     `workspaceRoot=${boot.workspaceRoot || ""}`,
@@ -134,7 +135,7 @@ function bootContextBlock(root) {
     "autoLoaded=false",
     "</NOGRA_BOOT_CONTEXT>"
   ];
-  return `<!-- nogra-plugin:boot-context status=${boot.status} -->\n${lines.join("\n")}`;
+  return `<!-- nogra-plugin:boot-context state=${boot.state} status=${boot.status} -->\n${lines.join("\n")}`;
 }
 
 function sessionStartSource(input) {
@@ -154,13 +155,13 @@ PreToolUse is a narrow deterministic convergence gate for git/action risk only. 
 Session state lives in local .nogra/ records. Ledger state is the truth source; checkpoint state is a human-readable projection.
 </NOGRA_SESSION_BOOT>
 
-${bootContextBlock(root)}
+${bootContextBlock(root, source)}
 
 ${renderCacheSafeConvergenceGuardContext({ root, eventName: "SessionStart" })}`;
 }
 
 function resumePointerContext(root, config, source) {
-  const boot = resolveBootContext({ cwd: root });
+  const boot = resolveBootContext({ cwd: root, sessionSource: source });
   const plugin = pluginInstallInfo();
   return `<!-- nogra-plugin:session-resume source=${source} -->
 <NOGRA_SESSION_RESUME>
@@ -168,8 +169,9 @@ Nogra plugin: ${plugin.id} ref=${plugin.ref}.
 workspaceId=${boot.workspaceId || ""}
 workspaceRoot=${boot.workspaceRoot || root}
 status=${boot.status || ""}
+state=${boot.state || ""}
 
-This is a continuity pointer after a resumed session. Do not treat compacted or resumed chat summaries as project truth. If current-state claims matter, read the project-local .nogra/state files before acting.
+This is a continuity pointer after an explicit native resume. Native resume is not Nogra GO. Do not treat resumed chat summaries as project truth. If current-state claims matter, read the project-local .nogra/state files before acting.
 </NOGRA_SESSION_RESUME>
 
 ${renderCacheSafeConvergenceGuardContext({ root, eventName: "SessionStart" })}`;

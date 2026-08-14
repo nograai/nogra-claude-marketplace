@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/memory-resolution-v1.schema.json",
+  "title": "Nogra Native Memory Resolution v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "status",
+    "projectDir",
+    "identityRoot",
+    "configRoot",
+    "directory",
+    "resolvedDirectory",
+    "source",
+    "confidence",
+    "settingsSource",
+    "autoMemoryEnabled",
+    "readOnlyResolution",
+    "warnings"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nogra.memory.resolution.v1"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["resolved", "disabled", "unresolved"]
+    },
+    "projectDir": {
+      "type": "string"
+    },
+    "identityRoot": {
+      "type": "string"
+    },
+    "configRoot": {
+      "type": "string"
+    },
+    "directory": {
+      "type": "string"
+    },
+    "resolvedDirectory": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "managed-settings",
+        "runtime-override",
+        "local-settings",
+        "project-settings",
+        "user-settings",
+        "transcript-project",
+        "git-repository",
+        "project-root",
+        "disabled-environment",
+        "disabled-settings",
+        "invalid-settings",
+        "unsafe-symlink",
+        "unavailable"
+      ]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["configured", "exact", "derived", "none"]
+    },
+    "settingsSource": {
+      "type": "string"
+    },
+    "autoMemoryEnabled": {
+      "type": "boolean"
+    },
+    "readOnlyResolution": {
+      "const": true
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -28,8 +28,11 @@ Use the first matching route:
   reviewing it, use `/nogra:dispatch`.
 - Verification intent: if the user asks whether work is really done, asks for
   evidence checking, or invokes Nogra verification, use `/nogra:verify`.
+- Anchor intent: if the user explicitly asks Nogra to save factual continuity,
+  preserve verified/claimed/unknown state, or runs `/nogra:anchor`, use
+  `/nogra:anchor`.
 - Workspace-state intent: if the user asks for Nogra ledger/state, project
-  state, recent briefs/runs, checkpoint freshness, runtime preferences or
+  state, recent briefs/runs, Anchor freshness, runtime preferences or
   version, use `/nogra:status`.
 - Live-hook visibility intent: if the user asks to watch Nogra hook events,
   transcript activity or the live runtime log, use `/nogra:watch`.

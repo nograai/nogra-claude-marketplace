@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.nogra.local/boot-context-v2.schema.json",
+  "title": "Nogra Boot Context v2",
+  "type": "object",
+  "required": [
+    "schema",
+    "state",
+    "status",
+    "sessionSource",
+    "source",
+    "workspaceName",
+    "workspaceId",
+    "workspaceRoot",
+    "stateRoot",
+    "focusReason",
+    "checkpointAvailable",
+    "checkpointLoaded",
+    "checkpointStatus",
+    "candidates",
+    "writes",
+    "autoLoaded",
+    "authorization",
+    "message"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nogra.boot.context.v2"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["fresh", "detected", "focused", "resumed", "recovering"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["missing", "ambiguous", "hub", "project"]
+    },
+    "sessionSource": {
+      "type": "string",
+      "enum": ["startup", "resume", "clear", "compact", "unknown"]
+    },
+    "source": {
+      "type": "string"
+    },
+    "workspaceName": {
+      "type": "string"
+    },
+    "workspaceId": {
+      "type": "string"
+    },
+    "workspaceRoot": {
+      "type": "string"
+    },
+    "stateRoot": {
+      "type": "string"
+    },
+    "focusReason": {
+      "type": "string",
+      "enum": ["none", "runtime-project-root", "cwd-contained", "workspace-index-detection", "workspace-hub"]
+    },
+    "checkpointAvailable": {
+      "type": "boolean"
+    },
+    "checkpointLoaded": {
+      "const": false
+    },
+    "checkpointStatus": {
+      "type": "string",
+      "enum": ["missing", "available"]
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["workspaceId", "workspaceName", "path", "lastCheckpointSummary"],
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          },
+          "workspaceName": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "lastCheckpointSummary": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "writes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "autoLoaded": {
+      "const": false
+    },
+    "authorization": {
+      "const": "none"
+    },
+    "message": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

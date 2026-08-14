@@ -61,16 +61,57 @@ with the confirmed absolute path of the workspace.
 2. If no approved Nogra brief exists, say this is best-effort verification
    against the user's stated request and collected evidence. Ask one concrete
    question only if the missing scope would materially change the verification.
-3. Build a completion evidence object for the local runtime:
-   - existing `runId`, or a local verification id shaped like
-     `transport-YYYYMMDDHHMMSS-xxxxxxxx` if no run exists;
-   - explicit local run `status`: `ok` for `ship`, `partial` for
-     `deviation`, `blocked` for `blocked`, `failed` for failed execution;
+3. Save each evidence package as an immutable canonical receipt before asking
+   for `ship`:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" evidence-save --root "<absolute-workspace-root>" --input ".nogra/transport/tmp-evidence-input.json" --json
+   ```
+
+   The runtime computes artifact digests from existing workspace-local files.
+   Do not provide a free-text path as a substitute for the returned
+   `evidenceId`. Missing or stale artifact integrity blocks verification.
+4. When independent verification is needed, enter a verifier role lease, fetch
+   the verifier handoff, and spawn the plugin role with the approved brief,
+   executor claims and canonical evidence:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" role-enter --root "<absolute-workspace-root>" --run-id "<runId>" --role verifier --json
+   ```
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" handoff-contract --root "<absolute-workspace-root>" --kind verifier --run-id "<runId>" --json
+   ```
+
+   Verifier has only Read, Grep and Glob. It cannot run Bash, edit, install,
+   clean, deploy or commit. If another observation is required, Verifier puts
+   it in `requestedProbes`; Manager runs the probe, saves its canonical evidence
+   and starts a new bounded verifier pass.
+
+   After return, Manager closes the lease and saves the exact structured
+   report:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" role-exit --root "<absolute-workspace-root>" --lease-id "<leaseId>" --reason "verifier returned control to Manager" --json
+   ```
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" role-report-save --root "<absolute-workspace-root>" --input ".nogra/transport/tmp-verifier-role-report.json" --json
+   ```
+
+   A missing/malformed report, mutation claim, mismatched run/brief/lease or
+   `ship` recommendation without canonical evidence fails closed.
+5. Build a completion evidence object for the local runtime:
+   - existing `runId`;
+   - optional coarse verification `status`: `ok` for `ship`, `partial` for
+     `deviation`, or `blocked` for a non-ship verdict. This is a compatibility
+     projection and never replaces the executor `outcome`;
    - `briefId` and full `brief` when available;
    - `scopeFiles` from the brief or the user's stated scope;
    - `filesChanged`;
    - `protocolFilesChanged` for `.nogra/` records, if any;
    - `commandsRun`;
+   - `evidenceIds` returned by `evidence-save` (mandatory for `ship`);
    - `reportText`;
    - `acceptance` status per success criterion when available;
    - `briefDeviations` for any unapproved mismatch;
@@ -79,23 +120,30 @@ with the confirmed absolute path of the workspace.
      `decision_required` or `unverified`;
    - `reason` for every non-`ship` verdict: what is missing, deviating or
      blocking, and what evidence would move it to `ship`.
+   - `roleReportId` when a `nogra:verifier` pass was used. Claiming
+     `verificationRole: "nogra:verifier"` without this schema-valid report is
+     blocked.
    Do not leave status implicit when Manager has already made the verification
    judgment. The local runtime can infer a conservative status from acceptance
    rows, but Manager's explicit judgment is the product authority.
-4. If there is an existing local Nogra transport run, record verification
-   support with:
+6. If there is an existing local Nogra run, first require a recorded executor
+   outcome and `lifecycle=returned`, then record verification support with:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" verify --root "<absolute-workspace-root>" --run-id "<runId>" --input ".nogra/transport/tmp-verification-input.json" --json
    ```
 
-   Pass the evidence object on stdin or with `--input`. The local runtime writes
-   `.nogra/transport/artifacts/<runId>/validation.json`, updates the run record
-   and appends a local transport event.
-5. If there is no existing Nogra transport run, verify best-effort against the
+   Pass the evidence object on stdin or with `--input`. For `nogra.run.v2`, the
+   local runtime writes
+   `.nogra/receipts/verdicts/verdict-<runId>.json`, writes the compatibility
+   validation artifact under `.nogra/transport/artifacts/<runId>/`, transitions
+   only `lifecycle` and `verdict`, and appends `run_verified` to the canonical
+   ledger. It preserves the executor `outcome`.
+7. If there is no existing Nogra run, verify best-effort against the
    user's stated request and collected evidence. Do not invent a run id unless
-   the user explicitly wants a local Nogra record created.
-6. If the verification involves an existing Nogra transport run, check ledger
+   the user explicitly asks for a new brief/GO/dispatch flow; the verification
+   helper does not fabricate standalone runs.
+8. If the verification involves an existing Nogra run, check ledger
    consistency with:
 
    ```bash
@@ -105,13 +153,13 @@ with the confirmed absolute path of the workspace.
    If the helper returns `inconsistent`, surface the differences and keep
    Manager as `nextOwner`. Do not auto-fix, force-correct, or parse Manager's
    prose for keywords.
-7. Compare local runtime verification support with Manager's own evidence read.
+9. Compare local runtime verification support with Manager's own evidence read.
    If the user is explicitly grading Nogra behavior or scenario probes, compare
    evidence against `.nogra/index/behavior-score.md`'s expected shape when it
    exists: scenario id, mode, drift cluster, expected guard, observed behavior,
    evidence path and verdict. Do not treat structural file presence as behavior
    success.
-8. Return a concise verification:
+10. Return a concise verification:
    - `ship`: evidence satisfies the brief/request;
    - `deviation`: useful result, but it materially differs from the approved
      brief/request;
@@ -127,6 +175,9 @@ with the confirmed absolute path of the workspace.
 ## Verification Rules
 
 - Missing evidence is not success.
+- A path or prose statement is not a canonical evidence receipt. `ship`
+  requires a schema-valid, content-addressed evidence ID whose artifacts still
+  match their recorded digests.
 - Executor self-report is never verdict evidence. Complete, truncated, missing
   or polished reports are claim surfaces only; verify against independent tree,
   artifact, command and diff evidence. Report quality can explain why

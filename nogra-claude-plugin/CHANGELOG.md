@@ -1,5 +1,92 @@
 # Changelog
 
+## 0.9.0 — 2026-08-14 "the spine release" (Quality Pass 0 goes public: contract spine, anchor, role leases)
+
+- Carries the 0.8.9 `/nogra:dayclose` skill forward unchanged. 0.8.9's
+  session-quality lane is intentionally NOT carried: Phase 6 hidden-scoring
+  isolation supersedes it with the explicit, user-only
+  `/nogra:transcript-diagnostic` (no hidden SessionEnd scoring, ever).
+- Documented the role-lease worktree boundary in the dispatch contract:
+  `scope.files` patterns match workspace-relative paths, so briefs targeting a
+  sister worktree must prefix entries with the worktree path. Known sharp edge,
+  documented rather than hidden; runtime normalization is queued.
+- Added the canonical contract spine
+  `brief.v1 -> approval.v1 -> run.v2 -> run-event.v2 -> evidence.v1 -> verdict.v1` with
+  schema-closed validation, scoped single-use approvals, lifecycle/outcome/
+  verdict separation, replay recovery and frozen legacy reads.
+- Added English-first Anchor v1 continuity: `/nogra:anchor`,
+  `nogra.anchor.v1`, immutable JSON records, atomic current JSON/Markdown
+  projections, evidence-gated `verifiedDone`, separate `claimedDone` and
+  `unknown`, approved brief/GO binding, ledger and Git freshness, content
+  dedupe, `supersedes`, and interrupted-projection recovery.
+- Anchor complements Claude Code's native rewind checkpoints. It does not
+  grant GO, infer readiness, read transcripts or invent a native checkpoint
+  identifier that Claude hooks do not expose.
+- Added Phase 3 factual identity: immutable content-addressed
+  `nogra.evidence.v1` receipts, append-only `nogra.fact.v1` ledger records,
+  one active fact per stable subject, explicit `supersedes`, non-regressing
+  evidence levels and a rebuildable `CURRENT-FACTS.json` projection. Ship
+  verdicts now require canonical evidence IDs, Anchor completion claims bind
+  active facts, and artifact digests are checked before evidence can support a
+  fact or verdict.
+- Native MEMORY/USER and hosted sync remain the one continuity home and
+  transport, but are explicitly advisory projections. Memory/sync sources are
+  capped at `reported` and cannot create or upgrade verified facts; sync state,
+  receipts and SessionStart context carry that boundary without changing the
+  HOME/seat/adopt protocol.
+- Added Phase 4 strict role isolation. Manager now issues one short-lived,
+  run-revision-bound `nogra.role.lease.v1` before a public role starts.
+  PreToolUse binds the lease to Claude's `agent_type` and `agent_id`; missing,
+  expired, swapped-agent and out-of-scope Executor operations fail closed.
+  Public Executor and Verifier no longer receive Bash. Verifier is mechanically
+  limited to Read, Grep and Glob, while Manager owns command/test probes and
+  canonical evidence.
+- Added schema-valid `nogra.role.report.v1` returns. Executor reports are claims
+  and cannot recommend a verdict; Verifier reports are read-only recommendations
+  bound to canonical evidence. Manager alone finalizes executor outcome and
+  writes `nogra.verdict.v1`. Adversarial regression covers scope escape,
+  control-plane writes, agent swaps, role escalation, arbitrary shell, mutation,
+  missing evidence and unstructured verifier claims.
+- Added Phase 5 explicit boot and native-memory adapter contracts.
+  `nogra.boot.context.v2` projects `fresh`, `detected`, `focused`, `resumed`
+  and `recovering`; checkpoint existence is detection-only and only Claude
+  Code's native SessionStart source may produce resume/recovery states. Boot
+  never loads checkpoint contents or grants authority.
+- Added one shared `nogra.memory.resolution.v1` path resolver for USER pinning,
+  sync, diagnostics and consolidation. It honors observable settings,
+  `CLAUDE_CONFIG_DIR`, runtime transcript identity and Git repository identity,
+  supports an explicit runtime bridge for CLI/remote-only settings, respects
+  disabled Auto Memory and fails closed on invalid or escaping default paths.
+  SessionStart now orders optional sync pull before reading the resolved USER
+  pin/bound state.
+- Added Phase 6 hidden-scoring isolation. SessionEnd no longer reads
+  transcripts or writes session-quality receipts, and default status/statusline
+  no longer project stale language judgments. The former numeric quality score,
+  severity ladder and GO/stop interpretation are removed.
+- Added optional `nogra.transcript.diagnostic.v1` behind the user-only
+  `/nogra:transcript-diagnostic` skill. It reports bounded lexical observations
+  and limitations with `authority=none`, neutral control/truth effects and no
+  score or verdict. Preview writes nothing; saving requires explicit `--write`.
+- Restored the post-0.8.8 TREE sync leg on top of the Quality Pass runtime.
+  `tree` is a read/check, while `tree pull` and `tree push` remain explicit,
+  collision-gated operator actions with receipts. Hooks never move git.
+- Preserved the sync fingerprint's NUL domain separator as a visible source
+  escape so forensic text tools no longer classify `sync-client.mjs` as binary.
+- Restored the Claude Code changelog watcher as an explicit, fail-open
+  diagnostic. It is intentionally not a SessionStart hook: detection-only boot
+  must not hide network calls or state writes.
+- Added a narrow `workspace-migrate` upgrade lane for existing Nogra
+  workspaces. It merge-preserves config and updates only `.nogra/` contract
+  lanes, preventing full setup from copying hub-owned `brain/`, `inbox/` or
+  `projects/` surfaces into project-local seats.
+- The migration explicitly upgrades known `nogra.boot_policy.v1` configs to
+  v2 and removes only the retired parallel-memory path/hint keys. Unknown
+  operator config remains preserved.
+- Legacy Markdown checkpoint migration is freshness-conservative. It keeps a
+  watermark explicitly declared by the checkpoint itself and otherwise writes
+  `SourceWatermark: 0` (unknown); it never labels old prose current merely
+  because a newer ledger exists.
+
 ## 0.8.9 — 2026-08-05 "the dayclose release" (close the day like the ledger opened it)
 
 - **New skill: `/nogra:dayclose`** — the evening counterpart to the morning brief. Seven
@@ -28,7 +115,7 @@
   `unionMerge` is add-only by construction: it can append an unseen line but can never propagate a
   line the home *removed*. So when the home consolidated (dropped stale lines, replaced the sky), a
   union seat pulling it kept its own stale copy and merged the home's new lines on top — growing
-  monotonically past budget, never converging. Proven live (URET #260): a union seat pulled a
+  monotonically past budget, never converging. Proven live: a union seat pulled a
   2849-char home consolidation and ended at 3653 chars with the same checkpoint line three times.
 - **The fix, client-only, on the drawn law** (DECISIONS #43 "the bench is a projection that must
   adopt the house's truth", #57 "bench seats only clean their local copy and never re-push a line
@@ -46,7 +133,7 @@
 - **Untouched by design:** the server, `unionMerge` itself, the budget/front-6/race-streg guards,
   the replace verb, and the home seat. Line-level tombstones remain drawn for a later release
   (DECISIONS #59). Verified independently at the bench: client-smoke 87/87 ×3, sync-cli 52/52,
-  server 89/89, and today's 3653 ghost as an ordret FAIL→PASS test (URET #262).
+  server 89/89, and today's 3653 ghost as a verbatim FAIL→PASS test.
 
 ## 0.8.7 — 2026-07-17 "the crown release" (the crown never rebases)
 
@@ -163,12 +250,12 @@ built one GO at a time; no operator is ever the sync engine again.
 - Smokes: cli 32 -> 52 (+20 guards, incl. "the value is never printed" and a
   deterministic dead-sky probe via loopback). Client suite untouched, 55/55.
 
-## 0.8.4 — 2026-07-16 "the seat release" (seat-awareness, built on the D1-D5 verdicts 15/07; konge-beviset stod samme dag, URET #196)
+## 0.8.4 — 2026-07-16 "the seat release" (seat-awareness, built on the D1-D5 verdicts 15/07)
 
 Sync learns WHO: the clock keeps a seat board, and a seat can never again believe
 it is in sync when it is not.
 
-- **The stall-signal (the knock's third leg).** Every pull carries the sæde-tavle home
+- **The stall-signal (the knock's third leg).** Every pull carries the seat board home
   (seats' last_seen · last_pushed · dirty — metadata only, never content). When ANOTHER
   seat is active with unpushed state, session start knocks: facts name the seat and the
   Manager weaves an honest staleness line into answers it touches — never blocks, never
@@ -267,8 +354,8 @@ fix closed a real incident where "home" traveled to a second machine via git.
 
 The sync release: the hosted-brain edges ship as a whole — hooks, client and the human
 handle — so wiring a seat is one command, never a hand-built bridge. Proven the day it
-was cut: the first machine to move in this way was our own (nogra-house, 13/07, its own
-hooks pulling the brain on their very first run, 6/6 green).
+was cut: the first machine to move in this way was our own dev seat, its own
+hooks pulling the brain on their very first run, 6/6 green.
 
 - **`/nogra:sync` — sync as a function, not a terminal incantation.** One skill, five
   verbs, all backed by `scripts/sync-cli.mjs`: `status` (enabled, endpoint, token

@@ -1,0 +1,43 @@
+{
+  "schema": "nogra.role.report.v1",
+  "reportId": "role-report-run-example-executor-20260723120000-abcdef",
+  "workspaceId": "example-workspace",
+  "runId": "run-example",
+  "briefId": "brief-example",
+  "leaseId": "role-lease-run-example-executor-20260723120000-abcdef",
+  "role": "executor",
+  "status": "partial",
+  "summary": "Scoped implementation claims returned; Manager probes are pending.",
+  "claims": [
+    {
+      "claim": "The approved source file was updated.",
+      "verificationStatus": "claimed",
+      "evidenceIds": []
+    }
+  ],
+  "evidenceIds": [],
+  "filesChanged": [
+    "src/example.js"
+  ],
+  "requestedProbes": [
+    "Run the brief-defined test."
+  ],
+  "scopeCheck": {
+    "status": "met",
+    "checkedPatterns": [
+      "src/example.js"
+    ],
+    "deviations": []
+  },
+  "mutationAttempted": false,
+  "recommendation": "none",
+  "reason": "Manager-owned command evidence is still pending.",
+  "generatedAt": "2026-07-23T12:05:00.000Z",
+  "nextOwner": "Manager",
+  "contentHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "ledgerWatermark": 2,
+  "sessionId": "",
+  "transcriptId": "",
+  "redactions": [],
+  "metadata": {}
+}

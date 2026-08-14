@@ -1,0 +1,17 @@
+{
+  "schema": "nogra.run.event.v2",
+  "eventId": "run-event-invalid-lifecycle",
+  "eventType": "run_returned",
+  "type": "run_returned",
+  "workspaceId": "fixture-workspace",
+  "runId": "run-fixture",
+  "briefId": "brief-fixture",
+  "approvalId": "approval-fixture",
+  "approvalActionHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "lifecycle": "queued",
+  "outcome": "ok",
+  "verdict": null,
+  "ledgerWatermark": 3,
+  "createdAt": "2026-07-23T10:05:00.000Z",
+  "generatedAt": "2026-07-23T10:05:00.000Z"
+}

@@ -23,6 +23,7 @@ Use Nogra when the user explicitly asks for it:
 - `/nogra:brief`
 - `/nogra:dispatch`
 - `/nogra:verify`
+- `/nogra:anchor`
 - `/nogra:status`
 - `/nogra:settings`
 - `/nogra:update`
@@ -55,12 +56,17 @@ expansion guidance lives in `references/index.md`.
 
 ## Hooks
 
-`SessionStart` adds a small boot context on startup or clear, and a thinner
-continuity pointer on resume. It does not run on compact.
+`SessionStart` emits the bounded `nogra.boot.context.v2` state:
+`fresh`, `detected`, `focused` or `resumed`. Checkpoint existence is detection
+only; only Claude Code's native `resume` source can produce `resumed`, and no
+boot state grants GO or loads checkpoint contents.
 
-`PostCompact` adds only a thin continuity pointer after context compaction:
-workspace id, workspace root, ledger watermark and checkpoint freshness. It does
-not re-emit workflow policy.
+`PostCompact` projects `recovering` and adds only a thin continuity pointer.
+It does not authorize continuation or re-emit workflow policy.
+
+The ordered SessionStart memory adapter performs an optional sync pull and
+then reads USER/bound state from the same `nogra.memory.resolution.v1`
+directory. Unresolved or disabled memory is never mutated.
 
 `SessionEnd` updates the local session anchor silently when enough session
 metadata is available.

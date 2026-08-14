@@ -75,6 +75,7 @@ function main() {
     const overCtx = nudge(runMemoryLoad(over.projectDir));
     assert(overCtx !== null, "over-window: memory-load must emit valid JSON");
     assert(/grown past the load window/.test(overCtx), "over-window: the load-window nudge must fire");
+    assert(/nogra\.memory\.resolution\.v1/.test(overCtx), "over-window: nudge must carry the exact native-memory resolution contract");
     assert(/spin the consolidator/.test(overCtx), "over-window: nudge must OFFER the one-line housekeeping ask");
     assert(/nogra:consolidator agent/.test(overCtx), "over-window: nudge must delegate to the nogra:consolidator agent");
     assert(/wait for GO/.test(overCtx), "over-window: nudge must wait for GO (Manager-middleman, never silent-fire)");

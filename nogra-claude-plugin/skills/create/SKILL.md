@@ -77,4 +77,5 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-local.mjs" create-project "<name>" --r
 - Do not copy source code from another project.
 - Do not edit app files, git config, provider config, secrets or `.claude/`.
 - Do not enable sync.
-- SessionStart remains read-only: no full memory load, no write, no dispatch.
+- SessionStart remains detector-only: project focus is explicit, checkpoint
+  contents stay unloaded, and no boot state writes, dispatches or grants GO.

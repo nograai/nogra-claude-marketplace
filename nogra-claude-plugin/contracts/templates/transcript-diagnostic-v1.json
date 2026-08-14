@@ -1,0 +1,35 @@
+{
+  "schema": "nogra.transcript.diagnostic.v1",
+  "generatedAt": "2026-01-01T00:00:00.000Z",
+  "mode": "explicit-diagnostic",
+  "authority": "none",
+  "advisoryOnly": true,
+  "blocking": false,
+  "root": "/absolute/workspace",
+  "transcript": {
+    "path": "",
+    "id": "",
+    "exists": false,
+    "lines": 0,
+    "source": "none"
+  },
+  "sessionId": "",
+  "signalCount": 0,
+  "signals": [],
+  "limitations": [
+    "Signals are lexical heuristics, not semantic or authorization judgments."
+  ],
+  "controlEffects": {
+    "permission": "none",
+    "go": "not-inferred",
+    "routing": "unchanged",
+    "dispatch": "unchanged",
+    "evidenceLevel": "unchanged",
+    "factLevel": "unchanged",
+    "verdict": "none"
+  },
+  "summary": "No transcript was selected.",
+  "privacy": "Preview mode stores nothing. Saved diagnostics contain compact excerpts, never full transcript bodies.",
+  "persistence": "preview",
+  "path": ""
+}

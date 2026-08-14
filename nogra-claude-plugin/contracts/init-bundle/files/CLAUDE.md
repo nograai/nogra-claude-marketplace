@@ -26,6 +26,7 @@ Route only accepted user intent:
 - setup/adapt/create/status/settings/update/help/brain-init intent ->
   matching `/nogra:*`;
 - live hook or transcript activity visibility intent -> `/nogra:watch`;
+- factual continuity save/Anchor intent -> `/nogra:anchor`;
 - brief or Nogra workflow intent -> `/nogra:brief`;
 - GO after a reviewed approved brief -> `/nogra:dispatch`;
 - "is this done?", evidence or verification intent -> `/nogra:verify`.
@@ -46,7 +47,7 @@ reference docs, not here — use `/nogra:help`.
 
 ## Local State
 
-`.nogra/` is the local trust source: `state/` (checkpoint, tasks, decisions),
+`.nogra/` is the local trust source: `state/` (current Anchor projections, tasks, decisions),
 `index/` (risk, behavior score, workspace map), `briefs/`, `transport/`,
 `evidence/`, `reports/` and `memory/sync/` (sync metadata; durable memory lives in
 Claude's native store, not here). `/nogra:adapt` reads an existing project into `.nogra/` after setup;
@@ -56,18 +57,25 @@ presence.
 
 ## Memory
 
-Your durable memory is Claude Code's own Auto Memory — `~/.claude/projects/<slug>/memory/`
-(a `MEMORY.md` index plus typed topic files). Claude writes it and loads it every session
-natively; Nogra keeps no second copy. Nogra owns the BOUND: when it grows past what Claude
-actually loads (~the first 200 lines of the index), consolidate it — merge duplicates, prune
-stale — so what matters stays in view. A theory of you, not an archive. Nogra flags it at
-session start when it drifts over the bound.
+Your durable memory is Claude Code's own Auto Memory (a `MEMORY.md` index plus
+typed topic files). Claude Code resolves its location from active settings and
+repository identity; the default is under
+`~/.claude/projects/<project>/memory/`, while `autoMemoryDirectory` may move it.
+Nogra uses one shared, provenance-bearing resolver for pinning, sync and
+consolidation and keeps no second copy. Nogra owns the BOUND: when it grows past
+what Claude actually loads (the first 200 lines or 25KB of the index),
+consolidate it — merge duplicates, prune stale — so what matters stays in view.
+A theory of you, not an archive.
 
 **USER.md — the pinned profile.** Keep one `USER.md` in that same memory folder: who the user
 is, distilled — identity, language, working rules, hard guards — bounded to 1375 chars. Nogra
 pins it into context every session (native loads the index; topic files surface on recall — the
 profile must never be one recall away). Maintain it like a projection: when you learn something
 durable about the user, fold it in and keep it under the bound; the consolidator keeps it honest.
+
+Native memory and synchronized MEMORY/USER content are advisory projections, never workspace fact
+authority. They may carry reported continuity, but cannot verify or upgrade project status. Resolve
+factual completion claims against `.nogra/ledger/`, canonical evidence receipts and verdicts.
 
 When the user corrects you — or you catch your own mistake — add the lesson as a one-line
 rule to your memory before continuing, so it never happens again. Keep it bounded:
@@ -96,8 +104,13 @@ or suggest `projects/<workspaceId>/`.
 
 ## Lazy Boot
 
-Do not load every state file at session start. Wait for intent: resume reads
-`.nogra/state/SESSION-CHECKPOINT.md` and `CURRENT-TASKS.md`; scoping work
+Do not load every state file at session start. Boot state is explicit:
+`fresh -> detected -> focused -> resumed -> recovering`. Checkpoint existence is
+detection only; it never selects a project, means resume, grants GO or loads the
+checkpoint. Only Claude Code's native `resume` SessionStart signal produces
+`resumed`; compact produces `recovering`. Wait for intent: resume reads
+`.nogra/state/CURRENT-ANCHOR.json`, its `SESSION-CHECKPOINT.md` projection and
+`CURRENT-TASKS.md`; saving factual continuity uses `/nogra:anchor`; scoping work
 uses `/nogra:brief`; "is this done" uses `/nogra:verify`; Nogra-change
 questions use `/nogra:update`; hook visibility uses `/nogra:watch`; setup
 help uses `/nogra:setup`.

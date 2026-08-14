@@ -15,7 +15,8 @@ and each project should own its own `.nogra/` folder.
 ## Verification
 
 - Setup created the local `.nogra/` domain structure.
-- SessionStart must remain read-only: no full memory load, no write, no dispatch.
+- SessionStart must remain detector-only: checkpoint existence does not imply
+  resume, and no boot state loads broad state, writes, dispatches or grants GO.
 
 ## Next
 

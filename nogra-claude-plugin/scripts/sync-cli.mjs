@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Nogra Sync CLI — the human handle on the sync edges (backs the /nogra:sync skill).
 //
-// Verbs: status (default) · run · pull · push · bind <endpoint> · off
+// Verbs: status (default) · run · pull · push · doctor · tree [pull|push] · bind <endpoint> · off
 //
 // Contract (binding):
 // - The token NEVER passes through this tool: not as an argument, not in output. Status
@@ -16,6 +16,16 @@
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { syncPull, syncPush, syncDir } from "../runtime/local/sync-client.mjs";
+import { resolveNativeMemory } from "../runtime/local/native-memory.mjs";
+import {
+  gitRun,
+  treeFetch,
+  treeState,
+  readLocalLedger,
+  readRemoteLedger,
+  ledgerCheck,
+  treePlan,
+} from "../runtime/local/tree-sync.mjs";
 
 // S-A (16/07, cwd-fælden): roden findes OPAD — nærmeste .nogra/ fra cwd og op. Kørt fra en
 // undermappe virker alt; kørt UDENFOR workspacet siger vi det HØJT i stedet for det stille
@@ -32,7 +42,7 @@ function findRoot(start) {
 const root = process.env.CLAUDE_PROJECT_DIR || findRoot(process.cwd());
 if (!root) {
   console.error(
-    `sync: ingen .nogra/ fundet fra ${process.cwd()} og opad — stå i workspacet (fx cd ~/y26dev) eller sæt CLAUDE_PROJECT_DIR.`,
+    `sync: no .nogra/ found from ${process.cwd()} upward — run from inside your workspace (a directory containing .nogra/) or set CLAUDE_PROJECT_DIR.`,
   );
   process.exit(1);
 }
@@ -85,14 +95,14 @@ function tokenInspect() {
       bytes = Buffer.byteLength(fileRaw);
       raw = fileRaw.trim();
     } catch {
-      return { ok: false, problem: "unreadable", line: `${source} kan ikke læses — tjek rettigheder (chmod 600)` };
+      return { ok: false, problem: "unreadable", line: `${source} cannot be read — check permissions (chmod 600)` };
     }
   } else {
-    return { ok: false, problem: "missing", line: "MISSING — mint (operatørens hånd) og placér i .nogra/memory/sync/token" };
+    return { ok: false, problem: "missing", line: "MISSING — mint one (operator's hand) and place it at .nogra/memory/sync/token" };
   }
-  if (!raw) return { ok: false, problem: "empty", line: `${source} er TOM (${bytes} bytes) — placeringen fejlede; mint og placér igen (scp slår clipboard)` };
+  if (!raw) return { ok: false, problem: "empty", line: `${source} is EMPTY (${bytes} bytes) — placement failed; mint and place it again (scp beats clipboard)` };
   const m = /^nst_([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/.exec(raw);
-  if (!m) return { ok: false, problem: "malformed", line: `${source} er MALFORMET (${bytes} bytes, ligner ikke nst_…) — placér et ægte token` };
+  if (!m) return { ok: false, problem: "malformed", line: `${source} is MALFORMED (${bytes} bytes, does not look like nst_…) — place a real token` };
   try {
     const p = b64urlJson(m[1]);
     const expired = typeof p.exp === "number" && p.exp * 1000 < Date.now();
@@ -100,10 +110,10 @@ function tokenInspect() {
       ok: !expired,
       problem: expired ? "expired" : null,
       meta: p,
-      line: `${source} · seat=${p.seat ?? "(intet — stempler 'ukendt')"} · scopes=${(p.scopes || []).join("+")} · exp=${typeof p.exp === "number" ? new Date(p.exp * 1000).toISOString() : "?"}${expired ? " ⚠ UDLØBET — mint nyt" : ""}`,
+      line: `${source} · seat=${p.seat ?? "(none — stamps 'unknown')"} · scopes=${(p.scopes || []).join("+")} · exp=${typeof p.exp === "number" ? new Date(p.exp * 1000).toISOString() : "?"}${expired ? " ⚠ EXPIRED — mint a new one" : ""}`,
     };
   } catch {
-    return { ok: false, problem: "malformed", line: `${source}: payload kan ikke afkodes — placér et ægte token` };
+    return { ok: false, problem: "malformed", line: `${source}: payload cannot be decoded — place a real token` };
   }
 }
 
@@ -185,20 +195,20 @@ async function main() {
     console.log(`token:    ${ti.line}`);
     // S-B: sædet ved selv HVEM det er og HVEM de andre er — bekræftelsen operatøren lavede i
     // hånden hele 16/07 (rå himmel-kald ×9) bor nu i status. Tavlen er fra SIDSTE pull (ærligt dateret).
-    console.log(`you:      ${state.you || "(ukendt endnu — første pull stempler)"}`);
+    console.log(`you:      ${state.you || "(unknown yet — the first pull stamps it)"}`);
     const board = state.seatBoard || {};
     const seats = Object.entries(board);
     if (seats.length) {
-      console.log(`tavlen (pr. sidste pull ${state.lastPullAt || "?"}):`);
+      console.log(`board (as of last pull ${state.lastPullAt || "?"}):`);
       for (const [n, s] of seats) console.log(`  ${n}: set ${s.last_seen || "?"} · pushed ${s.last_pushed || "aldrig"} · dirty=${!!s.dirty}`);
     }
     if (ti.meta) {
       const hasReplace = (ti.meta.scopes || []).includes("memory:replace");
       if (effectiveMode === "replace" && !hasReplace)
-        console.log(`kohærens: ⚠ FEJL — sædet er HOME (replace-mode) men tokenet MANGLER memory:replace; replace-push får 403. Kur: mint --home, eller sæt sædet til union`);
+        console.log(`coherence: ⚠ FAIL — the seat is HOME (replace-mode) but the token LACKS memory:replace; replace-push gets 403. Cure: mint --home, or set the seat to union`);
       else if (effectiveMode !== "replace" && hasReplace)
-        console.log(`kohærens: ⚠ tokenet bærer replace-magt men sædet er union — én krone pr. bruger: flyt kronen eller mint et union-token`);
-      else console.log(`kohærens: rolle og token matcher ✓`);
+        console.log(`coherence: ⚠ the token carries replace power but the seat is union — one crown per user: move the crown or mint a union token`);
+      else console.log(`coherence: role and token match ✓`);
     }
     console.log(`lastPull: ${state.lastPullAt || "never"}${typeof state.lastCursor === "number" ? ` · cursor ${state.lastCursor}` : ""}`);
     console.log(`lastPush: ${state.lastPushAt || "never"}`);
@@ -227,8 +237,8 @@ async function main() {
     ok(`rod: ${root}${process.env.CLAUDE_PROJECT_DIR ? " (CLAUDE_PROJECT_DIR)" : " (fundet opad fra cwd)"}`);
     // 2 · enabled
     const sync = config && config.sync;
-    if (!config) bad("ingen .nogra/config.json ved roden", "kør /nogra:setup, eller stå i det rigtige workspace");
-    else if (!sync || sync.enabled !== true) warn("sync er OFF (et valg, ikke en fejl) — `bind <endpoint>` tænder");
+    if (!config) bad("no .nogra/config.json at the root", "run /nogra:setup, or run from the right workspace");
+    else if (!sync || sync.enabled !== true) warn("sync is OFF (a choice, not an error) — `bind <endpoint>` turns it on");
     else ok("sync: enabled");
     // 3 · endpoint
     const endpoint = sync && sync.endpoint ? String(sync.endpoint).replace(/\/+$/, "") : "";
@@ -253,9 +263,9 @@ async function main() {
     const dMode = dSeatMode || (sync && sync.mode === "replace" ? "replace" : "union");
     if (ti.meta) {
       const hasReplace = (ti.meta.scopes || []).includes("memory:replace");
-      if (dMode === "replace" && !hasReplace) bad("kohærens: HOME-sæde uden memory:replace-scope — replace-push får 403", "mint --home, eller sæt sædet til union");
-      else if (dMode !== "replace" && hasReplace) warn("kohærens: union-sæde med replace-magt — én krone pr. bruger; flyt kronen eller mint et union-token");
-      else ok(`kohærens: rolle (${dMode}) og token matcher`);
+      if (dMode === "replace" && !hasReplace) bad("coherence: HOME seat without the memory:replace scope — replace-push gets 403", "mint --home, or set the seat to union");
+      else if (dMode !== "replace" && hasReplace) warn("coherence: union seat with replace power — one crown per user; move the crown or mint a union token");
+      else ok(`coherence: role (${dMode}) and token match`);
     }
     // 7 · LIVE-proben (svarer himlen DENNE hånd? 401=signatur, 403=aud/scope — authz.ts' egen lov)
     if (sync && sync.enabled === true && endpoint && ti.ok) {
@@ -274,28 +284,32 @@ async function main() {
           // ingen puls i svaret — det er en observation, aldrig en fejl.
           if (d.pulse && typeof d.pulse === "object") {
             const pl = d.pulse;
-            if (pl.last_beat) ok(`pulsen: slag ${pl.beats} · sidst ${pl.last_beat}${pl.go_armed ? " · go_armed" : ""}`);
-            else warn("pulsen: endnu intet slag — hjertet armeres ved første berøring efter deploy");
-          } else warn("pulsen: himlen kender den ikke endnu (server før puls-sømmen) — deploy bringer åndedrættet");
-        } else if (res.status === 401) bad("himlen afviser: 401 invalid_token = SIGNATUREN (eller udløb)", "mint med den rigtige signing-secret — 401 KAN kun være signatur/udløb (aud/scope giver 403)");
-        else if (res.status === 403) bad("himlen afviser: 403 = aud eller scope", "se aud- og kohærens-linjerne ovenfor");
+            if (pl.last_beat) ok(`pulse: beats ${pl.beats} · last ${pl.last_beat}${pl.go_armed ? " · go_armed" : ""}`);
+            else warn("pulse: no beat yet — the heart arms on first touch after deploy");
+          } else warn("pulse: the sync server does not know it yet (server predates the pulse seam) — deploy brings the breath");
+        } else if (res.status === 401) bad("sync server rejects: 401 invalid_token = the SIGNATURE (or expiry)", "mint with the correct signing secret — 401 can only mean signature/expiry (aud/scope gives 403)");
+        else if (res.status === 403) bad("sync server rejects: 403 = aud or scope", "see the aud and coherence lines above");
         else bad(`himlen svarer uventet: HTTP ${res.status}`);
       } catch (e) {
-        bad(`himlen kan ikke nås: ${e && e.name === "AbortError" ? "timeout (6s)" : (e && e.message) || e}`, "tjek net og endpoint");
+        bad(`sync server unreachable: ${e && e.name === "AbortError" ? "timeout (6s)" : (e && e.message) || e}`, "check network and endpoint");
       }
-    } else if (sync && sync.enabled === true) warn("live-probe sprunget over — løs token-linjen først");
-    else warn("live-probe sprunget over (sync off)");
+    } else if (sync && sync.enabled === true) warn("live probe skipped — fix the token line first");
+    else warn("live probe skipped (sync off)");
     // 8 · bounds (serverens egen måling: streng-length) + receipts-halen
-    const slug = "-" + root.replace(/^\/+/, "").replace(/\//g, "-");
-    const memHome = join(process.env.HOME || "", ".claude", "projects", slug, "memory");
-    if (existsSync(join(memHome, "MEMORY.md"))) {
+    const memory = resolveNativeMemory({ projectDir: root });
+    const memHome = memory.status === "resolved" ? memory.resolvedDirectory : "";
+    if (memHome && existsSync(join(memHome, "MEMORY.md"))) {
       let mb = "";
       let ub = "";
       try { mb = readFileSync(join(memHome, "MEMORY.md"), "utf8"); } catch {}
       try { ub = readFileSync(join(memHome, "USER.md"), "utf8"); } catch {}
       const over = mb.length > 3000 || ub.length > 1375;
-      (over ? warn : ok)(`bounds: MEMORY ${mb.length}/3000 · USER ${ub.length}/1375${over ? " — OVER: himlen gemmer IKKE et over-budget replace; konsolidér først" : ""}`);
-    } else warn("bounds: native memory ikke fundet for denne rod (ok på et tomt sæde)");
+      (over ? warn : ok)(`bounds: MEMORY ${mb.length}/3000 · USER ${ub.length}/1375 · source=${memory.source}${over ? " — OVER: the sync server will NOT store an over-budget replace; consolidate first" : ""}`);
+    } else if (memory.status === "resolved") {
+      warn(`bounds: native memory destination resolved via ${memory.source}, but no MEMORY.md exists yet (ok on an empty seat)`);
+    } else {
+      warn(`bounds: native memory ${memory.status} (${memory.source}); sync cannot safely select a home`);
+    }
     const rec = tailReceipts(5);
     const recFails = rec.filter((r) => r.ok === false);
     if (rec.length) (recFails.length ? warn : ok)(`receipts: ${rec.length} seneste · ${recFails.length} FAIL${recFails.length ? " — " + recFails.map((r) => `${r.op}:${r.error || "?"}`).join(", ") : ""}`);
@@ -303,7 +317,7 @@ async function main() {
 
     console.log(`doctor · ${root}`);
     for (const l of lines) console.log(l);
-    console.log(fejl ? `\ndiagnose: ${fejl} FEJL — kuren står ved hver linje` : "\ndiagnose: 0 FEJL — sædet er rask (⚠ er observationer, ikke fejl)");
+    console.log(fejl ? `\ndiagnosis: ${fejl} FAILURES — the cure is written at each line` : "\ndiagnosis: 0 failures — the seat is healthy (⚠ marks observations, not failures)");
     receipt({ op: "doctor", ok: !fejl, fejl });
     return fejl ? 1 : 0;
   }
@@ -378,13 +392,13 @@ async function main() {
         "token: MISSING — store it with YOUR OWN hand (never through the assistant):\n" +
           "  either export NOGRA_SYNC_TOKEN in your shell profile,\n" +
           "  or write it to .nogra/memory/sync/token (chmod 600; the directory is gitignored).\n" +
-          "self-verify: kør `bind` igen når tokenet er placeret — så beviser sædet sig selv.",
+          "self-verify: run `bind` again once the token is placed — the seat then proves itself.",
       );
       return 0;
     }
     if (!ti.ok) {
       console.log(`token: ${ti.line}`);
-      console.log("self-verify: venter — løs token-linjen og kør `bind` igen.");
+      console.log("self-verify: waiting — fix the token line and run `bind` again.");
       return 0;
     }
     console.log(`token: ${ti.line}`);
@@ -393,13 +407,13 @@ async function main() {
     const you = st.you;
     const board = st.seatBoard || {};
     if (you && board[you]) {
-      console.log(`self-verify: sædet '${you}' står på tavlen ✓ (set ${board[you].last_seen})`);
+      console.log(`self-verify: seat '${you}' is on the board ✓ (seen ${board[you].last_seen})`);
     } else if (note && /failed|FAIL/i.test(note)) {
-      console.log(`self-verify: proben fejlede — ${note.replace(/<[^>]+>/g, "").trim()}`);
-      console.log("kur: kør `doctor` for fuld diagnose (401=signatur · 403=aud/scope · tom fil=placering)");
+      console.log(`self-verify: the probe failed — ${note.replace(/<[^>]+>/g, "").trim()}`);
+      console.log("cure: run `doctor` for a full diagnosis (401=signature · 403=aud/scope · empty file=placement)");
       return 1;
     } else {
-      console.log("self-verify: pull ok, men tavlen bærer ikke sædet endnu — er himlen ældre end sæde-bevidsthed? Kør `doctor`.");
+      console.log("self-verify: pull ok, but the board does not carry this seat yet — is the sync server older than seat awareness? Run `doctor`.");
     }
     return 0;
   }
@@ -416,7 +430,157 @@ async function main() {
     return 0;
   }
 
-  console.error(`unknown verb: ${verb} — use status | run | pull | push | doctor | bind <endpoint> | off`);
+  if (verb === "tree") {
+    // Tree movement is never automatic. The empty sub-verb is a read/check;
+    // pull and push require the operator to name the movement explicitly.
+    const sub = (arg || "").trim();
+    if (sub && !["pull", "push"].includes(sub)) {
+      console.error(`tree: unknown subcommand '${sub}' — use tree | tree pull | tree push`);
+      return 1;
+    }
+
+    const fetched = treeFetch(root);
+    if (!fetched.ok) {
+      console.log(
+        `fetch: FAILED (${fetched.error}) — ahead/behind is based on the last successful fetch`,
+      );
+    }
+    const state = treeState(root);
+    if (!state) {
+      console.log("tree: no git tree or upstream is available here");
+      receipt({ op: "tree", ok: false, error: "no-tree-or-upstream" });
+      return 1;
+    }
+    const check = ledgerCheck(
+      readLocalLedger(root),
+      readRemoteLedger(root, state.upstream),
+    );
+    const plan = treePlan(state, check);
+
+    console.log(`upstream: ${state.upstream}`);
+    console.log(
+      `tree:     ${
+        state.behind === 0 && state.ahead === 0
+          ? "converged"
+          : `behind ${state.behind} · ahead ${state.ahead}`
+      }`,
+    );
+    for (const commit of state.incomingCommits.slice(0, 12)) {
+      console.log(`  ← ${commit}`);
+    }
+    for (const commit of state.outgoingCommits.slice(0, 12)) {
+      console.log(`  → ${commit}`);
+    }
+    if (state.incomingFiles.length) {
+      console.log(
+        `reading plan (incoming, ${state.incomingFiles.length} files):\n${state.incomingFiles
+          .slice(0, 20)
+          .map((file) => `  ${file}`)
+          .join("\n")}`,
+      );
+    }
+    if (state.outgoingFiles.length) {
+      console.log(
+        `outgoing (${state.outgoingFiles.length} files):\n${state.outgoingFiles
+          .slice(0, 20)
+          .map((file) => `  ${file}`)
+          .join("\n")}`,
+      );
+    }
+    console.log(
+      `ledger:   ${check.verdict === "clean" ? "clean" : "COLLISION"} ` +
+        `(max watermark ${check.maxWatermark} · local-only ${check.localOnly} · remote-only ${check.remoteOnly})`,
+    );
+    for (const cure of check.cures) console.log(`  cure: ${cure}`);
+    console.log(
+      `plan:     ${plan.move}${plan.gated ? " [GATED]" : ""} — ${plan.reason}`,
+    );
+
+    if (!sub) {
+      receipt({
+        op: "tree",
+        ok: check.verdict === "clean",
+        plan: plan.move,
+        behind: state.behind,
+        ahead: state.ahead,
+        collisions: check.collisions.length,
+      });
+      return check.verdict === "clean" ? 0 : 1;
+    }
+
+    if (plan.gated) {
+      console.log(
+        `tree ${sub}: DENIED — ${
+          plan.move === "consolidate"
+            ? "the tree diverged"
+            : "the ledger check found a collision"
+        }; follow the named cure first`,
+      );
+      receipt({
+        op: `tree-${sub}`,
+        ok: false,
+        error: plan.move === "consolidate" ? "diverged" : "ledger-collision",
+      });
+      return 1;
+    }
+
+    if (sub === "pull") {
+      if (plan.move !== "pull") {
+        console.log(`tree pull: nothing to pull (plan is ${plan.move})`);
+        receipt({ op: "tree-pull", ok: true, skipped: plan.move });
+        return 0;
+      }
+      try {
+        gitRun(root, ["pull", "--ff-only"], { timeoutMs: 30000 });
+        console.log(
+          `tree pull: ok — fetched ${state.behind} commit(s); review the diff before the next move`,
+        );
+        receipt({ op: "tree-pull", ok: true, pulled: state.behind });
+        return 0;
+      } catch (error) {
+        const message = (error && error.message) || String(error);
+        console.log(`tree pull: FAILED — ${message}`);
+        receipt({
+          op: "tree-pull",
+          ok: false,
+          error: String(message).slice(0, 200),
+        });
+        return 1;
+      }
+    }
+
+    if (sub === "push") {
+      if (plan.move === "pull" || state.behind > 0) {
+        console.log("tree push: DENIED — the tree is behind; pull and review first");
+        receipt({ op: "tree-push", ok: false, error: "behind-pull-first" });
+        return 1;
+      }
+      if (plan.move !== "push") {
+        console.log(`tree push: nothing to push (plan is ${plan.move})`);
+        receipt({ op: "tree-push", ok: true, skipped: plan.move });
+        return 0;
+      }
+      try {
+        gitRun(root, ["push"], { timeoutMs: 30000 });
+        console.log(`tree push: ok — pushed ${state.ahead} commit(s)`);
+        receipt({ op: "tree-push", ok: true, pushed: state.ahead });
+        return 0;
+      } catch (error) {
+        const message = (error && error.message) || String(error);
+        console.log(`tree push: FAILED — ${message}`);
+        receipt({
+          op: "tree-push",
+          ok: false,
+          error: String(message).slice(0, 200),
+        });
+        return 1;
+      }
+    }
+  }
+
+  console.error(
+    `unknown verb: ${verb} — use status | run | pull | push | doctor | tree [pull|push] | bind <endpoint> | off`,
+  );
   return 1;
 }
 

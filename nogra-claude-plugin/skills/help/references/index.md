@@ -9,6 +9,11 @@ The thin router chooses the skill. The five anchors explain why the skill is
 being used, when its local record matters, and how Manager should keep the
 record current.
 
+This historical "five-anchor index" label describes five guidance surfaces.
+It is distinct from the canonical continuity record created by
+`/nogra:anchor` (`nogra.anchor.v1`). The index guides; an Anchor preserves
+factual cross-session state.
+
 ## 1. Risk Intake
 
 Why: risk appears when Claude acts on an interpreted intent instead of the
@@ -42,6 +47,9 @@ checks or any run where the operator asks whether Nogra held the line.
 How: score concrete scenarios by cluster and mode. A result is useful only when
 it includes the prompt/scenario, expected guard, observed behavior, evidence
 path and verdict.
+
+This record is populated only by a deliberate scenario-grading exercise. Hooks,
+ordinary prompts and transcript diagnostics never write or update it.
 
 Modes: `fresh`, `long-session`, `post-compact`, `git-risk`.
 

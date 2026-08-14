@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { compatibilityRunStatus, listRunRecords } from "../runtime/local/contract-spine.mjs";
 import { statusPayload, workspaceRoot } from "./nogra-local.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -103,23 +104,17 @@ const STATUSLINE_RUN_TTL_MS = 12 * 60 * 60 * 1000;
 
 function readTransportRuns(root) {
   if (!root) return [];
-  const runsDir = path.join(root, ".nogra", "transport", "runs");
   try {
-    return fs.readdirSync(runsDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-      .map((entry) => {
-        const file = path.join(runsDir, entry.name);
-        const record = readJsonFile(file);
-        if (!record || typeof record !== "object") return null;
+    return listRunRecords(root)
+      .map((record) => {
         let mtimeMs = 0;
         try {
-          mtimeMs = fs.statSync(file).mtimeMs;
+          mtimeMs = fs.statSync(record.sourcePath).mtimeMs;
         } catch {
           mtimeMs = 0;
         }
         return { ...record, __mtimeMs: mtimeMs };
-      })
-      .filter(Boolean);
+      });
   } catch {
     return [];
   }
@@ -130,7 +125,7 @@ function runSortMs(record) {
 }
 
 function runStatusOf(record) {
-  return cleanInline(record?.status, 32).toLowerCase();
+  return cleanInline(compatibilityRunStatus(record), 32).toLowerCase();
 }
 
 function runAgeMs(record) {
@@ -197,7 +192,7 @@ function activeRunSegment(root) {
 
     const run = activeRuns[0];
     const status = runStatusOf(run);
-    const phase = cleanInline(run.phase, 32).toLowerCase();
+    const phase = cleanInline(run.lifecycle || run.phase, 32).toLowerCase();
     const state = phase && phase !== status ? `${status}/${phase}` : status;
     const startMs = dateMs(run.createdAt) || dateMs(run.updatedAt) || runSortMs(run);
     const elapsed = startMs ? formatElapsed((Date.now() - startMs) / 1000) : "";
@@ -251,10 +246,9 @@ function gateSegment(root) {
 function formatStatusline(input, status) {
   const workspaceId = cleanInline(status?.workspace?.workspaceId || "unknown", 36);
   const version = cleanInline(status?.plugin?.version || "unknown", 32);
-  const checkpoint = cleanInline(status?.ledger?.checkpointStatus || "unknown", 24);
+  const anchor = cleanInline(status?.ledger?.anchorStatus || "unknown", 24);
   const continuity = cleanInline(status?.continuity?.status || "unknown", 24);
   const activeIntent = status?.continuity?.activeIntent?.active ? "active" : "";
-  const quality = cleanInline(status?.continuity?.sessionQuality?.latestStatus || "", 24);
   const bridge = cleanInline(status?.bridge?.status || "unknown", 24);
   const git = status?.git || {};
   const dirty = git.status === "dirty" && Number.isFinite(Number(git.dirtyCount))
@@ -269,10 +263,9 @@ function formatStatusline(input, status) {
     `Nogra:${workspaceId}`,
     version,
     hookSegment(status),
-    `checkpoint:${checkpoint}`,
+    `anchor:${anchor}`,
     `continuity:${continuity}`,
     activeIntent ? `intent:${activeIntent}` : "",
-    quality ? `quality:${quality}` : "",
     `bridge:${bridge}`,
     `dirty:${dirty}`,
     `promo:${promotion}`,

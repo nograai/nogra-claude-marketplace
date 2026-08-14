@@ -1,42 +1,70 @@
 #!/usr/bin/env node
-// Nogra — the BOOT ORDER, bound. (The covenant's own rule, applied to booting:
-// "an agreement that lives in one session is a mood — the good partner has to boot
-// every time, not be hoped for.")
-//
-// When a workspace has existing Nogra state (a checkpoint exists), every session —
-// regardless of which model answers — gets the ground order injected at start. Not as
-// a suggestion buried in docs the session may skip, but as boot context it must hold.
-// Static text, cache-safe. Silent on fresh workspaces (no state = nothing to resume).
-// Fail-safe: any error emits nothing and never breaks session start.
 
-import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+// Bounded SessionStart boot-state adapter. Checkpoint existence is detection,
+// never proof that Claude Code resumed and never authorization to continue.
+
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { resolveBootContext } from "../runtime/local/boot-context.mjs";
 
 function emit(context) {
   process.stdout.write(
     JSON.stringify({
-      hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context || "" },
-    }),
+      hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context || "" }
+    })
   );
 }
 
-const ORDER = `<nogra-boot-order>
-This workspace has existing state — you are RESUMING work, not starting fresh. Before you
-propose or build anything, ground in this order (regardless of which model is answering):
-1. .nogra/state/SESSION-CHECKPOINT.md and CURRENT-TASKS.md — the projections of where work stands.
-2. The ledger tail (.nogra/ledger/) — the truth; if a projection disagrees, the ledger wins.
-3. The pinned user profile and memory index already in your context — honor them; do not rediscover the person.
-4. THE STANDING AGREEMENT for whatever you are about to touch: the brief, the plan, the
-   drawing. Read it before building on it. Yesterday's agreement is law until the operator
-   changes it — a GO on planned work inherits the plan and NEVER authorizes shortcuts around it.
-If you act before these reads, say so honestly. One green box never auto-approves the rest
-of the task list. The drawings are law; you are the builder, not an echo.
-</nogra-boot-order>`;
+function readInput() {
+  try {
+    const raw = readFileSync(0, "utf8").trim();
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function render(boot) {
+  if (boot.state === "fresh") return "";
+  const common = [
+    "<nogra-boot-state>",
+    `state=${boot.state}`,
+    `sessionSource=${boot.sessionSource}`,
+    `workspaceId=${boot.workspaceId}`,
+    `workspaceRoot=${boot.workspaceRoot}`,
+    `checkpointAvailable=${boot.checkpointAvailable}`,
+    "checkpointLoaded=false",
+    "authorization=none"
+  ];
+  if (boot.state === "detected") {
+    common.push(
+      "Nogra state was detected but no project was focused. Ask the operator to choose; do not load project checkpoints or ledger state before focus."
+    );
+  } else if (boot.state === "focused") {
+    common.push(
+      "The runtime focused this workspace. This is not a resume signal. Load checkpoint, tasks or ledger only when the user's intent needs continuity."
+    );
+  } else if (boot.state === "resumed") {
+    common.push(
+      "Claude Code supplied an explicit native resume signal. If continuing prior work, read SESSION-CHECKPOINT.md and CURRENT-TASKS.md, then reconcile factual claims with the ledger. Native resume is not Nogra GO."
+    );
+  } else if (boot.state === "recovering") {
+    common.push(
+      "Claude Code supplied a compact recovery signal. Treat summaries as pointers; re-read only the project-local state needed for current claims. Recovery is not Nogra GO."
+    );
+  }
+  common.push(
+    "A checkpoint is a continuity signal only. A brief is never GO, and no boot state authorizes dispatch, mutation or the next phase.",
+    "</nogra-boot-state>"
+  );
+  return common.join("\n");
+}
 
 try {
-  const root = resolve(process.env.CLAUDE_PROJECT_DIR || process.cwd());
-  const hasState = existsSync(join(root, ".nogra", "state", "SESSION-CHECKPOINT.md"));
-  emit(hasState ? ORDER : "");
+  const input = readInput();
+  const root = resolve(process.env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd());
+  const boot = resolveBootContext({ cwd: root, sessionSource: input.source });
+  emit(render(boot));
 } catch {
   emit("");
 }

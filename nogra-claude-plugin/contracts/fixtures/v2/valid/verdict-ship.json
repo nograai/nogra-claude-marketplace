@@ -1,0 +1,24 @@
+{
+  "schema": "nogra.verdict.v1",
+  "verdictId": "verdict-run-fixture",
+  "workspaceId": "fixture-workspace",
+  "runId": "run-fixture",
+  "briefId": "brief-fixture",
+  "briefHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "verdict": "ship",
+  "reason": "",
+  "generatedAt": "2026-07-23T10:05:00.000Z",
+  "owner": "Manager",
+  "nextOwner": "Manager",
+  "acceptance": [
+    {
+      "criterion": "Fixture criterion",
+      "status": "met"
+    }
+  ],
+  "briefDeviations": [],
+  "decisionRequired": false,
+  "evidenceIds": [
+    "evidence-aaaaaaaaaaaaaaaaaaaa"
+  ]
+}

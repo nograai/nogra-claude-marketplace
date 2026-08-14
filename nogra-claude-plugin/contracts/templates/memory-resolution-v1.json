@@ -1,0 +1,15 @@
+{
+  "schema": "nogra.memory.resolution.v1",
+  "status": "resolved",
+  "projectDir": "/absolute/project",
+  "identityRoot": "/absolute/repository",
+  "configRoot": "/home/user/.claude",
+  "directory": "/home/user/.claude/projects/-absolute-repository/memory",
+  "resolvedDirectory": "/home/user/.claude/projects/-absolute-repository/memory",
+  "source": "git-repository",
+  "confidence": "derived",
+  "settingsSource": "",
+  "autoMemoryEnabled": true,
+  "readOnlyResolution": true,
+  "warnings": []
+}
