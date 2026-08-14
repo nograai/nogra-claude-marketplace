@@ -78,6 +78,23 @@ For each proposed phase, include:
 - evidence or return point
 - why this phase is separate
 
+## Role-Lease Scope and Worktrees
+
+Role leases match `scope.files` patterns against workspace-relative paths from
+the workspace root — not from the executor's working directory. Two consequences:
+
+- A brief whose work lives in a sister worktree must prefix every `scope.files`
+  entry with the worktree path (for example `worktrees/main-merge/scripts/foo.ts`,
+  not `scripts/foo.ts`). A bare pattern never matches a worktree path and the
+  executor fails closed on file access.
+- Leases never span workspaces: a lease issued in one workspace cannot approve
+  files in another, regardless of path spelling. Dispatch work where the files
+  live.
+
+This is a documented boundary of the current lease matcher. Path normalization
+at lease issuance is queued; until it lands, the prefix rule above is part of
+the brief contract.
+
 ## Execution Sizing
 
 Choose `maxTurns` only after the approved brief exists and before spawning the

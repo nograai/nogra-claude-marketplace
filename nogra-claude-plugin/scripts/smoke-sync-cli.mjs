@@ -156,7 +156,7 @@ try {
   });
   sa = { code: 0, out };
 } catch (err) { sa = { code: err.status ?? 1, out: `${err.stdout || ""}${err.stderr || ""}` }; }
-check("S-A: udenfor et workspace = HØJ fejl + exit 1 (aldrig stille)", sa.code === 1 && /ingen \.nogra/.test(sa.out));
+check("S-A: udenfor et workspace = HØJ fejl + exit 1 (aldrig stille)", sa.code === 1 && /no \.nogra/.test(sa.out));
 rmSync(saRoot, { recursive: true, force: true });
 
 // 12) S-B (16/07): det ærlige sæde — tomme/malformede tokens får NAVN og KUR; status viser
@@ -169,11 +169,11 @@ const sbDir = join(sbRoot, ".nogra", "memory", "sync");
 mkdirSync(sbDir, { recursive: true });
 writeFileSync(join(sbDir, "token"), "\n"); // pastens klassiker: én ensom newline
 r = run(sbRoot, ["pull"]);
-check("S-B: pull med TOM token-fil fejler HØJT m/ bytes + kur, exit 1", r.code === 1 && /TOM \(1 bytes\)/.test(r.out) && /mint/.test(r.out));
+check("S-B: pull med TOM token-fil fejler HØJT m/ bytes + kur, exit 1", r.code === 1 && /EMPTY \(1 bytes\)/.test(r.out) && /mint/.test(r.out));
 check("S-B: den høje fejl efterlader en receipt", /token:empty/.test(readFileSync(join(sbDir, "log.jsonl"), "utf8")));
 writeFileSync(join(sbDir, "token"), "ikke-et-token-overhovedet");
 r = run(sbRoot, ["run"]);
-check("S-B: run med MALFORMET token fejler højt, exit 1", r.code === 1 && /MALFORMET/.test(r.out));
+check("S-B: run med MALFORMET token fejler højt, exit 1", r.code === 1 && /MALFORMED/.test(r.out));
 // et ægte-formet (usigneret) token: metadata skal kunne AFLÆSES uden at værdien printes
 const payload = Buffer.from(JSON.stringify({ sub: "patti", scopes: ["memory:read", "memory:append"], aud: "https://sync.example.com", exp: Math.floor(Date.now() / 1000) + 3600, seat: "testbænk" })).toString("base64url");
 writeFileSync(join(sbDir, "token"), `nst_${payload}.deadbeef`);
@@ -184,18 +184,18 @@ check("S-B: status viser you-linjen", /you: {4,6}/.test(r.out));
 // rolle-kohærens: HOME-sæde med union-token = FEJL med kur
 writeFileSync(join(sbDir, "mode"), "replace\n");
 r = run(sbRoot, ["status"]);
-check("S-B: kohærens fanger HOME-sæde uden replace-scope (403-varsel m/ kur)", /kohærens: ⚠ FEJL/.test(r.out) && /mint --home/.test(r.out));
+check("S-B: kohærens fanger HOME-sæde uden replace-scope (403-varsel m/ kur)", /coherence: ⚠ FAIL/.test(r.out) && /mint --home/.test(r.out));
 // udløbet token siger det selv
 const oldPayload = Buffer.from(JSON.stringify({ sub: "patti", scopes: ["memory:read"], aud: "x", exp: 1 })).toString("base64url");
 writeFileSync(join(sbDir, "token"), `nst_${oldPayload}.deadbeef`);
 r = run(sbRoot, ["pull"]);
-check("S-B: udløbet token fejler højt med UDLØBET-navn", r.code === 1 && /UDLØBET/.test(r.out));
+check("S-B: udløbet token fejler højt med UDLØBET-navn", r.code === 1 && /EXPIRED/.test(r.out));
 // tavlen vises fra state.json (sidste pulls sandhed)
 writeFileSync(join(sbDir, "state.json"), JSON.stringify({ you: "m3", lastPullAt: "2026-07-16T10:00:00Z", seatBoard: { huset: { last_seen: "2026-07-16T10:51:50Z", last_pushed: null, dirty: true } } }));
 writeFileSync(join(sbDir, "token"), `nst_${payload}.deadbeef`);
 writeFileSync(join(sbDir, "mode"), "union\n");
 r = run(sbRoot, ["status"]);
-check("S-B: tavlen vises fra sidste pull m/ dirty-flag", /tavlen \(pr\. sidste pull/.test(r.out) && /huset: set 2026-07-16T10:51:50Z/.test(r.out) && /dirty=true/.test(r.out));
+check("S-B: tavlen vises fra sidste pull m/ dirty-flag", /board \(as of last pull/.test(r.out) && /huset: set 2026-07-16T10:51:50Z/.test(r.out) && /dirty=true/.test(r.out));
 check("S-B: you aflæses fra state", /you: {4,6}m3/.test(r.out));
 rmSync(sbRoot, { recursive: true, force: true });
 
@@ -205,20 +205,20 @@ const drRoot = mkdtempSync(join(tmpdir(), "nogra-sync-cli-dr-"));
 mkdirSync(join(drRoot, ".nogra"), { recursive: true });
 writeFileSync(join(drRoot, ".nogra", "config.json"), JSON.stringify({ workspaceId: "smoke-dr" }));
 r = run(drRoot, ["doctor"]);
-check("S-C: doctor på sluttet sync = 0 FEJL, probe sprunget over (off er et valg)", r.code === 0 && /sprunget over \(sync off\)/.test(r.out) && /0 FEJL/.test(r.out));
+check("S-C: doctor på sluttet sync = 0 FEJL, probe sprunget over (off er et valg)", r.code === 0 && /skipped \(sync off\)/.test(r.out) && /0 failures/.test(r.out));
 run(drRoot, ["bind", "https://sync.example.com"]);
 const drDir = join(drRoot, ".nogra", "memory", "sync");
 mkdirSync(drDir, { recursive: true });
 writeFileSync(join(drDir, "token"), "\n");
 r = run(drRoot, ["doctor"]);
-check("S-C: doctor m/ enabled + TOM token = FEJL m/ inline-kur, exit 1", r.code === 1 && /TOM/.test(r.out) && /mint og placér/.test(r.out));
+check("S-C: doctor m/ enabled + TOM token = FEJL m/ inline-kur, exit 1", r.code === 1 && /EMPTY/.test(r.out) && /mint and place/.test(r.out));
 // velformet token på SLUKKET sæde: metadata aflæses, værdien forlader aldrig processen
 run(drRoot, ["off"]);
 const drPayload = Buffer.from(JSON.stringify({ sub: "patti", scopes: ["memory:read", "memory:append", "memory:replace"], aud: "https://sync.example.com", exp: Math.floor(Date.now() / 1000) + 3600, seat: "huset" })).toString("base64url");
 writeFileSync(join(drDir, "token"), `nst_${drPayload}.deadbeef`);
 writeFileSync(join(drDir, "mode"), "replace\n");
 r = run(drRoot, ["doctor"]);
-check("S-C: doctor aflæser metadata + kohærens (home+replace matcher)", /seat=huset/.test(r.out) && /kohærens: rolle \(replace\) og token matcher/.test(r.out));
+check("S-C: doctor aflæser metadata + kohærens (home+replace matcher)", /seat=huset/.test(r.out) && /coherence: role \(replace\) and token match/.test(r.out));
 check("S-C: doctor printer ALDRIG token-værdien", !r.out.includes(drPayload));
 r = run(drRoot, ["helt-galt-verb"]);
 check("S-C: usage nævner doctor", r.code === 1 && /doctor/.test(r.out));
@@ -230,16 +230,16 @@ const sdRoot = mkdtempSync(join(tmpdir(), "nogra-sync-cli-sd-"));
 mkdirSync(join(sdRoot, ".nogra"), { recursive: true });
 writeFileSync(join(sdRoot, ".nogra", "config.json"), JSON.stringify({ workspaceId: "smoke-sd" }));
 r = run(sdRoot, ["bind", "http://127.0.0.1:9"]);
-check("S-D: bind uden token instruerer + lover self-verify ved næste bind, exit 0", r.code === 0 && /MISSING/.test(r.out) && /self-verify: kør `bind` igen/.test(r.out));
+check("S-D: bind uden token instruerer + lover self-verify ved næste bind, exit 0", r.code === 0 && /MISSING/.test(r.out) && /self-verify: run `bind` again/.test(r.out));
 const sdDir = join(sdRoot, ".nogra", "memory", "sync");
 mkdirSync(sdDir, { recursive: true });
 writeFileSync(join(sdDir, "token"), "\n");
 r = run(sdRoot, ["bind", "http://127.0.0.1:9"]);
-check("S-D: bind m/ TOM token-fil venter ærligt m/ navngivet årsag, exit 0", r.code === 0 && /TOM/.test(r.out) && /self-verify: venter/.test(r.out));
+check("S-D: bind m/ TOM token-fil venter ærligt m/ navngivet årsag, exit 0", r.code === 0 && /EMPTY/.test(r.out) && /self-verify: waiting/.test(r.out));
 const sdPayload = Buffer.from(JSON.stringify({ sub: "patti", scopes: ["memory:read", "memory:append"], aud: "http://127.0.0.1:9", exp: Math.floor(Date.now() / 1000) + 3600, seat: "smoke-sæde" })).toString("base64url");
 writeFileSync(join(sdDir, "token"), `nst_${sdPayload}.deadbeef`);
 r = run(sdRoot, ["bind", "http://127.0.0.1:9"]);
-check("S-D: bind m/ raskt token prøver SELV proben — død himmel = ærlig fejl + doctor-kur, exit 1", r.code === 1 && /self-verify: proben fejlede/.test(r.out) && /doctor/.test(r.out));
+check("S-D: bind m/ raskt token prøver SELV proben — død himmel = ærlig fejl + doctor-kur, exit 1", r.code === 1 && /self-verify: the probe failed/.test(r.out) && /doctor/.test(r.out));
 rmSync(sdRoot, { recursive: true, force: true });
 
 rmSync(root, { recursive: true, force: true });

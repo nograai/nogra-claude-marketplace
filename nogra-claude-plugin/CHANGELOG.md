@@ -1,7 +1,15 @@
 # Changelog
 
-## 0.9.0-internal.5 — 2026-07-24 — Quality Pass 0 unified candidate
+## 0.9.0 — 2026-08-14 "the spine release" (Quality Pass 0 goes public: contract spine, anchor, role leases)
 
+- Carries the 0.8.9 `/nogra:dayclose` skill forward unchanged. 0.8.9's
+  session-quality lane is intentionally NOT carried: Phase 6 hidden-scoring
+  isolation supersedes it with the explicit, user-only
+  `/nogra:transcript-diagnostic` (no hidden SessionEnd scoring, ever).
+- Documented the role-lease worktree boundary in the dispatch contract:
+  `scope.files` patterns match workspace-relative paths, so briefs targeting a
+  sister worktree must prefix entries with the worktree path. Known sharp edge,
+  documented rather than hidden; runtime normalization is queued.
 - Added the canonical contract spine
   `brief.v1 -> approval.v1 -> run.v2 -> run-event.v2 -> evidence.v1 -> verdict.v1` with
   schema-closed validation, scoped single-use approvals, lifecycle/outcome/
@@ -79,13 +87,35 @@
   `SourceWatermark: 0` (unknown); it never labels old prose current merely
   because a newer ledger exists.
 
+## 0.8.9 — 2026-08-05 "the dayclose release" (close the day like the ledger opened it)
+
+- **New skill: `/nogra:dayclose`** — the evening counterpart to the morning brief. Seven
+  measured steps: sweep every open thread (agents, background jobs, dev services, overnight
+  wakers — each survivor checked against the pinned-model law), stamp the day in the ledger,
+  update every projection in the same move, run the memory write-loop, inbox hygiene, git
+  honesty (every touched repo named committed-or-PARKED), and a final Pinocchio pass where
+  everything claimed closed is measured closed. `--weekly` extends the close with a
+  week-level digest incl. north-star metric delta. Graded KEEP on live-run evidence
+  (first real close 2026-08-04) before publish.
+- **Honesty rule hardened by the first live run:** predictions about what happens after
+  close ("drains by itself", "resolves overnight") require a mechanism receipt or must be
+  written as an OPEN item — the first close carried one such line and the morning proved
+  it false. The rule now ships in the skill.
+- **`/nogra:status` invocation discipline** — fixes the operator-ruled failure where a
+  pinned headless seat ran ad-hoc tool calls instead of loading the skill first
+  (pre-measuring), or answered from session memory (stale render). The skill now states:
+  loading it is the FIRST action of the turn; the skill directs the measurements, never
+  the reverse; every shown value comes from a fresh, skill-directed read. Validated
+  headless on a pinned seat before publish: command-expansion first, references read
+  before any measurement, output in the spec form.
+
 ## 0.8.8 — 2026-07-17 "the adopt release" (the house's truth wins)
 
 - **Union seats now ADOPT the home's consolidated truth on pull — they no longer union-grow it.**
   `unionMerge` is add-only by construction: it can append an unseen line but can never propagate a
   line the home *removed*. So when the home consolidated (dropped stale lines, replaced the sky), a
   union seat pulling it kept its own stale copy and merged the home's new lines on top — growing
-  monotonically past budget, never converging. Proven live (URET #260): a union seat pulled a
+  monotonically past budget, never converging. Proven live: a union seat pulled a
   2849-char home consolidation and ended at 3653 chars with the same checkpoint line three times.
 - **The fix, client-only, on the drawn law** (DECISIONS #43 "the bench is a projection that must
   adopt the house's truth", #57 "bench seats only clean their local copy and never re-push a line
@@ -103,7 +133,7 @@
 - **Untouched by design:** the server, `unionMerge` itself, the budget/front-6/race-streg guards,
   the replace verb, and the home seat. Line-level tombstones remain drawn for a later release
   (DECISIONS #59). Verified independently at the bench: client-smoke 87/87 ×3, sync-cli 52/52,
-  server 89/89, and today's 3653 ghost as an ordret FAIL→PASS test (URET #262).
+  server 89/89, and today's 3653 ghost as a verbatim FAIL→PASS test.
 
 ## 0.8.7 — 2026-07-17 "the crown release" (the crown never rebases)
 
@@ -220,12 +250,12 @@ built one GO at a time; no operator is ever the sync engine again.
 - Smokes: cli 32 -> 52 (+20 guards, incl. "the value is never printed" and a
   deterministic dead-sky probe via loopback). Client suite untouched, 55/55.
 
-## 0.8.4 — 2026-07-16 "the seat release" (seat-awareness, built on the D1-D5 verdicts 15/07; konge-beviset stod samme dag, URET #196)
+## 0.8.4 — 2026-07-16 "the seat release" (seat-awareness, built on the D1-D5 verdicts 15/07)
 
 Sync learns WHO: the clock keeps a seat board, and a seat can never again believe
 it is in sync when it is not.
 
-- **The stall-signal (the knock's third leg).** Every pull carries the sæde-tavle home
+- **The stall-signal (the knock's third leg).** Every pull carries the seat board home
   (seats' last_seen · last_pushed · dirty — metadata only, never content). When ANOTHER
   seat is active with unpushed state, session start knocks: facts name the seat and the
   Manager weaves an honest staleness line into answers it touches — never blocks, never
@@ -324,8 +354,8 @@ fix closed a real incident where "home" traveled to a second machine via git.
 
 The sync release: the hosted-brain edges ship as a whole — hooks, client and the human
 handle — so wiring a seat is one command, never a hand-built bridge. Proven the day it
-was cut: the first machine to move in this way was our own (nogra-house, 13/07, its own
-hooks pulling the brain on their very first run, 6/6 green).
+was cut: the first machine to move in this way was our own dev seat, its own
+hooks pulling the brain on their very first run, 6/6 green.
 
 - **`/nogra:sync` — sync as a function, not a terminal incantation.** One skill, five
   verbs, all backed by `scripts/sync-cli.mjs`: `status` (enabled, endpoint, token
