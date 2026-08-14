@@ -258,6 +258,11 @@ preserves or merges existing Nogra files according to the bundled write policy.
   brief before execution.
 - `/nogra:dispatch`: dispatch an approved brief after explicit GO.
 - `/nogra:verify`: check whether a claim/result matches the brief and evidence.
+- `/nogra:decide`: record an operator decision as a durable, receipted record
+  in the workspace decision log.
+- `/nogra:dayclose`: close the working day with measurements — sweep open
+  threads (agents, jobs, services), stamp the day in the ledger, update every
+  projection in the same move, and measure everything claimed closed.
 - `/nogra:anchor`: preserve schema-valid factual continuity without granting
   GO or claiming readiness.
 - `/nogra:settings`: show or update local Nogra profile, runtime role models,

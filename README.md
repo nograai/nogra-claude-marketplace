@@ -113,12 +113,20 @@ you to; plugin scope can be user, project or local.
 - `/nogra:authorize <boundary>`: record a standing GO for a risk boundary class
   on the running intent — starting a minimal intent (user-confirmed) when none is running.
 - `/nogra:verify`: check a claim or result against evidence.
+- `/nogra:anchor`: preserve schema-valid factual continuity without granting GO.
+- `/nogra:decide`: record an operator decision as a durable, receipted record.
+- `/nogra:dayclose`: close the working day with measurements — sweep open
+  threads, stamp the ledger, update projections and verify everything claimed closed.
 - `/nogra:ground`: re-anchor a drifted session, verify claims against facts,
   then hand the next decision back.
 - `/nogra:status`: show plugin, workspace, ledger and recent run state.
 - `/nogra:settings`: inspect or update runtime/language settings.
 - `/nogra:update`: refresh local Nogra guidance.
 - `/nogra:watch`: inspect recent local hook events when you need visibility.
+- `/nogra:sync`: show or run hosted-brain sync for this seat; bind is explicit
+  and the token never passes through the model.
+- `/nogra:transcript-diagnostic`: user-only, explicit lexical transcript preview —
+  no score, no authority, writes only with `--write`.
 - `/nogra:help`: choose the right Nogra flow.
 
 ## Workspace Shape
