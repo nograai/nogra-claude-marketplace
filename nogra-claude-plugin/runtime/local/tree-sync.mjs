@@ -17,6 +17,9 @@ export function gitRun(root, args, opts = {}) {
   return execFileSync("git", ["-C", root, ...args], {
     timeout: opts.timeoutMs || 8000,
     stdio: ["ignore", "pipe", "pipe"],
+    // Hooks read git while the operator's own git command may be mid-flight in the
+    // same repo; optional locks off means a hook read never takes index.lock.
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
   })
     .toString()
     .trim();

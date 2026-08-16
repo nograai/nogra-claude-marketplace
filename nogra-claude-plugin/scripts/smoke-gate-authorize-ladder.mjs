@@ -113,10 +113,14 @@ function check(rung, label, root, cmd, want) {
   rows.push({ rung, label, got, want, pass });
 }
 
-// ① No running intent -> every class ASKS (fail-closed). autoApprove is ON to
-//    prove it is the missing intent, not a missing opt-in, that keeps it closed.
+// ① No running intent -> deploy/destructive ASK (fail-closed). Routine git
+//    verbs (push/commit/checkout …) are the operator's ordinary workbench:
+//    the constitution says Nogra invites, it does not enforce — without a
+//    covering run they stay an OBSERVE line and native permissions govern
+//    (doctrine written into the guard; ladder aligned 16/08 on CEO's GO).
 for (const c of CLASSES) {
-  check("①", `no intent · ${c.key}`, makeWorkspace(`no-intent-${c.key}`, { gate: { mode: "advisory", autoApprove: true } }), c.cmd, "ask");
+  const want = c.key === "git-history" ? "skip" : "ask";
+  check("①", `no intent · ${c.key}`, makeWorkspace(`no-intent-${c.key}`, { gate: { mode: "advisory", autoApprove: true } }), c.cmd, want);
 }
 
 // ② Class authorized, autoApprove OFF -> Nogra skips its nudge but emits no allow.
@@ -133,7 +137,9 @@ for (const c of CLASSES) {
 {
   const only = intentWith(["production-deploy"], ["**"]);
   check("④", "only prod-deploy · vercel --prod", makeWorkspace("leak-deploy", { gate: { mode: "advisory", autoApprove: true }, intent: only }), "vercel --prod", "allow");
-  check("④", "only prod-deploy · git push", makeWorkspace("leak-git", { gate: { mode: "advisory", autoApprove: true }, intent: intentWith(["production-deploy"], ["**"]) }), "git push origin main", "ask");
+  // git push without its class covered stays an OBSERVE line (routine-git
+  // doctrine) — the no-cross-leak proof is that it never becomes ALLOW.
+  check("④", "only prod-deploy · git push", makeWorkspace("leak-git", { gate: { mode: "advisory", autoApprove: true }, intent: intentWith(["production-deploy"], ["**"]) }), "git push origin main", "skip");
   check("④", "only prod-deploy · rm -rf", makeWorkspace("leak-rm", { gate: { mode: "advisory", autoApprove: true }, intent: intentWith(["production-deploy"], ["**"]) }), "rm -rf ./build", "ask");
 }
 

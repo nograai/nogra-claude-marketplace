@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.9.1 — 2026-08-16
+
+Released on the operator's grade+GO ("C — kør det hele"), same day the three
+headline changes ran a full factory day live. Two additions landed at the cut:
+
+- Bypass escalation: in `bypassPermissions` mode an "ask" is a prompt nobody
+  sees — for HIGH/CRITICAL uncovered boundaries the gate now escalates
+  ask → deny, so bypass sessions need a covering receipt (or a mode change)
+  for risk classes. Ordinary asks, covered allows and observe lines untouched.
+  (Measured live 16/08: an unseen ask let a shared-service deploy proceed.)
+- authorize-ladder smoke aligned with the routine-git doctrine already written
+  into the guard ("Nogra invites, it does not enforce — no prompt layer over
+  daily git"): uncovered routine git verbs are an OBSERVE line, never ask,
+  never allow; deploy/destructive/non-git boundaries keep their ask.
+
+- Audit lines now carry the intent: `brief=<briefId>` on covered, scratch and
+  not-covered decisions alike (the descriptive briefId is the intent name).
+  A "missing" in the log always has its "but under this intent" half —
+  operator-ordered 16/08; pairs with the gradelog enrichment so
+  invoke × action × decision × receipt × intent is one line.
+
+- Evidence artifacts are now preserved byte-for-byte in a local
+  digest-addressed vault when `evidence-save` runs. A mutable working
+  projection may change without erasing its historical receipt; active facts
+  still fail closed if neither live bytes nor the exact snapshot exists. One
+  explicitly named invalid legacy fact can be recovered only by a
+  same-subject, non-regressing replacement with independently valid evidence;
+  superseded historical drift no longer bricks every future fact/Anchor read.
+- PreToolUse live-log lines now carry the gate's verdict for gradability:
+  decision lines include the dense `Audit:` sentence (action/coverage/receipt)
+  as `nogra.reason` — previously empty, so ask/review/allow decisions could
+  not be graded from the log. The full review message loses its tail to the
+  240-char line bound; the audit sentence is preferred because the tail is
+  where grading lives. (Operator-ordered mount 16/08; reader:
+  `bin/nogra-gradelog` in the workspace sweeps per-workspace logs into a
+  daily gradebook.)
+- Dispatch receipts now carry the approved brief's boundary grant
+  (`metadata.authorizedBoundaries` + `metadata.scopePatterns`) instead of a
+  hardcoded `workspace-write`. Coverage is enumerated at GO-time inside
+  briefHash — a grant can never widen itself mid-run. Hard allowlist:
+  gate-arming, billing, secrets, permissions and customer-send are never
+  grantable by receipt; a grant without scope patterns degrades to the
+  default (coverage must have a form, not just a state). Pairs with the
+  existing `gate.autoApprove` opt-in: covered actions emit `allow` with the
+  audit line, everything else keeps asking. (The hook now carries intent —
+  operator-backlogged 2026-08-15.)
+
 ## 0.9.0 — 2026-08-14 "the spine release" (Quality Pass 0 goes public: contract spine, anchor, role leases)
 
 - Carries the 0.8.9 `/nogra:dayclose` skill forward unchanged. 0.8.9's

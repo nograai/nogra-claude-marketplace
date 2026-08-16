@@ -22,15 +22,21 @@ records live under `.nogra/runs/`, canonical run events share the append-only
 `.nogra/transport/artifacts/`.
 
 `nogra.evidence.v1` is an immutable, content-addressed observation receipt.
-Artifact digests are computed from workspace-local files. A canonical ship
-verdict must reference at least one evidence ID; free-text evidence references
-cannot satisfy verification.
+Artifact digests are computed from workspace-local files, and evidence-save
+preserves the exact bytes in a digest-addressed local artifact vault. The
+original `ref` remains provenance; later mutation of that working path cannot
+rewrite or erase the recorded observation. A canonical ship verdict must
+reference at least one evidence ID; free-text evidence references cannot
+satisfy verification.
 
 `nogra.fact.v1` shares the append-only ledger but sits beside the workflow
 spine. One stable subject has at most one active fact. Corrections and evidence
 upgrades require explicit `supersedes`, evidence strength cannot regress, and
 memory/sync sources are capped at `reported`. `.nogra/state/CURRENT-FACTS.json`
-is only a rebuildable projection; ledger records own identity.
+is only a rebuildable projection; ledger records own identity. Active facts
+remain fail-closed when their evidence is unavailable. An explicitly
+superseded historical fact no longer blocks the current projection once its
+same-or-stronger replacement has independently valid support.
 
 `nogra.dispatch.receipt.v2` is the validated command-response projection that
 embeds the consumed approval and canonical run. It is not itself a run record.
