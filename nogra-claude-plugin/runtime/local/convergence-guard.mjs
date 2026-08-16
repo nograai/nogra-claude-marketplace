@@ -175,7 +175,7 @@ function boundaryClass(risk, name, payload = {}) {
   if (/^git /u.test(risk)) return "git-history";
   if (risk === "production deploy") return "production-deploy";
   if (risk === "instruction-surface write") return "instruction-surface";
-  if (risk === "data migration" || risk === "database mutation") return "data-migration";
+  if (risk === "data migration" || risk === "database mutation" || risk === "data migration file") return "data-migration";
   if (risk === "customer/billing action") return "billing";
   if (risk === "destructive rm" || risk === "find action") return "destructive-write";
   return cleanInline(risk);
@@ -1413,6 +1413,9 @@ function actionImpact(actionType) {
   if (action === "data migration") {
     return "may mutate persisted schema or data; reversibility may be low";
   }
+  if (action === "data migration file") {
+    return "authors a database migration artifact that a later apply step will run against persisted schema or data";
+  }
   if (action === "database mutation") {
     return "may mutate database rows or schema; reversibility depends on backups and environment";
   }
@@ -1644,7 +1647,23 @@ function pathRisk(toolName, toolInput = {}) {
   ) {
     return "instruction-surface write";
   }
-  if (/\b(?:migration|migrations|schema|billing|payments|stripe|auth|permissions|roles)\b/iu.test(normalized)) {
+  // Migration-domain writes are judged by the action's HOME, not by a word in
+  // a filename (ruled 16/08: the hook flagged a sandbox-only script because
+  // its NAME contained "migration"; the word is not the act). Two positive
+  // shapes carry the risk: a file living inside a migrations directory, or a
+  // raw DB artifact (.sql/.prisma) whose own name declares migration intent.
+  // The label maps to the data-migration boundary so a dispatch receipt that
+  // declares data-migration can cover authoring these files.
+  const parentSegments = lowerSegments.slice(0, -1);
+  const lowerBasename = basename.toLowerCase();
+  if (
+    parentSegments.includes("migrations") ||
+    (/\.(?:sql|prisma)$/u.test(lowerBasename) &&
+      /\b(?:migration|migrations|schema|ddl)\b/iu.test(lowerBasename))
+  ) {
+    return "data migration file";
+  }
+  if (/\b(?:schema|billing|payments|stripe|auth|permissions|roles)\b/iu.test(normalized)) {
     return `${toolName} risk file`;
   }
   return "";

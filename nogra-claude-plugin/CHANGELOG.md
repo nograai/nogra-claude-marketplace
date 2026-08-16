@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Migration-domain writes are judged by the action's home, not by a word in a
+  filename: a file inside a `migrations/` directory, or a `.sql`/`.prisma`
+  artifact whose own name declares migration intent, now classifies as
+  `data migration file` and maps to the `data-migration` boundary — coverable
+  by a dispatch receipt that declares it. A script merely *named* something
+  with "migration" is ordinary workspace-write. (Measured live 16/08: the
+  hook flagged a sandbox-only apply script on its name while the receipt had
+  no data-migration boundary to cover even the real migration file — a fence
+  that matched the word instead of the act, in both directions.)
+
 ## 0.9.1 — 2026-08-16
 
 Released on the operator's grade+GO ("C — kør det hele"), same day the three
