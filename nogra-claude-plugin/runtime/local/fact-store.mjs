@@ -48,6 +48,13 @@ function atomicWrite(file, content) {
   fs.renameSync(tmp, file);
 }
 
+function atomicWriteBytes(file, content) {
+  ensureDir(path.dirname(file));
+  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`);
+  fs.writeFileSync(tmp, content);
+  fs.renameSync(tmp, file);
+}
+
 function appendDurableLine(file, value) {
   ensureDir(path.dirname(file));
   const handle = fs.openSync(file, "a");
@@ -161,6 +168,51 @@ function fileDigest(file) {
   return `sha256:${crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")}`;
 }
 
+function contentDigest(content) {
+  return `sha256:${crypto.createHash("sha256").update(content).digest("hex")}`;
+}
+
+function artifactSnapshotPath(root, digest) {
+  const match = /^sha256:([a-f0-9]{64})$/u.exec(cleanInline(digest));
+  if (!match) throw new Error(`invalid evidence artifact digest: ${cleanInline(digest) || "(empty)"}`);
+  return path.join(root, ".nogra", "evidence", "artifacts", "sha256", match[1]);
+}
+
+function preserveArtifactSnapshot(root, content, digest) {
+  const file = artifactSnapshotPath(root, digest);
+  if (fs.existsSync(file)) {
+    if (!fs.statSync(file).isFile() || fileDigest(file) !== digest) {
+      throw new Error(`evidence artifact snapshot integrity mismatch: ${digest}`);
+    }
+    return file;
+  }
+  atomicWriteBytes(file, content);
+  if (fileDigest(file) !== digest) {
+    throw new Error(`evidence artifact snapshot write mismatch: ${digest}`);
+  }
+  return file;
+}
+
+function assertEvidenceArtifactAvailable(root, artifact) {
+  let liveFailure = null;
+  try {
+    const file = resolveWorkspacePath(root, artifact.ref);
+    if (fileDigest(file) === artifact.sha256) return;
+    liveFailure = new Error(`evidence artifact integrity mismatch: ${artifact.ref}`);
+  } catch (error) {
+    liveFailure = error;
+  }
+
+  const snapshot = artifactSnapshotPath(root, artifact.sha256);
+  if (fs.existsSync(snapshot)) {
+    if (!fs.statSync(snapshot).isFile() || fileDigest(snapshot) !== artifact.sha256) {
+      throw new Error(`evidence artifact snapshot integrity mismatch: ${artifact.ref}`);
+    }
+    return;
+  }
+  throw liveFailure;
+}
+
 function evidencePath(root, evidenceId) {
   if (!/^evidence-[a-f0-9]{20}$/u.test(cleanInline(evidenceId))) {
     throw new Error(`invalid evidence id: ${cleanInline(evidenceId) || "(empty)"}`);
@@ -183,13 +235,7 @@ export function readEvidenceRecord(root, evidenceId) {
   if (record.workspaceId !== workspaceId(root)) {
     throw new Error(`evidence belongs to another workspace: ${evidenceId}`);
   }
-  for (const artifact of record.artifacts) {
-    const file = resolveWorkspacePath(root, artifact.ref);
-    const currentDigest = fileDigest(file);
-    if (currentDigest !== artifact.sha256) {
-      throw new Error(`evidence artifact integrity mismatch: ${artifact.ref}`);
-    }
-  }
+  for (const artifact of record.artifacts) assertEvidenceArtifactAvailable(root, artifact);
   for (const verdictId of record.verdictIds) {
     const verdict = readVerdictRecord(root, verdictId);
     if (record.evidenceLevel === "verified" && verdict.verdict !== "ship") {
@@ -239,9 +285,12 @@ function normalizeArtifacts(root, input) {
     if (seen.has(ref)) throw new Error(`duplicate evidence artifact ref: ${ref}`);
     seen.add(ref);
     const file = resolveWorkspacePath(root, ref);
+    const content = fs.readFileSync(file);
+    const sha256 = contentDigest(content);
+    preserveArtifactSnapshot(root, content, sha256);
     return {
       ref,
-      sha256: fileDigest(file),
+      sha256,
       mediaType: cleanInline(raw.mediaType) || "application/octet-stream"
     };
   });
@@ -397,16 +446,27 @@ export function saveEvidenceRecord(root, input) {
   });
 }
 
-export function readFactRecords(root) {
-  const facts = parseLedger(root)
+function readFactLedgerRecords(root) {
+  return parseLedger(root)
     .filter((item) => item?.schema === FACT_SCHEMA_V1)
     .map((item) => {
       assertFactSemantics(item);
       return item;
     });
+}
+
+function assertActiveFactSupport(root, facts, options = {}) {
+  const supersededIds = new Set(facts.map((fact) => fact.supersedes).filter(Boolean));
   for (let index = 0; index < facts.length; index += 1) {
+    if (supersededIds.has(facts[index].factId)) continue;
+    if (facts[index].factId === options.skipFactId) continue;
     assertFactSupport(root, facts[index], facts.slice(0, index));
   }
+}
+
+export function readFactRecords(root) {
+  const facts = readFactLedgerRecords(root);
+  assertActiveFactSupport(root, facts);
   return facts;
 }
 
@@ -513,12 +573,13 @@ export function recordFact(root, input) {
     };
     semantic.contentHash = factContentHash(semantic);
     semantic.factId = `fact-${semantic.contentHash.slice("sha256:".length, "sha256:".length + 20)}`;
-    const facts = readFactRecords(root);
+    const facts = readFactLedgerRecords(root);
     const existing = facts.find((fact) => fact.factId === semantic.factId);
     if (existing) {
       if (existing.contentHash !== semantic.contentHash) {
         throw new Error(`immutable fact id collision: ${semantic.factId}`);
       }
+      assertActiveFactSupport(root, facts);
       const rebuilt = rebuildFactProjection(root);
       return {
         status: "ok",
@@ -555,6 +616,7 @@ export function recordFact(root, input) {
     if (Date.parse(fact.observedAt) > Date.parse(fact.recordedAt)) {
       throw new Error("fact observedAt cannot be later than recordedAt");
     }
+    assertActiveFactSupport(root, facts, { skipFactId: fact.supersedes });
     assertFactSupport(root, fact, facts);
     appendDurableLine(ledgerFile(root), fact);
     const rebuilt = rebuildFactProjection(root);

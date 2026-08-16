@@ -217,27 +217,57 @@ async function main() {
       await new Promise((resolve) => server.close(resolve));
     }
 
+    const testedSnapshot = path.join(
+      root,
+      ".nogra",
+      "evidence",
+      "artifacts",
+      "sha256",
+      tested.evidence.artifacts[0].sha256.slice("sha256:".length)
+    );
+    assert.equal(fs.readFileSync(testedSnapshot, "utf8"), "phase 3 smoke passed\n", "evidence save must preserve exact artifact bytes");
+
     write(path.join(root, outputRef), "tampered after receipt\n");
+    assert.equal(
+      readEvidenceRecord(root, tested.evidence.evidenceId).evidenceId,
+      tested.evidence.evidenceId,
+      "a content-addressed snapshot must preserve historical evidence when its live source moves"
+    );
+    assert.equal(factStatus(root).status, "ok", "live projection drift must not erase snapshotted fact support");
+
+    fs.unlinkSync(testedSnapshot);
     throwsNamed(
       () => readEvidenceRecord(root, tested.evidence.evidenceId),
       /integrity mismatch/u,
-      "changed evidence artifacts must fail integrity checks"
+      "legacy evidence without matching live bytes or a snapshot must fail closed"
     );
     throwsNamed(
       () => factStatus(root),
       /integrity mismatch/u,
-      "fact projection must fail closed when supporting evidence changes"
+      "an active legacy fact with unavailable support must block the projection"
     );
-    write(path.join(root, outputRef), "phase 3 smoke passed\n");
+
+    const repairedEvidence = saveEvidenceRecord(root, {
+      ...testedInput,
+      summary: "The phase-3 fixture was re-observed after legacy artifact drift."
+    });
+    const repairedFact = recordFact(root, {
+      ...firstFactInput,
+      claim: "The phase-3 fixture was re-observed with preserved evidence.",
+      evidenceIds: [repairedEvidence.evidence.evidenceId],
+      source: { type: "tool_receipt", ref: repairedEvidence.evidence.evidenceId },
+      supersedes: replacement.fact.factId
+    });
+    assert.equal(repairedFact.fact.supersedes, replacement.fact.factId, "an explicit supported correction must recover one invalid active legacy fact");
 
     const status = factStatus(root);
     assert.equal(status.projection.counts.active, 3);
-    assert.equal(status.projection.counts.superseded, 1);
+    assert.equal(status.projection.counts.superseded, 2);
     assert.equal(status.projection.memoryAuthority, "advisory_projection_only");
     assert.equal(status.freshness, "fresh");
     assert.ok(status.projection.activeFacts.every((fact) => fact.factId && fact.factKey));
 
-    console.log("evidence/fact v1 smoke passed: content-addressed evidence, explicit supersession, monotonic levels, advisory memory/sync, integrity and ledger projection hold");
+    console.log("evidence/fact v1 smoke passed: content-addressed artifact snapshots, active-fact fail-closed recovery, explicit supersession, monotonic levels, advisory memory/sync and ledger projection hold");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });

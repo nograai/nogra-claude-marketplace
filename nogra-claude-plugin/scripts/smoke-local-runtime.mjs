@@ -29,6 +29,7 @@ const gateArmingCheck = path.join(pluginRoot, "scripts", "smoke-gate-arming.mjs"
 const gateArmingGitCheck = path.join(pluginRoot, "scripts", "smoke-gate-arming-git.mjs");
 const gateRunScratchCheck = path.join(pluginRoot, "scripts", "smoke-gate-run-scratch.mjs");
 const gateAuthorizeLadderCheck = path.join(pluginRoot, "scripts", "smoke-gate-authorize-ladder.mjs");
+const effectAwareCommandRiskCheck = path.join(pluginRoot, "scripts", "smoke-effect-aware-command-risk.mjs");
 const consolidatorCheck = path.join(pluginRoot, "scripts", "smoke-consolidator.mjs");
 const sessionStartHook = path.join(pluginRoot, "hooks", "session-start.mjs");
 const postCompactHook = path.join(pluginRoot, "hooks", "post-compact.mjs");
@@ -415,6 +416,14 @@ function main() {
   // opt-in is the only allow, ④ neighbouring classes still ask, ⑤ scope-miss
   // asks. Guards the standing-GO lane end-to-end against any door moving.
   execFileSync(process.execPath, [gateAuthorizeLadderCheck], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+    stdio: "inherit"
+  });
+  // Effect-aware shell classification: the exact Civica dry-run/help/heredoc
+  // false positives stay silent, while actual deploy, billing and destructive
+  // commands still ask. Isolated fixtures only — zero live model calls.
+  execFileSync(process.execPath, [effectAwareCommandRiskCheck], {
     cwd: pluginRoot,
     encoding: "utf8",
     stdio: "inherit"

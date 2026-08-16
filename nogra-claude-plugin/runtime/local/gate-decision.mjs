@@ -104,5 +104,21 @@ export function resolveGateDecision(inputOverride) {
     result.shouldAllow = false;
     result.allowReason = "";
   }
+  // Bypass escalation (operator-ruled 16/08): in bypassPermissions mode an
+  // "ask" is a prompt nobody sees — the call proceeds regardless (measured
+  // live 16/08 morning). For HIGH/CRITICAL uncovered boundaries that silence
+  // must fail closed: escalate ask -> deny so bypass sessions need a covering
+  // receipt (or a mode change) for risk classes. Ordinary asks and every
+  // covered allow are untouched; observe lines are untouched.
+  const permissionMode = cleanInline(input.permission_mode || input.permissionMode);
+  const highRisk = result?.review?.risk === "high" || result?.review?.risk === "critical";
+  if (result?.shouldAsk && highRisk && permissionMode === "bypassPermissions") {
+    result.denyEligible = true;
+    result.shouldAsk = false;
+    result.reviewMessage = [
+      "Nogra deny: bypassPermissions cannot carry an unseen ask on a high-risk boundary",
+      result.reviewMessage || ""
+    ].filter(Boolean).join("\n");
+  }
   return { configured: true, input, root, result };
 }
