@@ -565,6 +565,7 @@ export function renderConvergenceGuardContext({ root, eventName = "SessionStart"
     `currentActionAge=${receipt ? receipt.age : "none"}`,
     `currentActionBrief=${receipt?.briefId || "none"}`,
     `currentActionGrant=${receipt ? (grantChainLabel(receipt) || "none") : "none"}`,
+    `currentActionDrawing=${receipt ? (drawingRefLabel(receipt) || "none") : "none"}`,
     `candidateActionReceipt=${candidate ? candidate.runId : "none"}`,
     `candidateActionStatus=${candidate ? candidate.status : "none"}`,
     `candidateActionAge=${candidate ? candidate.age : "none"}`,
@@ -1463,6 +1464,20 @@ function grantChainLabel(receipt) {
   return `go:${go || "?"}->accepted:${accepted || "?"}`;
 }
 
+// Tegnings-referencen (operatorens ordre 19/08): en tegning baeres til intent
+// som REFERENCE (navn × lokal kilde × artifact) — aldrig som indhold. Naar
+// granten baerer den, skal den staa i guard-kontekst og audit-linje, saa
+// modtageren VED hvilken tegning der laeses EEN gang ved eget ground.
+// Additivt: kvitteringer uden drawing er uroerte.
+function drawingRefLabel(receipt) {
+  const drawing = receipt?.metadata?.grantChain?.drawing;
+  if (!drawing || typeof drawing !== "object") return "";
+  const name = cleanInline(drawing.name || "");
+  const source = cleanInline(drawing.source || "");
+  if (!name && !source) return "";
+  return `${name || "?"}(${source || "?"})`;
+}
+
 function shortReceiptId(receiptId) {
   const cleaned = cleanInline(receiptId);
   const matches = Array.from(cleaned.matchAll(/[a-f0-9]{8}/giu), (match) => match[0]);
@@ -1481,6 +1496,7 @@ function auditFields(review) {
   if (review.currentActionBrief) fields.push(`currentActionBrief=${review.currentActionBrief}`);
   if (review.currentActionNextOwner) fields.push(`currentActionNextOwner=${review.currentActionNextOwner}`);
   if (review.currentActionGrant) fields.push(`currentActionGrant=${review.currentActionGrant}`);
+  if (review.currentActionDrawing) fields.push(`currentActionDrawing=${review.currentActionDrawing}`);
   if (review.state === "needs confirmation" && !review.currentActionReceipt) fields.push("currentActionReceipt=none");
   if (review.candidateActionReceipt) fields.push(`candidateActionReceipt=${review.candidateActionReceipt}`);
   if (review.candidateActionStatus) fields.push(`candidateActionStatus=${review.candidateActionStatus}`);
@@ -2120,6 +2136,7 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
       currentActionBrief: receipt.briefId,
       currentActionNextOwner: receipt.nextOwner,
       currentActionGrant: grantChainLabel(receipt),
+      currentActionDrawing: drawingRefLabel(receipt),
       currentActionReturnReason: receipt.returnReason,
       reason: allowReason
     };
@@ -2137,6 +2154,7 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
       currentActionBrief: receipt.briefId,
       currentActionNextOwner: receipt.nextOwner,
       currentActionGrant: grantChainLabel(receipt),
+      currentActionDrawing: drawingRefLabel(receipt),
       currentActionReturnReason: receipt.returnReason,
       scopeMissKind: scopedReceiptMatch.kind,
       scopeMissBoundary: cls,
