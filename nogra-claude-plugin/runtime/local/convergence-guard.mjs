@@ -564,6 +564,7 @@ export function renderConvergenceGuardContext({ root, eventName = "SessionStart"
     `currentActionStatus=${receipt ? receipt.status : "none"}`,
     `currentActionAge=${receipt ? receipt.age : "none"}`,
     `currentActionBrief=${receipt?.briefId || "none"}`,
+    `currentActionGrant=${receipt ? (grantChainLabel(receipt) || "none") : "none"}`,
     `candidateActionReceipt=${candidate ? candidate.runId : "none"}`,
     `candidateActionStatus=${candidate ? candidate.status : "none"}`,
     `candidateActionAge=${candidate ? candidate.age : "none"}`,
@@ -1449,6 +1450,19 @@ function actionImpact(actionType) {
   return "may mutate workspace or external state; verify scope before proceeding";
 }
 
+// Intent-grant-kaeden (CEO-lov 19/08: "intent, accepted by COO"): naar en
+// kvittering baerer metadata.grantChain, skal KAEDEN staa i audit-linjen og
+// guard-konteksten — daekningen maa aldrig vaere anonym. Rent additivt:
+// kvitteringer uden grantChain er uroerte.
+function grantChainLabel(receipt) {
+  const chain = receipt?.metadata?.grantChain;
+  if (!chain || typeof chain !== "object") return "";
+  const go = cleanInline(chain.goRef || chain.go || "");
+  const accepted = cleanInline(chain.acceptedBy || "");
+  if (!go && !accepted) return "";
+  return `go:${go || "?"}->accepted:${accepted || "?"}`;
+}
+
 function shortReceiptId(receiptId) {
   const cleaned = cleanInline(receiptId);
   const matches = Array.from(cleaned.matchAll(/[a-f0-9]{8}/giu), (match) => match[0]);
@@ -1466,6 +1480,7 @@ function auditFields(review) {
   if (review.currentActionAge) fields.push(`currentActionAge=${review.currentActionAge}`);
   if (review.currentActionBrief) fields.push(`currentActionBrief=${review.currentActionBrief}`);
   if (review.currentActionNextOwner) fields.push(`currentActionNextOwner=${review.currentActionNextOwner}`);
+  if (review.currentActionGrant) fields.push(`currentActionGrant=${review.currentActionGrant}`);
   if (review.state === "needs confirmation" && !review.currentActionReceipt) fields.push("currentActionReceipt=none");
   if (review.candidateActionReceipt) fields.push(`candidateActionReceipt=${review.candidateActionReceipt}`);
   if (review.candidateActionStatus) fields.push(`candidateActionStatus=${review.candidateActionStatus}`);
@@ -2104,6 +2119,7 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
       currentActionAge: receipt.age,
       currentActionBrief: receipt.briefId,
       currentActionNextOwner: receipt.nextOwner,
+      currentActionGrant: grantChainLabel(receipt),
       currentActionReturnReason: receipt.returnReason,
       reason: allowReason
     };
@@ -2120,6 +2136,7 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
       currentActionAge: receipt.age,
       currentActionBrief: receipt.briefId,
       currentActionNextOwner: receipt.nextOwner,
+      currentActionGrant: grantChainLabel(receipt),
       currentActionReturnReason: receipt.returnReason,
       scopeMissKind: scopedReceiptMatch.kind,
       scopeMissBoundary: cls,
