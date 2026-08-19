@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- New skill `nogra-drawings` (`/nogra:drawings`): canonical drawings live in the
+  workspace's `drawings/` registry (legacy name `tegninger/` accepted) — no
+  artifact-drawing publishes without its source file + one index line; a drawing
+  is read ONCE when grounding on its domain (then docs/turn rhythm, never carried
+  as transcript); and intent can cross artifact × drawing by REFERENCE
+  (`drawing: {name, source, artifact}` in a brief or grant) — the receiver reads
+  the source at their own ground. (Operator's order 19/08; the hub's registry
+  was renamed `tegninger/` → `drawings/` the same day.)
+
 - Migration-domain writes are judged by the action's home, not by a word in a
   filename: a file inside a `migrations/` directory, or a `.sql`/`.prisma`
   artifact whose own name declares migration intent, now classifies as
