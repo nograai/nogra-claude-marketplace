@@ -28,7 +28,10 @@ aldrig ved værktøjets.
 - **`FUND-INDEKS.md`** (i `.nogra/state/`) er projektionen — skrives KUN af
   værktøjet, aldrig i hånden. Uret vinder ved uenighed.
 - **Klasser** (frie, men genbrug før opfindelse):
-  `instrument` · `flade` · `hegn` · `binding` · `blindplet`.
+  `instrument` · `flade` · `hegn` · `hegn-der-lyver` · `binding` · `blindplet`.
+  `hegn-der-lyver` er et hegn der ALDRIG kan blive rødt — ikke et hegn der
+  mangler, men et hegn der lyver; dyrere, fordi det køber tillid det ikke kan
+  indfri. Skelnen gør morgenbakken lettere at prioritere.
 - **Kilde er en peger** — sti, commit, event-id. Aldrig indhold, aldrig
   hemmeligheder.
 
