@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Drawing reference visible in the gate's eye: when an intent-grant carries
+  `metadata.grantChain.drawing` ({name, source, artifact} — the reference,
+  never the content), the guard renders `currentActionDrawing=name(source)`
+  in the convergence context, both review paths, and the audit line — so the
+  receiver knows which drawing to read ONCE at their own ground. Purely
+  additive: receipts without a drawing render "none"/omit the field.
+  (Companion to the `nogra-drawings` skill, operator's order 19/08.)
+
 - New skill `nogra-drawings` (`/nogra:drawings`): canonical drawings live in the
   workspace's `drawings/` registry (legacy name `tegninger/` accepted) — no
   artifact-drawing publishes without its source file + one index line; a drawing
