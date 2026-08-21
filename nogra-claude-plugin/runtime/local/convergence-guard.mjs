@@ -2,7 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { normalizeActiveIntentGate, readActiveIntent as readActiveIntentState } from "./active-intent.mjs";
+import { normalizeActiveIntentGate, readActiveIntent as readActiveIntentState, recordGrantUse } from "./active-intent.mjs";
 import { RUN_SCHEMA_V2, compatibilityRunStatus, listRunRecords } from "./contract-spine.mjs";
 
 const PENDING_AUTHORIZATION_RUN_STATUSES = new Set(["queued", "running", "returning", "in_progress"]);
@@ -161,8 +161,21 @@ function readActiveIntent(root) {
   const state = readActiveIntentState(root);
   if (!state || !state.active || !state.intent) return null;
   const gate = normalizeActiveIntentGate(state.intent);
-  if (!gate.authorize.length && !gate.nonGoals.length) return null;
+  if (!gate.authorize.length && !gate.nonGoals.length && !gate.grants.length) return null;
   return gate;
+}
+
+// ONE ledger line per ask-grant use, from the PreToolUse evaluation only (the
+// PermissionRequest responder re-evaluates the same action and must not
+// double-stamp). Fail-open: a ledger write error never changes the decision.
+function recordAskGrantUse(root, input, info) {
+  const eventName = cleanInline(input && input.hook_event_name ? input.hook_event_name : "").toLowerCase();
+  if (eventName === "permissionrequest") return;
+  try {
+    recordGrantUse(root, info);
+  } catch {
+    // append-only audit is best-effort; the gate decision stands on its own
+  }
 }
 
 function boundaryClass(risk, name, payload = {}) {
@@ -2105,6 +2118,46 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
       };
     }
     // Scope declared but target outside it: fall through to receipt evaluation.
+  }
+
+  // Ask-grant: the operator's LITERAL words bound to ONE boundary class (see
+  // active-intent.mjs). Evaluated after gate.authorize and before receipts.
+  // gate-arming never reaches here (the deterministic always-ask returns
+  // first) and normalizeGrants drops that class anyway. Semantics mirror
+  // authorize: a grant without scope approves skip-only (never allow); a
+  // declared scope must match to approve at all; scope match + autoApprove
+  // emits the allow. Every match is stamped once in the ledger.
+  if (intent && Array.isArray(intent.grants) && intent.grants.length && cls !== "gate-arming") {
+    const grant = intent.grants.find((g) => g.class === cls && (!g.scope.length || matchesScopePatterns(root, target, g.scope)));
+    if (grant) {
+      const scopeMatched = grant.scope.length > 0;
+      const shouldAllow = settings.autoApprove && scopeMatched;
+      const ttlLabel = grant.expiresAt ? `until ${grant.expiresAt}` : grant.turnsLeft !== null ? `${grant.turnsLeft} turn(s) left` : "with the intent";
+      review = {
+        state: "approved",
+        risk: "high",
+        authorization: "ask-grant",
+        actionType: risk,
+        reason: `matched ask-grant ${grant.id} (authorize: ${cls}${scopeMatched ? ", scope match" : ", no scope: skip-only"}; ttl ${ttlLabel}) — ask: "${grant.ask}"`
+      };
+      recordAskGrantUse(root, input, { grant, boundary: cls, target, risk, decision: shouldAllow ? "allow" : "skip" });
+      return {
+        shouldAsk: false,
+        denyEligible: false,
+        gateMode: mode,
+        risk,
+        toolName: name,
+        guard,
+        review,
+        shouldAllow,
+        allowReason: shouldAllow
+          ? `Nogra approved this run — ask-grant ${grant.id} (authorize: ${cls}), boundary ${cls}, scope match: ${target}, ask: "${grant.ask}"`
+          : "",
+        reviewMessage: `Nogra check: ${risk} matched ask-grant\nImpact: ${actionImpact(risk)}\nReason: ${review.reason}.\nAudit: action=${risk}; coverage=ask-grant; grant=${grant.id}; decision=${shouldAllow ? "allow" : "skip"}.`
+      };
+    }
+    // A grant for another class, or one whose scope misses the target, falls
+    // through to receipt evaluation exactly like authorize does.
   }
 
   const scopedReceiptMatch = receipt && settings.autoApprove

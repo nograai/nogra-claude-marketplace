@@ -13,6 +13,14 @@
 //   ④  a neighbouring class         -> ASK    (no cross-leak)
 //   ⑤  scope-miss                   -> ASK    (scope must cover the target)
 // ③ is the only green door; ①②④⑤ prove every other path stays closed.
+//
+// Ask-grant rungs (21/08 — the operator's literal words as the receipt):
+//   ⑥  grant class+scope+opt-in     -> ALLOW + exactly ONE `ask-grant-used` ledger line quoting the ask
+//   ⑦  grant expired                -> ASK
+//   ⑧  grant without scope          -> skip  (never allow — mirrors authorize)
+//   ⑨  grant for another class      -> ASK    (no cross-leak)
+//   ⑩  ttl turn: allow before the operator's next prompt, ASK after it
+//   ⑪  gate-arming can never be granted (dropped at normalize)
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -20,6 +28,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { expireTurnGrants, normalizeGrants } from "../runtime/local/active-intent.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const pluginRoot = path.resolve(path.dirname(__filename), "..");
@@ -79,6 +88,7 @@ function bashInput(root, command, seq) {
   return {
     cwd: root,
     workspace_roots: [root],
+    hook_event_name: "PreToolUse",
     tool_name: "Bash",
     tool_input: { command },
     session_id: `authz-ladder-${seq}`,
@@ -146,6 +156,62 @@ for (const c of CLASSES) {
 // ⑤ Scope-miss -> ASK even with the class authorized.
 check("⑤", "prod-deploy · scope 'wrangler *' vs vercel", makeWorkspace("scope-miss", { gate: { mode: "advisory", autoApprove: true }, intent: intentWith(["production-deploy"], ["wrangler *"]) }), "vercel --prod", "ask");
 
+// --- Ask-grant rungs ⑥-⑪ -------------------------------------------------
+const grantLive = (cls, scope, extra = {}) => ({
+  id: `grant-test-${cls}`,
+  ask: "gider du køre det fix",
+  class: cls,
+  scope,
+  status: "active",
+  grantedAt: "2026-08-21T06:00:00Z",
+  ...extra
+});
+const intentWithGrants = (grants) => ({
+  schema: "nogra.activeIntent.v1",
+  status: "active",
+  objective: "the overlying work this run is about",
+  gate: { grants }
+});
+
+// ⑥ Grant class + scope + opt-in -> ALLOW, and the use lands as exactly ONE
+//    `ask-grant-used` ledger line in the workspace, quoting the ask verbatim.
+{
+  const root = makeWorkspace("grant-allow", { gate: { mode: "advisory", autoApprove: true }, intent: intentWithGrants([grantLive("destructive-write", ["rm -rf ./build**"])]) });
+  check("⑥", "ask-grant · class+scope · opt-in on · rm -rf", root, "rm -rf ./build", "allow");
+  const ledger = path.join(root, ".nogra", "ledger", "events.jsonl");
+  const lines = fs.existsSync(ledger) ? fs.readFileSync(ledger, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  const used = lines.filter((e) => e.eventType === "ask-grant-used");
+  const ledgerOk = used.length === 1 && used[0].metadata?.grantId === "grant-test-destructive-write" && /gider du køre det fix/u.test(used[0].message);
+  if (!ledgerOk) failures += 1;
+  rows.push({ rung: "⑥", label: "ask-grant · use = ONE ledger line quoting the ask", got: ledgerOk ? "allow" : "ask", want: "allow", pass: ledgerOk });
+}
+
+// ⑦ Expired grant -> ASK (fail-closed on time).
+check("⑦", "ask-grant · expired (expiresAt in the past)", makeWorkspace("grant-expired", { gate: { mode: "advisory", autoApprove: true }, intent: intentWithGrants([grantLive("destructive-write", ["**"], { expiresAt: "2000-01-01T00:00:00Z" })]) }), "rm -rf ./build", "ask");
+
+// ⑧ Grant without scope -> skip-only, never allow (mirrors authorize).
+check("⑧", "ask-grant · no scope · opt-in on", makeWorkspace("grant-noscope", { gate: { mode: "advisory", autoApprove: true }, intent: intentWithGrants([grantLive("destructive-write", [])]) }), "rm -rf ./build", "skip");
+
+// ⑨ Grant for ONE class -> the others still ASK (no cross-leak).
+check("⑨", "ask-grant · prod-deploy only · rm -rf", makeWorkspace("grant-leak", { gate: { mode: "advisory", autoApprove: true }, intent: intentWithGrants([grantLive("production-deploy", ["**"])]) }), "rm -rf ./build", "ask");
+
+// ⑩ Turn-grant: alive until the operator's next prompt, ASK after it.
+{
+  const root = makeWorkspace("grant-turn", { gate: { mode: "advisory", autoApprove: true }, intent: intentWithGrants([grantLive("destructive-write", ["**"], { ttl: "turn", turnsLeft: 1 })]) });
+  check("⑩", "ask-grant · ttl turn · before next prompt", root, "rm -rf ./build", "allow");
+  const ticked = expireTurnGrants(root, { trigger: "smoke-user-prompt" });
+  assert(ticked.expired.length === 1, "⑩ the next operator prompt must expire the turn-grant");
+  check("⑩", "ask-grant · ttl turn · after next prompt", root, "rm -rf ./build", "ask");
+}
+
+// ⑪ gate-arming can never be granted: normalizeGrants drops it (and the
+//    guard's always-ask returns before any grant is consulted).
+{
+  const dropped = normalizeGrants([grantLive("gate-arming", ["**"])]).length === 0;
+  if (!dropped) failures += 1;
+  rows.push({ rung: "⑪", label: "ask-grant · gate-arming never grantable", got: dropped ? "ask" : "allow", want: "ask", pass: dropped });
+}
+
 // --- Report: the gold table ---
 const glyph = { allow: "ALLOW", ask: "ASK", skip: "skip", deny: "DENY" };
 console.log("\nGate authorize ladder — /nogra:authorize opens the intent's CLASS, fail-closed elsewhere\n");
@@ -161,4 +227,4 @@ if (failures) {
   console.error(`\nauthorize-ladder smoke FAILED: ${failures} rung(s) off — a gate door moved.`);
   process.exit(1);
 }
-console.log("\nauthorize-ladder smoke OK — the only green door is ③ (class + scope + opt-in); every other path stays closed.");
+console.log("\nauthorize-ladder smoke OK — the green doors are ③ (authorize: class + scope + opt-in) and ⑥/⑩ (ask-grant: class + scope + opt-in, live); every other path stays closed.");

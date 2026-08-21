@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+- **Ask-grants — the operator's words become the receipt** (21/08; CEO idea
+  "bind mit 'gider du køre det fix' til hooks så coverage dækkes og receipt er
+  covered af intent", GO "go på den candidate, husk grade"). `gate.grants[]`
+  on the running intent binds the operator's LITERAL ask to ONE boundary class
+  with optional scope patterns and a TTL (`turn` / `next` / `N turns` / `30m` /
+  `1h` / `1d`, or `intent` = lives with the intent). `scripts/nogra-grant.mjs`
+  (`add` / `list` / `revoke` / `expire-turn`) is the deterministic hand; the
+  `authorize` skill documents the ritual (quote the ask verbatim, echo the
+  binding in chat BEFORE acting, never automatic — the runtime derives nothing
+  from prompt text). The gate evaluates grants after `gate.authorize` and
+  before receipts with the same semantics (no scope = skip-only; scope match +
+  `gate.autoApprove` = allow), stamps ONE `ask-grant-used` ledger line per use
+  quoting the ask (PreToolUse only — PermissionRequest never double-stamps),
+  and the UserPromptSubmit hook ticks turn-TTLs on every operator prompt.
+  gate-arming can never be granted: dropped at normalize, unreachable by
+  evaluation order, refused by the CLI. The authorize ladder grew from 13 to 21
+  rows (⑥ allow + exactly one ledger line quoting the ask · ⑦ expired asks ·
+  ⑧ no scope = skip-only · ⑨ no cross-leak · ⑩ turn-grant allows before the
+  next prompt and asks after it · ⑪ gate-arming dropped); red-proved by
+  sabotage (flipped ⑥ expectation → FAIL) and by running the ladder against
+  the HEAD guard without the grant branch (⑥/⑩ FAIL). Measured cause, 21/08
+  08:5x: `rm -rf ~/.bun` asked under an intent authorizing git/deploy — and
+  correctly so: the CEO's words said "install", not "delete". The grant form
+  keeps that honesty — a grant covers what the words say; the Manager's own
+  additions still ask.
+
+- Suite hygiene found on the way (the full `smoke-local-runtime` was RED before
+  this work, on four older items — blamed before fund, each measured identical
+  against the HEAD guard): `skills/drawings` description trimmed to the 360-char
+  trigger cap (403 → 342); `skills/fund` and `skills/grade` frontmatter aligned
+  with the skill-quality contract (`name: nogra-<dir>`, trigger clause "Use
+  when …"); `check-skill-quality.mjs` learned the optional `internal: true`
+  flag (the never-shipped marker, CEO fence 20/08 — only ever true);
+  `smoke-gate-arming-git.mjs` byte-baselines for checkout/switch/restore/push
+  moved from the 03/07 ask-bytes to the routine-git OBSERVE bytes written into
+  the guard 16/08 (clean/reset/deploy keep their ask-bytes). Suite green again,
+  exit 0.
+
+
 ## 0.9.2 — 2026-08-20 "the loop release" (the gate reads MCP receipts' scope)
 
 - Two of the graded POLISH items executed (20/08, CEO GO "kør de fixes"):
