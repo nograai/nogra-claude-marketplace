@@ -337,7 +337,7 @@ function listTransportRuns(root) {
         returnReason: cleanInline(payload.returnReason || payload.reason || payload.metadata?.returnReason || payload.metadata?.reason || ""),
         pendingState: cleanInline(payload.pendingState || payload.metadata?.pendingState || ""),
         authorizedBoundaries: normalizeScopeList(payload.authorizedBoundaries ?? payload.metadata?.authorizedBoundaries, true),
-        scopePatterns: normalizeScopeList(payload.scopePatterns ?? payload.scope ?? payload.metadata?.scope),
+        scopePatterns: normalizeScopeList(payload.scopePatterns ?? payload.scope ?? payload.metadata?.scopePatterns ?? payload.metadata?.scope),
         scratchRoots: normalizeScopeList(payload.scratchRoots ?? payload.metadata?.scratchRoots),
         createdAt: cleanInline(payload.createdAt || ""),
         updatedAt: cleanInline(payload.updatedAt || payload.createdAt || ""),
