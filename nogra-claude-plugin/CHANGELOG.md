@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+## 0.9.2 — 2026-08-20 "the loop release" (the gate reads MCP receipts' scope)
+
+- Two of the graded POLISH items executed (20/08, CEO GO "kør de fixes"):
+  `convergence-guard.mjs` now reads `metadata.scopePatterns` as scope fallback
+  (symmetric with the boundaries fallback on the previous line) — red/green
+  proven against the same run record through HEAD vs fixed module: old guard
+  yields `scope: []` (a transport_register receipt could never allow-match),
+  fixed guard carries `["npx wrangler deploy**"]`. And the `authorize` skill
+  documents command-scope glob semantics: a single `*` never crosses `/`, so
+  command patterns need `**` — measured falling through silently 20/08.
+  Remaining POLISH (brief_save validator UX) stays queued.
+
+- New skill `grade` (`/nogra:grade`): the five-step source-quality verdict —
+  anchor tasting against the shelf's richest (seeded, replayable), mechanical
+  field statistics over the WHOLE population, eye on a hole-class AND a typical
+  representative, 🔴🟡🟢 grades where red GATES the decision, verdict to the
+  builder before anything fires. Proven same-day it was named: first run caught
+  234/443 public-identifier law breaches BEFORE a revival put them in
+  production. Binds to the `fund` skill for indexing. (CEO-named and ordered
+  bound 20/08: "den kan du lige gemme som grade metode".)
+
+- Graded (Patrick + Fable layer, 20/08 — evidence in
+  `.nogra/evidence/GRADING-plugin-x-mcp-2026-08-20.md`): authorize/active-intent
+  flow KEEP (mechanically closed end-to-end: operator words as objective,
+  operator hand as root of trust, gate red/green-proven — in-scope deploy
+  matched, out-of-scope rm still asks); POLISH queued for command-scope glob
+  documentation (`*` never crosses `/` — command patterns with paths need `**`,
+  measured falling through live), for `convergence-guard.mjs:340`'s missing
+  `metadata.scopePatterns` fallback (boundaries have one, scope does not —
+  transport_register callers can never allow-match), and for `brief_save`'s
+  one-missing-key-at-a-time validator; transport_register's absent `nextOwner`
+  DEFERRED as possibly-correct state-only design; hosted MCP-server completion
+  DEFERRED by CEO ruling ("own product first").
+
 - Drawing reference visible in the gate's eye: when an intent-grant carries
   `metadata.grantChain.drawing` ({name, source, artifact} — the reference,
   never the content), the guard renders `currentActionDrawing=name(source)`

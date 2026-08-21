@@ -56,6 +56,12 @@ start one. On explicit confirmation, write `.nogra/runtime/active-intent.json`:
   scope the gate skips the ask for that class but never auto-allows; with a
   matching scope (and `gate.autoApprove` on in `.nogra/config.json`) it can
   emit an allow. Say which of the two the user is getting.
+- **Glob semantics — command patterns need `**`.** A single `*` never crosses
+  `/` (correct for path patterns, a silent trap for commands): `npx wrangler
+  deploy*` does NOT match `npx wrangler deploy -c ops/site/wrangler.toml`,
+  because the argument contains slashes. Write command patterns with `**`
+  (`npx wrangler deploy**`, `git **`). Measured 20/08: an intent fell through
+  on exactly this, silently — the gate asked as if no scope existed.
 - Closing it later: set `status` to `done` (or delete the file). Mention this
   in the receipt so the standing GO never outlives the work invisibly.
 
