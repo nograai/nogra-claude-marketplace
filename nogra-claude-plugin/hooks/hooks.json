@@ -87,6 +87,14 @@
             "async": false
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pace-context.mjs\""
+          }
+        ]
       }
     ],
     "UserPromptExpansion": [
@@ -205,6 +213,15 @@
       }
     ],
     "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/delivery-gate.mjs\"",
+            "async": false
+          }
+        ]
+      },
       {
         "hooks": [
           {

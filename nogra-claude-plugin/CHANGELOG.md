@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Delivery gate + pace — a message to the operator is a delivery, not a claim** (21/08;
+  CEO yellow card: a dev server reported "up" measured from the assistant's own machine, and
+  operator decisions handed out as chat homework; CEO "anker beslutningen, og nup den … candidate /
+  english first"). `hooks/delivery-gate.mjs` (Stop) blocks loopback links, requires a
+  `delivery-receipt` ledger event (< window) for house links (private IPs, `*.local`, `*.workers.dev`,
+  configured hosts), and blocks operator-homework phrases without a board reference; downgrades to a
+  `systemMessage` when `stop_hook_active`; audit line `delivery-gate` per decision; workspace config
+  `deliveryGate: { enabled, receiptWindowMinutes, hostPatterns, homeworkPhrases, boardRefPatterns }`.
+  `scripts/nogra-delivery-receipt.mjs <url> <screenshot>` writes the receipt ONLY with a fresh
+  screenshot file (the operator's browser is the truth). `hooks/pace-context.mjs` (UserPromptSubmit)
+  turns the operator's "slow down" / "full speed" into persisted `.nogra/state/PACE.json` and injects
+  one `<NOGRA_PACE>` line per turn while SLOW; `scripts/nogra-pace.mjs status|slow|normal`; workspace
+  `pace: { slowPhrases, normalPhrases }`. `scripts/smoke-delivery-gate.mjs` = 10 known facits.
+
 - **Ask-grants — the operator's words become the receipt** (21/08; CEO idea
   "bind mit 'gider du køre det fix' til hooks så coverage dækkes og receipt er
   covered af intent", GO "go på den candidate, husk grade"). `gate.grants[]`
