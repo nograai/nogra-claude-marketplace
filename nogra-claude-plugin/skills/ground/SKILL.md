@@ -28,6 +28,11 @@ Use this skill when the user:
 
 ## Flow
 
+0. **Open walls first.** Read `.nogra/state/WALLS.md` (projection of `wall` events) and, when the
+   session is stuck on a symptom, run `node scripts/nogra-wall.mjs match "<symptom>"` BEFORE
+   diagnosing: a blocker is a lookup before it is a diagnosis. A wall hit twice without a record is a
+   finding — record it (`nogra-wall record …`), never rediscover it.
+
 1. **Read before you propose.** Before suggesting a next step, read the actual plan and state —
    `CLAUDE.md` and the workspace map (`.nogra/index/`), the current Anchor projections and tasks
    (`.nogra/state/`, treated as PROJECTIONS — the ledger is truth), and durable memory. Do not

@@ -95,6 +95,15 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pace-context.mjs\""
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/wall-recall.mjs\""
+          }
+        ]
       }
     ],
     "UserPromptExpansion": [
@@ -132,6 +141,15 @@
     ],
     "PostToolUse": [
       {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/wall-recall.mjs\""
+          }
+        ]
+      },
+      {
         "hooks": [
           {
             "type": "command",
@@ -139,9 +157,27 @@
             "async": true
           }
         ]
+      },
+      {
+        "matcher": "TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/task-deleted.mjs\""
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/wall-recall.mjs\""
+          }
+        ]
+      },
       {
         "hooks": [
           {
