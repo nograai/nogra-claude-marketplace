@@ -1,6 +1,6 @@
 ---
-name: grade
-description: Døm en datakildes kvalitet med GRADE-metoden — anker-smagning mod husets rigeste, mekanisk felt-statistik over hele bestanden, øje på hul-klasse OG typisk repræsentant, 🔴🟡🟢-grades der GATER beslutningen. Kør før enhver genoplivning, promotion eller runde-2-dom.
+name: nogra-grade
+description: "Judge a data source with the five-step GRADE method (anchor tasting, field statistics, eye on hole-class and typical representative, red/yellow/green verdict that gates the decision). Use when the user runs /nogra:grade or asks for a source-quality verdict before a revival or promotion. Internal skill, never shipped."
 internal: true
 ---
 

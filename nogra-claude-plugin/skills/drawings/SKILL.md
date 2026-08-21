@@ -1,6 +1,6 @@
 ---
 name: nogra-drawings
-description: "Keep canonical drawings home: every drawing published as an artifact saves its source in the workspace's drawings/ registry with one index line, is read ONCE when grounding on its domain, and rides into intent BY REFERENCE (name × local source × artifact URL) — never as carried content. Use when publishing a drawing artifact, when the user runs /nogra:drawings, or when an intent must carry a drawing."
+description: "Keep the canonical drawings home: a drawing published as an artifact saves its source in the workspace's drawings/ registry with one index line, is read ONCE when grounding on its domain, and rides into intent BY REFERENCE (name x source x artifact URL), never as carried content. Use when publishing a drawing artifact or on /nogra:drawings."
 ---
 
 # Nogra Drawings

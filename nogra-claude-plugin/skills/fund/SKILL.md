@@ -1,6 +1,6 @@
 ---
-name: fund
-description: Indeksér et fund i samme øjeblik det findes — en fejl fanget af en rød-prøve, en logik der binder bedre sammen, en blindplet navngivet undervejs. Uret er sandheden, indekset er projektionen, ophøjelse er operatørens dom.
+name: nogra-fund
+description: "Index one finding as one line in the ledger (truth) and FUND-INDEKS.md (projection). Use when a red-proof catches a real instrument error, when one surface turns out to be two, when a rule flips sign at a transition, or when the user runs /nogra:fund."
 ---
 
 # Nogra Fund
