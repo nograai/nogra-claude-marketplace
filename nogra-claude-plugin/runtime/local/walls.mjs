@@ -53,7 +53,8 @@ export function hasWallSignal(text, config = DEFAULT_WALLS) {
 
 /** Terms worth searching for: words >= 4 chars (not stopwords), URL paths, status codes, quoted phrases. */
 export function symptomTerms(text, max = 12) {
-  const t = String(text || "");
+  // Tool results often arrive JSON-stringified: turn literal \n / \t / \" back into separators first.
+  const t = String(text || "").replace(/\\[ntr]/g, " ").replace(/\\"/g, " ");
   const terms = new Set();
   for (const m of t.matchAll(/\/[a-z0-9_./-]{4,}/giu)) terms.add(m[0].toLowerCase());
   for (const m of t.matchAll(/\b(?:40[0-9]|429|5\d\d)\b/gu)) terms.add(m[0]);
