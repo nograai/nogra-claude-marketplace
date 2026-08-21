@@ -24,16 +24,30 @@ export const DEFAULT_WALLS = Object.freeze({
     "\\btimed? ?out\\b", "\\b(?:401|403|404|407|429|5\\d\\d)\\b", "\\bECONN\\w*\\b", "\\bconnection (?:refused|reset|lost)\\b",
     "\\bno longer exists\\b", "\\bfailed\\b", "\\bnot found\\b", "\\bdisconnected\\b", "\\bcaptcha\\b"
   ],
+  // Strong signals only: used for PostToolUse (successful tool results), where generic words like
+  // "failed"/"404"/"not found" appear in ordinary output (logs, SQL, ledger reads) and would recall on noise.
+  strongSignalPatterns: [
+    "\\berror page\\b", "\\bsecurity error\\b", "\\bcannot attach\\b", "\\bpermission denied\\b",
+    "\\bforbidden\\b", "\\bunauthori[sz]ed\\b", "\\bECONN\\w*\\b", "\\bconnection (?:refused|reset|lost)\\b",
+    "\\bcaptcha\\b", "\\bdangerous site\\b", "\\baccess denied\\b", "\\bnot allowed\\b"
+  ],
   maxMatches: 3,
   lookbackDays: 60,
   repeatThreshold: 2,
-  minTermHits: 2
+  minTermHits: 3
 });
 
 const STOP = new Set(("the a an and or of to in on at for with from by is are was were be been this that these those it its as "
   + "into onto over under not no yes via per de det den der som og i på til af for med er var en et de vi du jeg han hun "
   + "action actions tool tools result output error errors failed failure exit code status ok true false null undefined "
-  + "http https www com dk dev html json id tab tabs page frame showing call calls remaining completed").split(/\s+/));
+  + "http https www com dk dev html json id tab tabs page frame showing call calls remaining completed "
+  // tool-/house-generic tokens that say nothing about a symptom (names, UI verbs, harness words):
+  + "users patricklarsen y26dev projects inbox ledger events jsonl nogra fable computer left_click screenshot captured "
+  + "successfully executed element elements matching found reference removed accessibility subsection interrupted "
+  + "nooutputexpected returncodeinterpretation isimage matches tabid navigate navigated wait seconds returned context "
+  + "available title href generic button link option options listbox combobox heading menu menuitem textbox dropdown "
+  + "input query tree select click clicked type typed scroll scrolled drag dragged pressed keys chrome browser window "
+  + "viewport boligscout katrine kilde kilden vores prod fabrik worker workers script brormand champ chef").split(/\s+/));
 
 export function readWallsConfig(root) {
   const cfg = readJson(path.join(root, ".nogra", "config.json")) || {};
@@ -46,9 +60,10 @@ export function readWallsConfig(root) {
   };
 }
 
-export function hasWallSignal(text, config = DEFAULT_WALLS) {
+export function hasWallSignal(text, config = DEFAULT_WALLS, { strong = false } = {}) {
   const t = String(text || "");
-  return config.signalPatterns.some((p) => { try { return new RegExp(p, "iu").test(t); } catch { return false; } });
+  const pats = strong ? (config.strongSignalPatterns || DEFAULT_WALLS.strongSignalPatterns) : config.signalPatterns;
+  return pats.some((p) => { try { return new RegExp(p, "iu").test(t); } catch { return false; } });
 }
 
 /** Terms worth searching for: words >= 4 chars (not stopwords), URL paths, status codes, quoted phrases. */
@@ -158,8 +173,8 @@ export function projectWalls(root) {
 }
 
 /** The context block the hooks inject. Returns "" when there is nothing worth saying. */
-export function recallBlock(root, text, { config = DEFAULT_WALLS, now = Date.now() } = {}) {
-  if (!hasWallSignal(text, config)) return "";
+export function recallBlock(root, text, { config = DEFAULT_WALLS, now = Date.now(), strong = false } = {}) {
+  if (!hasWallSignal(text, config, { strong })) return "";
   const { matches, repeats, hasWallRecord, terms } = matchWalls(root, text, { config, now });
   if (matches.length === 0 && repeats === 0) return "";
   const out = ["<NOGRA_WALL_RECALL>", "A blocker is a lookup before it is a diagnosis. The ledger has seen this symptom before:"];

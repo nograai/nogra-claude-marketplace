@@ -24,7 +24,10 @@ try {
   if (config.enabled === false) process.exit(0);
   const text = pickText(input);
   if (!text || text.length < 8) process.exit(0);
-  const block = recallBlock(root, text, { config });
+  // Successful tool results recall only on STRONG signals (error page, permission denied, ECONN ...);
+  // prompts and failed tool calls keep the full signal set.
+  const strong = (input.hook_event_name || "PostToolUse") === "PostToolUse";
+  const block = recallBlock(root, text, { config, strong });
   if (!block) process.exit(0);
   const ev = input.hook_event_name || "PostToolUse";
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: ev, additionalContext: block } }));

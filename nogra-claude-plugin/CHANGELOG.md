@@ -2,6 +2,7 @@
 # Changelog
 
 ## Unreleased
+- walls: wall-recall now recalls on SUCCESSFUL tool results only for STRONG signals (error page, security error, cannot attach, permission denied, forbidden, unauthorized, ECONN*, connection refused/reset/lost, captcha, dangerous site, access denied, not allowed); prompts and failed tool calls keep the full signal set. Larger stopword list (tool/house-generic tokens: usernames, UI verbs, harness words) and `minTermHits` 2 -> 3. Red-tested: generic output with "failed"/"404" is silent; PostToolUseFailure "permission denied" and PostToolUse "Security error ... cannot attach" still recall. Why: the hook fired on nearly every Bash result and filled context (cost per turn).
 
 - **Delivery gate + pace — a message to the operator is a delivery, not a claim** (21/08;
   CEO yellow card: a dev server reported "up" measured from the assistant's own machine, and
