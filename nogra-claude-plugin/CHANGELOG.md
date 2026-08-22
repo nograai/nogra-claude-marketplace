@@ -2,6 +2,11 @@
 # Changelog
 
 ## Unreleased
+
+## 0.9.3 — 2026-08-22 (CEO 7a: hooks skåret til kernen)
+
+- hooks.json: 33 → 21 indgange. `observe-event` kun på Stop · PreCompact · PostToolUseFailure · PermissionDenied · StopFailure (session-identitet + fejlsignaler); ud af ConfigChange, CwdChanged, InstructionsLoaded, Notification, UserPromptExpansion, SubagentStart/Stop, PostToolBatch, PostToolUse, PermissionRequest. `wall-recall` ud af PostToolUse (står på UserPromptSubmit + PostToolUseFailure). `task-deleted` ud. `stop-intent.mjs`-shim slettet. Kernen urørt: boot-order, session-start, sync-pull/-tick/-push, post-compact, pace-context, user-prompt-submit, pre-tool-use ×2, permission-request, delivery-gate, stop-nudge, session-end. Før-kopi: `hooks/hooks.json.foer-skaering-2026-08-22.bak`. Smokes grønne: local-runtime, gate-triad, gate-arming-git, anchor-v1.
+
 - walls: wall-recall now recalls on SUCCESSFUL tool results only for STRONG signals (error page, security error, cannot attach, permission denied, forbidden, unauthorized, ECONN*, connection refused/reset/lost, captcha, dangerous site, access denied, not allowed); prompts and failed tool calls keep the full signal set. Larger stopword list (tool/house-generic tokens: usernames, UI verbs, harness words) and `minTermHits` 2 -> 3. Red-tested: generic output with "failed"/"404" is silent; PostToolUseFailure "permission denied" and PostToolUse "Security error ... cannot attach" still recall. Why: the hook fired on nearly every Bash result and filled context (cost per turn).
 
 - **Delivery gate + pace — a message to the operator is a delivery, not a claim** (21/08;
