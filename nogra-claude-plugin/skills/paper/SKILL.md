@@ -105,6 +105,36 @@ papirets egne klasser (`.page .ed .lead .k .g .y .r .recv .pn`) — der opfindes
 Skriver ét `paper-now`-event med tal: urets linjer/events, døre målt og døre OK, domme og
 åbne domme, antal fund, om kommando-hooken kørte, antal HTML-linjer.
 
+### `chapter` (implementeret — BOGEN-formen, CEO 24/08)
+
+Papiret er en BOG: ét kapitel pr. dag (dagsider → aften-luk → nattesider → morgen-resumé).
+**Kapitlerne bor i uret**, aldrig i hånden — et kapitel-luk stempler sidelisten som event, og
+"er siden tjekket?" bliver dermed en måling mod uret, ikke en fornemmelse.
+
+```bash
+node "<plugin-root>/scripts/paper-chapter.mjs" <open|close|audit|status> --root "<workspace-root>"
+```
+
+- `open [--title]` — åbner dagens kapitel (ét `paper-chapter-opened`-event).
+- `close [--summary]` — lukker kapitlet: alle sider som INTET tidligere luk dækker, stemples
+  i ét `paper-chapter-closed`-event med sideliste. Aften-lukket og morgen-lukket er samme verb.
+- `audit` — måler utjekkede sider (findes i papiret, dækket af intet kapitel-luk). Exit 3 når
+  noget er utjekket — så et dayclose-trin kan GATE på bogen.
+- `status` — én linje: `bogen: N lukkede kapitler · M utjekkede sider · sidst lukket …`.
+
+Tegningen er kilden: `drawings/bogen-papirets-kapitelform-2026-08-24.md` (CEO's ord ordret).
+
+### `cards` (implementeret — kort-tavlen + indholdsfortegnelsen)
+
+```bash
+node "<plugin-root>/scripts/paper-cards.mjs" --root "<workspace-root>"
+```
+
+To idempotente projektioner i samme greb: **PAPER-TOC** (bogens indeks — hver sides `pn` +
+titel med klik-ankre, `id="side-<pn>"` injiceres deterministisk) og **PAPER-KORT** (tavlen —
+`CURRENT-TASKS.md`-kortene: åbne med numre øverst, lukkede som kvitteringslinjer). Skrives KUN
+mellem markørerne; to kørsler = samme fil. Kort-numrene er bogens krydshenvisninger.
+
 ### `publish` (ikke implementeret endnu)
 
 Artifact-værktøjet er **sessionens**, ikke skillens. `publish` bliver derfor en instruks: den
