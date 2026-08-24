@@ -7,6 +7,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { consolidationDueLine } from "../runtime/local/brain-valve.mjs";
+import { resolveProjectRoot } from "../runtime/local/gate-decision.mjs";
 import { resolveNativeMemory } from "../runtime/local/native-memory.mjs";
 
 const LOAD_WINDOW_LINES = 200;
@@ -99,7 +100,12 @@ export function memoryContext(input = {}, env = process.env) {
     // The valve spoke at the last session end; this is the alarm being audible again. ONE line,
     // stating what was measured and when — it never asks, and it stays silent once a consolidation
     // receipt (`brain-consolidated`, or the pre-plugin `consolidation_done`) answers the due event.
-    const dueLine = consolidationDueLine(root, { hookInput: input, env });
+    // Review-fund 24/08 (MEDIUM): `root` er MEMORY-roden (Claude-projektmappen) — men ventilens
+    // skriver (session-end) walker op til naermeste .nogra/config.json. En session startet i en
+    // undermappe laeste derfor et ledger der aldrig fik consolidation_due, og alarmen tav.
+    // Laeseren skal staa hvor skriveren staar: samme delte resolver, samme rod.
+    const nograRoot = resolveProjectRoot(input);
+    const dueLine = consolidationDueLine(nograRoot, { hookInput: input, env });
 
     return [userPin, dueLine, nudge].filter(Boolean).join("\n");
   } catch {
