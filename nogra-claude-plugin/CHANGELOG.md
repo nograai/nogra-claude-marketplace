@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.9.5 - 2026-08-24
+
+- Fixed the paper writers so a green receipt always means a measured write: the bind and
+  now marker branches require both markers and verify the replacement changed the
+  document (a START-without-END paper previously froze silently behind green receipts);
+  the now verb refuses to write when reading the existing paper fails instead of
+  replacing it with only the status section; the chapter audit gate fails honestly when
+  the paper is missing instead of reporting an empty book as covered.
+- Fixed the consolidation-due reader to resolve the workspace root with the same shared
+  resolver as the writer, so the alarm fires in sub-directory sessions; unified index
+  line counting between the session-start nudge and the valve.
+- Fixed the archive guard for consolidation receipts to require the resolved memory
+  home's archive directory when the home is known, instead of accepting any path with an
+  archive segment.
+- Fixed smaller review findings: card-board rendering uses function replacements so task
+  text can never act as a replacement pattern, preserves hand-set section ids, and
+  classifies done-markers after markdown stripping; the pace phrase matcher tolerates
+  whitespace again; the walls recall path reads only a bounded ledger tail while
+  projections still read everything; ledger tail reads use zeroed buffers and respect
+  short reads; the CGNAT host pattern matches only 100.64.0.0/10; explicit CLI flags win
+  over workspace config in the paper card and chapter tools; a dead import was removed
+  and duplicate ledger scans were merged on the status path.
+- Moved house-specific boundary logic and vocabulary from shipped code into workspace
+  configuration: `gate.pathClasses` for product path classes, `promotion` for the
+  dev-to-public lane (an unset key reports unknown instead of guessing), and
+  `walls.stopWords` for workspace vocabulary; examples in agent and skill docs were
+  generalized, and test fixtures no longer carry workspace names, hosts or absolute
+  local paths (local-only fixtures are env-supplied with an honest skip).
+- Removed an internal-only skill from the repository and its entire history; the
+  published tree and every reachable commit are measured clean of internal markers.
+
 ## 0.9.4 - 2026-08-23
 
 - Added `/nogra:brain` with a session-end memory valve: `runtime/local/brain-valve.mjs`
