@@ -50,7 +50,22 @@ Use this skill when the user:
    current-era heading; NEVER rewrite existing entries) and log one ledger event
    (`type: "decision"`) whose summary quotes the Decision line.
 
-4. **Apply it forward.** From this moment the decision binds: plans and briefs that touch its
+4. **Bind the projection in the same grip.** A decision log that has moved while the Paper has
+   not is a projection that lies. Immediately after the append, run the post-step:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-decide-hook.mjs" --root "<absolute-workspace-root>"
+   ```
+
+   It binds the Paper and prints ONE line: `Papiret opdateret (N domme) — republicér.` Say that
+   line to the operator — the Paper is a file, not a published page, so the republish is theirs.
+
+   This step can never block the decision. A workspace with no `paper` key in
+   `.nogra/config.json`, a missing paper file or a broken anchor each produce one line ending
+   `— dommen står.` and exit 0. The ruling is already law; the projection catching up is a
+   convenience, never a gate. Never write `config.json` to make this step succeed.
+
+5. **Apply it forward.** From this moment the decision binds: plans and briefs that touch its
    domain cite it; a proposal that contradicts it is off-plan until the operator rules again.
 
 ## Rules

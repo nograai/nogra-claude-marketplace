@@ -2,6 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { runValve } from "../runtime/local/brain-valve.mjs";
 import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
 
@@ -71,3 +72,13 @@ if (!hasNograConfig(root)) {
 
 captureSessionAnchor(root, input, "SessionEnd");
 captureLiveHookEvent(root, input, { eventName: "SessionEnd", decision: "observed" });
+
+// The brain valve (the smoke alarm, not the sprinkler): measure the native auto-memory window and,
+// when it is past the margin, log ONE `consolidation_due` and drop ONE line in inbox/out. Once per
+// workspace per day. runValve() swallows its own errors; the extra guard here is the promise that
+// no measurement can ever hold the door shut on the way out.
+try {
+  runValve({ root, hookInput: input });
+} catch {
+  // fail-open
+}

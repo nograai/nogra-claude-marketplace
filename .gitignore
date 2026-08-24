@@ -1,3 +1,4 @@
 
 # local dev worktrees / session state — never ship
 .claude/
+.nogra/runtime/

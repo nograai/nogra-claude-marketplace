@@ -2,7 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { normalizeActiveIntentGate, readActiveIntent as readActiveIntentState } from "./active-intent.mjs";
+import { normalizeActiveIntentGate, readActiveIntent as readActiveIntentState, recordGrantUse } from "./active-intent.mjs";
 import { RUN_SCHEMA_V2, compatibilityRunStatus, listRunRecords } from "./contract-spine.mjs";
 
 const PENDING_AUTHORIZATION_RUN_STATUSES = new Set(["queued", "running", "returning", "in_progress"]);
@@ -153,7 +153,9 @@ function gateSettings(root) {
     mode: cleanInline(modeSource).toLowerCase() === "hard" ? "hard" : "advisory",
     // Default OFF is locked by doctrine — do not flip. Only literal true
     // opts this workspace into receipt-driven allow emission.
-    autoApprove: gateObject.autoApprove === true
+    autoApprove: gateObject.autoApprove === true,
+    // Product-specific boundary classes live in the workspace, not the code.
+    pathClasses: Array.isArray(gateObject.pathClasses) ? gateObject.pathClasses : []
   };
 }
 
@@ -161,21 +163,40 @@ function readActiveIntent(root) {
   const state = readActiveIntentState(root);
   if (!state || !state.active || !state.intent) return null;
   const gate = normalizeActiveIntentGate(state.intent);
-  if (!gate.authorize.length && !gate.nonGoals.length) return null;
+  if (!gate.authorize.length && !gate.nonGoals.length && !gate.grants.length) return null;
   return gate;
 }
 
-function boundaryClass(risk, name, payload = {}) {
+// ONE ledger line per ask-grant use, from the PreToolUse evaluation only (the
+// PermissionRequest responder re-evaluates the same action and must not
+// double-stamp). Fail-open: a ledger write error never changes the decision.
+function recordAskGrantUse(root, input, info) {
+  const eventName = cleanInline(input && input.hook_event_name ? input.hook_event_name : "").toLowerCase();
+  if (eventName === "permissionrequest") return;
+  try {
+    recordGrantUse(root, info);
+  } catch {
+    // append-only audit is best-effort; the gate decision stands on its own
+  }
+}
+
+function boundaryClass(risk, name, payload = {}, pathClasses = []) {
   // gate-arming is never auto-approvable — locked by doctrine; do not add it
   // to any approval path. The mapping stays first so no other class label can
   // shadow a write to the gate's own arming surface.
   if (risk === "gate-arming write") return "gate-arming";
   const fp = cleanInline(payload.file_path || payload.path || "").toLowerCase();
-  if (fp.includes("boligscout")) return "boligscout";
+  // Inhouse-grade 24/08: product-specific path classes come from the WORKSPACE
+  // (`gate.pathClasses` in .nogra/config.json), never from this shipped code —
+  // a public runtime must not carry one house's product names.
+  for (const rule of pathClasses) {
+    const match = cleanInline(rule?.match || "").toLowerCase();
+    if (match && fp.includes(match)) return cleanInline(rule?.class || match);
+  }
   if (/^git /u.test(risk)) return "git-history";
   if (risk === "production deploy") return "production-deploy";
   if (risk === "instruction-surface write") return "instruction-surface";
-  if (risk === "data migration" || risk === "database mutation") return "data-migration";
+  if (risk === "data migration" || risk === "database mutation" || risk === "data migration file") return "data-migration";
   if (risk === "customer/billing action") return "billing";
   if (risk === "destructive rm" || risk === "find action") return "destructive-write";
   return cleanInline(risk);
@@ -337,7 +358,7 @@ function listTransportRuns(root) {
         returnReason: cleanInline(payload.returnReason || payload.reason || payload.metadata?.returnReason || payload.metadata?.reason || ""),
         pendingState: cleanInline(payload.pendingState || payload.metadata?.pendingState || ""),
         authorizedBoundaries: normalizeScopeList(payload.authorizedBoundaries ?? payload.metadata?.authorizedBoundaries, true),
-        scopePatterns: normalizeScopeList(payload.scopePatterns ?? payload.scope ?? payload.metadata?.scope),
+        scopePatterns: normalizeScopeList(payload.scopePatterns ?? payload.scope ?? payload.metadata?.scopePatterns ?? payload.metadata?.scope),
         scratchRoots: normalizeScopeList(payload.scratchRoots ?? payload.metadata?.scratchRoots),
         createdAt: cleanInline(payload.createdAt || ""),
         updatedAt: cleanInline(payload.updatedAt || payload.createdAt || ""),
@@ -564,6 +585,8 @@ export function renderConvergenceGuardContext({ root, eventName = "SessionStart"
     `currentActionStatus=${receipt ? receipt.status : "none"}`,
     `currentActionAge=${receipt ? receipt.age : "none"}`,
     `currentActionBrief=${receipt?.briefId || "none"}`,
+    `currentActionGrant=${receipt ? (grantChainLabel(receipt) || "none") : "none"}`,
+    `currentActionDrawing=${receipt ? (drawingRefLabel(receipt) || "none") : "none"}`,
     `candidateActionReceipt=${candidate ? candidate.runId : "none"}`,
     `candidateActionStatus=${candidate ? candidate.status : "none"}`,
     `candidateActionAge=${candidate ? candidate.age : "none"}`,
@@ -741,6 +764,45 @@ function psqlMutationRisk(command) {
     : "";
 }
 
+// A database mutation whose every host signal is loopback is the operator's
+// LOCALMODE sandbox loop ("kassen"). The intent already lives in the dispatched
+// station; the gate carries it as an observe receipt instead of re-asking.
+// Fail closed: any non-loopback host signal keeps the ask, and a command with
+// no host signal at all is only provably local when psql runs inside a local
+// docker container — a bare psql may follow PG* environment we cannot see.
+const LOOPBACK_DB_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+
+function databaseHostSignals(command) {
+  const hosts = [];
+  for (const match of command.matchAll(/postgres(?:ql)?:\/\/(?:[^\s@'"]*@)?(\[[^\]]+\]|[^\s:/'"]+)/giu)) {
+    hosts.push(match[1]);
+  }
+  const words = shellWords(command);
+  for (let index = 0; index < words.length; index += 1) {
+    const lower = words[index].toLowerCase();
+    if (lower === "-h" || lower === "--host") {
+      hosts.push(words[index + 1] || "");
+      index += 1;
+      continue;
+    }
+    if (lower.startsWith("--host=")) hosts.push(words[index].slice("--host=".length));
+  }
+  return hosts;
+}
+
+function loopbackDatabaseMutation(command) {
+  if (!command) return false;
+  const cleaned = cleanInline(stripHereDocumentBodies(command));
+  if (!cleaned) return false;
+  const hosts = databaseHostSignals(cleaned);
+  if (hosts.length) {
+    return hosts.every((host) => LOOPBACK_DB_HOSTS.has(host.toLowerCase()));
+  }
+  const words = shellWords(cleaned);
+  const dockerIndex = words.findIndex((word) => path.basename(word).toLowerCase() === "docker");
+  return dockerIndex !== -1 && (words[dockerIndex + 1] || "").toLowerCase() === "exec";
+}
+
 function findActionRisk(command) {
   const words = shellWords(command);
   for (let index = 0; index < words.length; index += 1) {
@@ -901,8 +963,222 @@ function gateArmingCommandRisk(command) {
   return hasGateArmingWriteIndicator(command) ? "gate-arming write" : "";
 }
 
+function stripHereDocumentBodies(command) {
+  const lines = String(command || "").split(/\r?\n/u);
+  const kept = [];
+  const pending = [];
+  const marker = /<<(-?)\s*(?:'([^']+)'|"([^"]+)"|([A-Za-z0-9_][A-Za-z0-9_-]*))/gu;
+  for (const line of lines) {
+    if (pending.length) {
+      const active = pending[0];
+      const candidate = active.stripTabs ? line.replace(/^\t+/u, "") : line;
+      if (candidate === active.delimiter) {
+        pending.shift();
+      } else if (active.preserveBody) {
+        kept.push(line);
+      }
+      continue;
+    }
+    kept.push(line);
+    const invocation = commandInvocation(line);
+    const preserveBody = ["bash", "dash", "ksh", "sh", "zsh"].includes(
+      invocation.name
+    );
+    marker.lastIndex = 0;
+    let match;
+    while ((match = marker.exec(line))) {
+      pending.push({
+        delimiter: match[2] || match[3] || match[4] || "",
+        stripTabs: match[1] === "-",
+        preserveBody
+      });
+    }
+  }
+  return kept.join("\n");
+}
+
+function splitShellEffects(command) {
+  const segments = [];
+  let current = "";
+  let quote = "";
+  let escaped = false;
+  const flush = () => {
+    const value = current.trim();
+    if (value) segments.push(value);
+    current = "";
+  };
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index];
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      current += char;
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      current += char;
+      if (char === quote) quote = "";
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      current += char;
+      quote = char;
+      continue;
+    }
+    if (char === "\n" || char === ";" || char === "|") {
+      flush();
+      if (
+        (char === "|" && command[index + 1] === "|") ||
+        (char === "|" && command[index - 1] === "|")
+      ) {
+        continue;
+      }
+      continue;
+    }
+    if (char === "&" && command[index + 1] === "&") {
+      flush();
+      index += 1;
+      continue;
+    }
+    current += char;
+  }
+  flush();
+  return segments;
+}
+
+function commandInvocation(segment) {
+  const words = shellWords(segment);
+  let index = 0;
+  while (index < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/u.test(words[index])) {
+    index += 1;
+  }
+  while (index < words.length) {
+    const wrapper = path.basename(words[index]).toLowerCase();
+    if (wrapper === "env") {
+      index += 1;
+      while (
+        index < words.length &&
+        (words[index].startsWith("-") ||
+          /^[A-Za-z_][A-Za-z0-9_]*=/u.test(words[index]))
+      ) {
+        index += 1;
+      }
+      continue;
+    }
+    if (wrapper === "command" || wrapper === "sudo") {
+      index += 1;
+      while (index < words.length && words[index].startsWith("-")) index += 1;
+      continue;
+    }
+    if (wrapper === "npx" || wrapper === "bunx") {
+      index += 1;
+      while (index < words.length && words[index].startsWith("-")) index += 1;
+      continue;
+    }
+    if (wrapper === "npm" || wrapper === "pnpm" || wrapper === "yarn") {
+      const mode = String(words[index + 1] || "").toLowerCase();
+      if (["exec", "x", "dlx"].includes(mode)) {
+        index += 2;
+        while (
+          index < words.length &&
+          (words[index] === "--" || words[index].startsWith("-"))
+        ) {
+          index += 1;
+        }
+        continue;
+      }
+    }
+    return {
+      name: wrapper,
+      args: words.slice(index + 1).map((word) => word.toLowerCase())
+    };
+  }
+  return { name: "", args: [] };
+}
+
+function effectInvocations(command) {
+  return splitShellEffects(command)
+    .map(commandInvocation)
+    .filter((invocation) => invocation.name);
+}
+
+function inspectionOnlyInvocation(invocation) {
+  return invocation.args.some(
+    (arg) =>
+      arg === "--help" ||
+      arg === "-h" ||
+      arg === "help" ||
+      arg === "--dry-run" ||
+      arg.startsWith("--dry-run=")
+  );
+}
+
+function effectRisk(command) {
+  for (const invocation of effectInvocations(command)) {
+    const { name, args } = invocation;
+    if (name === "rm") {
+      const flags = args
+        .filter((arg) => /^-[^-]/u.test(arg))
+        .join("")
+        .replaceAll("-", "");
+      if (flags.includes("r") && flags.includes("f")) return "destructive rm";
+    }
+    if (
+      ["vercel", "wrangler", "firebase", "netlify"].includes(name) &&
+      !inspectionOnlyInvocation(invocation)
+    ) {
+      if (
+        args.includes("deploy") ||
+        (name === "vercel" && args.includes("--prod"))
+      ) {
+        return "production deploy";
+      }
+    }
+    if (
+      ["supabase", "prisma"].includes(name) &&
+      !inspectionOnlyInvocation(invocation)
+    ) {
+      const joined = args.join(" ");
+      if (
+        /\bdb\s+push\b/u.test(joined) ||
+        args.includes("migrate") ||
+        args.includes("reset")
+      ) {
+        return "data migration";
+      }
+    }
+    if (
+      ["stripe", "sendgrid", "postmark"].includes(name) &&
+      !inspectionOnlyInvocation(invocation) &&
+      args.some((arg) =>
+        ["send", "create", "delete", "refund", "charge"].includes(arg)
+      )
+    ) {
+      return "customer/billing action";
+    }
+    if (
+      ["gh", "hub"].includes(name) &&
+      !inspectionOnlyInvocation(invocation)
+    ) {
+      const joined = args.join(" ");
+      if (
+        /\brelease\s+create\b/u.test(joined) ||
+        /\bpr\s+merge\b/u.test(joined)
+      ) {
+        return "repository release/merge";
+      }
+    }
+  }
+  return "";
+}
+
 function commandRisk(command) {
-  const cleaned = cleanInline(command);
+  const effectCommand = stripHereDocumentBodies(command);
+  const cleaned = cleanInline(effectCommand);
   if (!cleaned) return "";
   // gate-arming detection runs FIRST so no other risk label (e.g. a git
   // subcommand touching the config) can shadow it into a receipt-approvable
@@ -919,13 +1195,7 @@ function commandRisk(command) {
   if (readOnlyInspectionCommand(cleaned)) return "";
   const curlPipe = curlPipelineRisk(cleaned);
   if (curlPipe) return curlPipe;
-  if (/\brm\s+-(?:[^\s]*r[^\s]*f|[^\s]*f[^\s]*r)\b/u.test(cleaned)) return "destructive rm";
-  if (/\b(?:vercel|wrangler|firebase|netlify)\b[\s\S]*\bdeploy\b/u.test(cleaned)) return "production deploy";
-  if (/\bvercel\b/u.test(cleaned) && /(?:^|\s)--prod(?:\s|$)/u.test(cleaned)) return "production deploy";
-  if (/\b(?:supabase|prisma)\b[\s\S]*\b(?:db\s+push|migrate|reset)\b/u.test(cleaned)) return "data migration";
-  if (/\b(?:stripe|customer|email|sendgrid|postmark)\b/u.test(cleaned) && /\b(?:send|create|delete|refund|charge)\b/u.test(cleaned)) return "customer/billing action";
-  if (/\b(?:gh|hub)\b[\s\S]*\b(?:release\s+create|pr\s+merge)\b/u.test(cleaned)) return "repository release/merge";
-  return "";
+  return effectRisk(effectCommand);
 }
 
 function hasShellWriteRedirect(command) {
@@ -1166,6 +1436,9 @@ function actionImpact(actionType) {
   if (action === "data migration") {
     return "may mutate persisted schema or data; reversibility may be low";
   }
+  if (action === "data migration file") {
+    return "authors a database migration artifact that a later apply step will run against persisted schema or data";
+  }
   if (action === "database mutation") {
     return "may mutate database rows or schema; reversibility depends on backups and environment";
   }
@@ -1199,6 +1472,33 @@ function actionImpact(actionType) {
   return "may mutate workspace or external state; verify scope before proceeding";
 }
 
+// Intent-grant-kaeden (CEO-lov 19/08: "intent, accepted by COO"): naar en
+// kvittering baerer metadata.grantChain, skal KAEDEN staa i audit-linjen og
+// guard-konteksten — daekningen maa aldrig vaere anonym. Rent additivt:
+// kvitteringer uden grantChain er uroerte.
+function grantChainLabel(receipt) {
+  const chain = receipt?.metadata?.grantChain;
+  if (!chain || typeof chain !== "object") return "";
+  const go = cleanInline(chain.goRef || chain.go || "");
+  const accepted = cleanInline(chain.acceptedBy || "");
+  if (!go && !accepted) return "";
+  return `go:${go || "?"}->accepted:${accepted || "?"}`;
+}
+
+// Tegnings-referencen (operatorens ordre 19/08): en tegning baeres til intent
+// som REFERENCE (navn × lokal kilde × artifact) — aldrig som indhold. Naar
+// granten baerer den, skal den staa i guard-kontekst og audit-linje, saa
+// modtageren VED hvilken tegning der laeses EEN gang ved eget ground.
+// Additivt: kvitteringer uden drawing er uroerte.
+function drawingRefLabel(receipt) {
+  const drawing = receipt?.metadata?.grantChain?.drawing;
+  if (!drawing || typeof drawing !== "object") return "";
+  const name = cleanInline(drawing.name || "");
+  const source = cleanInline(drawing.source || "");
+  if (!name && !source) return "";
+  return `${name || "?"}(${source || "?"})`;
+}
+
 function shortReceiptId(receiptId) {
   const cleaned = cleanInline(receiptId);
   const matches = Array.from(cleaned.matchAll(/[a-f0-9]{8}/giu), (match) => match[0]);
@@ -1216,6 +1516,8 @@ function auditFields(review) {
   if (review.currentActionAge) fields.push(`currentActionAge=${review.currentActionAge}`);
   if (review.currentActionBrief) fields.push(`currentActionBrief=${review.currentActionBrief}`);
   if (review.currentActionNextOwner) fields.push(`currentActionNextOwner=${review.currentActionNextOwner}`);
+  if (review.currentActionGrant) fields.push(`currentActionGrant=${review.currentActionGrant}`);
+  if (review.currentActionDrawing) fields.push(`currentActionDrawing=${review.currentActionDrawing}`);
   if (review.state === "needs confirmation" && !review.currentActionReceipt) fields.push("currentActionReceipt=none");
   if (review.candidateActionReceipt) fields.push(`candidateActionReceipt=${review.candidateActionReceipt}`);
   if (review.candidateActionStatus) fields.push(`candidateActionStatus=${review.candidateActionStatus}`);
@@ -1309,8 +1611,13 @@ function readableCoverageLine(review, action) {
 }
 
 function auditReceipt(review) {
+  // Intent-binding (operator-ordered 16/08): the audit line names WHICH
+  // intent the action ran under — the descriptive briefId IS the intent name
+  // in this house. Carried on covered AND missing lines alike, so a
+  // "missing" in the log always has its "but under this intent" half.
+  const brief = review.currentActionBrief ? ` brief=${review.currentActionBrief}` : "";
   if (review.currentActionReceipt) {
-    return `receipt=${shortReceiptId(review.currentActionReceipt)} status=${review.currentActionStatus || "unknown"}`;
+    return `receipt=${shortReceiptId(review.currentActionReceipt)} status=${review.currentActionStatus || "unknown"}${brief}`;
   }
   if (review.candidateActionReceipt) {
     return `candidate=${shortReceiptId(review.candidateActionReceipt)} status=${review.candidateActionStatus || "unknown"}`;
@@ -1392,7 +1699,23 @@ function pathRisk(toolName, toolInput = {}) {
   ) {
     return "instruction-surface write";
   }
-  if (/\b(?:migration|migrations|schema|billing|payments|stripe|auth|permissions|roles)\b/iu.test(normalized)) {
+  // Migration-domain writes are judged by the action's HOME, not by a word in
+  // a filename (ruled 16/08: the hook flagged a sandbox-only script because
+  // its NAME contained "migration"; the word is not the act). Two positive
+  // shapes carry the risk: a file living inside a migrations directory, or a
+  // raw DB artifact (.sql/.prisma) whose own name declares migration intent.
+  // The label maps to the data-migration boundary so a dispatch receipt that
+  // declares data-migration can cover authoring these files.
+  const parentSegments = lowerSegments.slice(0, -1);
+  const lowerBasename = basename.toLowerCase();
+  if (
+    parentSegments.includes("migrations") ||
+    (/\.(?:sql|prisma)$/u.test(lowerBasename) &&
+      /\b(?:migration|migrations|schema|ddl)\b/iu.test(lowerBasename))
+  ) {
+    return "data migration file";
+  }
+  if (/\b(?:schema|billing|payments|stripe|auth|permissions|roles)\b/iu.test(normalized)) {
     return `${toolName} risk file`;
   }
   return "";
@@ -1599,7 +1922,7 @@ function evaluateRunScratchAction({ name, payload, command, cwd, receipt }) {
       `Nogra check: ${actionLabel} matched current Nogra run`,
       "Impact: writes only inside the run's declared scratch roots",
       `Reason: ${allowReason}`,
-      `Audit: action=${actionLabel}; coverage=covered; receipt=${shortReceiptId(receipt.runId)} status=${receipt.status}.`
+      `Audit: action=${actionLabel}; coverage=covered; receipt=${shortReceiptId(receipt.runId)} status=${receipt.status} brief=${receipt.briefId || "unknown"}.`
     ].join("\n");
     return { shouldAsk: false, denyEligible: false, shouldAllow: true, allowReason, review, reviewMessage };
   }
@@ -1622,7 +1945,7 @@ function evaluateRunScratchAction({ name, payload, command, cwd, receipt }) {
     "Impact: the resolved target is outside the run's declared scratch roots (possible ../ or symlink escape, or a mv/cp crossing the boundary)",
     `Why: ${reason}`,
     "Next: approve once to continue, or stop and brief this action first",
-    `Audit: action=${actionLabel}; coverage=scratch-escape; receipt=${shortReceiptId(receipt.runId)} status=${receipt.status}.`
+    `Audit: action=${actionLabel}; coverage=scratch-escape; receipt=${shortReceiptId(receipt.runId)} status=${receipt.status} brief=${receipt.briefId || "unknown"}.`
   ].join("\n");
   return { shouldAsk: true, denyEligible: false, shouldAllow: false, allowReason: "", review, reviewMessage };
 }
@@ -1633,16 +1956,18 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
   let guard = null;
   let risk = "";
   let review = null;
+  let bashCommand = "";
   if (name === "Bash") {
-    const command = payload.command || input.command || "";
-    risk = commandRisk(command);
+    bashCommand = payload.command || input.command || "";
+    risk = commandRisk(bashCommand);
   } else if (["Edit", "Write", "MultiEdit"].includes(name)) {
     risk = pathRisk(name, payload);
   }
   const settings = gateSettings(root);
   const mode = settings.mode;
   const intent = readActiveIntent(root);
-  const cls = boundaryClass(risk, name, payload);
+  const pathClasses = Array.isArray(settings.pathClasses) ? settings.pathClasses : [];
+  const cls = boundaryClass(risk, name, payload, pathClasses);
   const target = scopeActionTarget(name, payload);
 
   // Non-goals stay first in evaluation order and override any receipt.
@@ -1804,6 +2129,46 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
     // Scope declared but target outside it: fall through to receipt evaluation.
   }
 
+  // Ask-grant: the operator's LITERAL words bound to ONE boundary class (see
+  // active-intent.mjs). Evaluated after gate.authorize and before receipts.
+  // gate-arming never reaches here (the deterministic always-ask returns
+  // first) and normalizeGrants drops that class anyway. Semantics mirror
+  // authorize: a grant without scope approves skip-only (never allow); a
+  // declared scope must match to approve at all; scope match + autoApprove
+  // emits the allow. Every match is stamped once in the ledger.
+  if (intent && Array.isArray(intent.grants) && intent.grants.length && cls !== "gate-arming") {
+    const grant = intent.grants.find((g) => g.class === cls && (!g.scope.length || matchesScopePatterns(root, target, g.scope)));
+    if (grant) {
+      const scopeMatched = grant.scope.length > 0;
+      const shouldAllow = settings.autoApprove && scopeMatched;
+      const ttlLabel = grant.expiresAt ? `until ${grant.expiresAt}` : grant.turnsLeft !== null ? `${grant.turnsLeft} turn(s) left` : "with the intent";
+      review = {
+        state: "approved",
+        risk: "high",
+        authorization: "ask-grant",
+        actionType: risk,
+        reason: `matched ask-grant ${grant.id} (authorize: ${cls}${scopeMatched ? ", scope match" : ", no scope: skip-only"}; ttl ${ttlLabel}) — ask: "${grant.ask}"`
+      };
+      recordAskGrantUse(root, input, { grant, boundary: cls, target, risk, decision: shouldAllow ? "allow" : "skip" });
+      return {
+        shouldAsk: false,
+        denyEligible: false,
+        gateMode: mode,
+        risk,
+        toolName: name,
+        guard,
+        review,
+        shouldAllow,
+        allowReason: shouldAllow
+          ? `Nogra approved this run — ask-grant ${grant.id} (authorize: ${cls}), boundary ${cls}, scope match: ${target}, ask: "${grant.ask}"`
+          : "",
+        reviewMessage: `Nogra check: ${risk} matched ask-grant\nImpact: ${actionImpact(risk)}\nReason: ${review.reason}.\nAudit: action=${risk}; coverage=ask-grant; grant=${grant.id}; decision=${shouldAllow ? "allow" : "skip"}.`
+      };
+    }
+    // A grant for another class, or one whose scope misses the target, falls
+    // through to receipt evaluation exactly like authorize does.
+  }
+
   const scopedReceiptMatch = receipt && settings.autoApprove
     ? receiptBoundaryScopeMatch(root, receipt, cls, target)
     : null;
@@ -1832,6 +2197,8 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
       currentActionAge: receipt.age,
       currentActionBrief: receipt.briefId,
       currentActionNextOwner: receipt.nextOwner,
+      currentActionGrant: grantChainLabel(receipt),
+      currentActionDrawing: drawingRefLabel(receipt),
       currentActionReturnReason: receipt.returnReason,
       reason: allowReason
     };
@@ -1848,6 +2215,8 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
       currentActionAge: receipt.age,
       currentActionBrief: receipt.briefId,
       currentActionNextOwner: receipt.nextOwner,
+      currentActionGrant: grantChainLabel(receipt),
+      currentActionDrawing: drawingRefLabel(receipt),
       currentActionReturnReason: receipt.returnReason,
       scopeMissKind: scopedReceiptMatch.kind,
       scopeMissBoundary: cls,
@@ -1882,10 +2251,45 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
         : `${risk} reaches a high/critical boundary with no valid receipt match`
     };
   }
-  const reviewMessage = review ? actionReviewMessage(review) : "";
-  const denyEligible = mode === "hard" && review.state === "needs confirmation" && !review.currentActionReceipt;
+  // Routine git verbs are the operator's ordinary workbench, and the constitution
+  // is explicit: Nogra invites, it does not enforce — no prompt layer over daily
+  // git. Without a covering run the check stays visible as an observe-line and
+  // Claude Code's native permissions remain the authority. Destructive tree-wipers
+  // (reset/clean) and non-git boundaries (deploy/migration/billing/secrets) keep
+  // their ask.
+  const routineGitActions = new Set([
+    "git checkout", "git switch", "git restore", "git merge", "git rebase",
+    "git cherry-pick", "git revert", "git commit", "git tag", "git push"
+  ]);
+  const routineGit = review.state === "needs confirmation"
+    && routineGitActions.has(cleanInline(risk).toLowerCase());
+  // LOCALMODE sandbox loop: a database mutation whose every host signal is
+  // loopback cannot reach production from this command. The hook carries the
+  // station's intent as an observe receipt instead of re-asking (CEO-ruled
+  // 11/08: "hooken skal bære intent"). Non-loopback hosts keep their ask.
+  const sandboxDbMutation = review.state === "needs confirmation"
+    && cleanInline(risk).toLowerCase() === "database mutation"
+    && loopbackDatabaseMutation(bashCommand);
+  let reviewMessage = review ? actionReviewMessage(review) : "";
+  if (routineGit) {
+    reviewMessage = [
+      `Nogra observe: ${risk} — no active Nogra run covers it; not blocking`,
+      `Impact: ${actionImpact(risk)}`,
+      "Claude Code's native permission rules remain the authority for this command",
+      readableAuditLine(review, risk)
+    ].join("\n") + ".";
+  }
+  if (sandboxDbMutation) {
+    reviewMessage = [
+      `Nogra observe: ${risk} against a loopback-only database — LOCALMODE sandbox loop; not blocking`,
+      "Every host signal in the command is loopback (127.0.0.1/localhost/::1); production is out of reach from this command",
+      "Claude Code's native permission rules remain the authority for this command",
+      readableAuditLine(review, risk)
+    ].join("\n") + ".";
+  }
+  const denyEligible = mode === "hard" && review.state === "needs confirmation" && !review.currentActionReceipt && !routineGit && !sandboxDbMutation;
   return {
-    shouldAsk: Boolean(review?.state === "needs confirmation"),
+    shouldAsk: Boolean(review?.state === "needs confirmation") && !routineGit && !sandboxDbMutation,
     denyEligible,
     gateMode: mode,
     risk,

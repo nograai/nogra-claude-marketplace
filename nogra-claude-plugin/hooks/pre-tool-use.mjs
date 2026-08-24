@@ -102,11 +102,16 @@ try {
 
   if (!role) {
     captureSessionAnchor(root, input, "PreToolUse");
+    // Grade-bar logbog: the gate's own verdict must land in the log line, or
+    // decisions cannot be graded afterwards. The dense "Audit: …" sentence
+    // (action/coverage/receipt) is preferred over the full message, whose
+    // tail is lost to the 240-char line bound — and the tail is the grading.
+    const auditTail = /Audit:\s*(.+)$/.exec(result.reviewMessage || "");
     captureLiveHookEvent(root, input, {
       eventName: "PreToolUse",
       decision: decisionLabel(result),
-      action: result.action || "",
-      reason: result.reason || ""
+      action: result.action || result.allowReason || "",
+      reason: result.reason || (auditTail ? auditTail[1] : result.reviewMessage) || ""
     });
   }
   if (!result.reviewMessage) process.exit(0);

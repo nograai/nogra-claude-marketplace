@@ -1170,7 +1170,11 @@ function workspaceIndexEntries(root) {
 
 function promotionProjection(root, config = {}, bridge = {}, git = {}) {
   const entries = workspaceIndexEntries(root);
-  const devHub = entries.find((entry) => cleanInline(entry.workspaceId) === "y26dev");
+  // Inhouse-grade 24/08: the dev-hub's NAME is the workspace's business, not this
+  // shipped script's — `promotion.devWorkspaceId` in .nogra/config.json names it.
+  // Without the key the projection says "unknown" honestly instead of guessing.
+  const devHubId = cleanInline(config.promotion?.devWorkspaceId || "");
+  const devHub = devHubId ? entries.find((entry) => cleanInline(entry.workspaceId) === devHubId) : null;
   if (!devHub) {
     return {
       schema: "nogra.local.promotion_projection.v1",
@@ -1184,12 +1188,13 @@ function promotionProjection(root, config = {}, bridge = {}, git = {}) {
   if (bridge.status !== "live-ready") blockedBy.push("bridge-live-gate");
   if (git.status === "dirty") blockedBy.push("dirty-worktree");
   if (git.status === "unknown") blockedBy.push("git-unknown");
-  const rootWorkspace = cleanInline(config.workspaceId);
   return {
     schema: "nogra.local.promotion_projection.v1",
     status: blockedBy.length ? "gate-required" : "ready-for-review",
     source: ".nogra/index/workspaces.jsonl + status projections",
-    lane: rootWorkspace === "y26" ? "y26dev-to-y26-public" : "dev-to-public",
+    lane: cleanInline(config.promotion?.publicWorkspaceId)
+      ? `${devHubId}-to-${cleanInline(config.promotion.publicWorkspaceId)}-public`
+      : "dev-to-public",
     devWorkspaceId: cleanInline(devHub.workspaceId),
     devWorkspacePath: cleanInline(devHub.path, 240),
     blockedBy,
@@ -3194,6 +3199,7 @@ function evidenceContract() {
     semantics: [
       "Evidence is an immutable content-addressed observation receipt, not a completion verdict.",
       "Artifact digests are computed from existing workspace-local files; caller-supplied digests are not trusted.",
+      "Evidence save preserves exact artifact bytes in the local digest-addressed evidence vault.",
       "Tested evidence requires a command/test method and a content-addressed artifact.",
       "Verified evidence requires either an operator record or a canonical verdict-backed verification.",
       "Evidence save appends an idempotent evidence_recorded ledger event."
@@ -3214,6 +3220,7 @@ function factContract() {
       "A stable subject has at most one active fact.",
       "Changing a subject requires explicit supersedes; wording is never fuzzy-matched.",
       "Evidence level cannot regress across a supersession chain.",
+      "Active facts fail closed on unavailable support; an explicitly superseded historical fact cannot block its independently supported replacement.",
       "Verified facts require verified operator evidence or a canonical ship verdict.",
       "Memory and sync projections can create reported facts only and never upgrade truth.",
       "MEMORY.md, USER.md and CURRENT-FACTS.json are projections; the append-only ledger owns fact identity."
@@ -4212,6 +4219,39 @@ function renderDispatchReceipt({
   return assertContract(DISPATCH_RECEIPT_SCHEMA_V2, receipt);
 }
 
+// The grantable set is a hard allowlist. gate-arming is never grantable (the
+// guard also enforces this independently), and anything outside the list
+// degrades silently to the workspace-write default so a typo cannot open a
+// door. Billing, secrets, permissions and customer-send stay ungrantable by
+// receipt: those doors only open on a live human approval.
+const GRANTABLE_BOUNDARIES = new Set([
+  "workspace-write",
+  "production-deploy",
+  "git-history",
+  "destructive-write",
+  "instruction-surface",
+  "data-migration"
+]);
+
+function briefBoundaryGrant(normalized) {
+  const meta = normalized?.metadata && typeof normalized.metadata === "object" ? normalized.metadata : {};
+  const requested = Array.isArray(meta.authorizedBoundaries) ? meta.authorizedBoundaries : [];
+  const patterns = Array.isArray(meta.scopePatterns)
+    ? meta.scopePatterns.map((pattern) => cleanInline(pattern)).filter(Boolean)
+    : [];
+  const granted = requested
+    .map((boundary) => cleanInline(boundary))
+    .filter((boundary) => GRANTABLE_BOUNDARIES.has(boundary));
+  // A grant needs both halves: boundaries name WHAT the GO covers, patterns
+  // name WHERE. Missing either half degrades to the pre-grant default —
+  // coverage must have a form, not just a state.
+  if (!granted.length || !patterns.length) {
+    return { boundaries: ["workspace-write"], patterns: normalized.scope?.files || [] };
+  }
+  if (!granted.includes("workspace-write")) granted.unshift("workspace-write");
+  return { boundaries: granted, patterns };
+}
+
 function dispatch(root, options) {
   const config = readWorkspaceConfig(root) || {};
   const runtime = runtimePolicyState(config);
@@ -4460,6 +4500,15 @@ function dispatch(root, options) {
       hostedMcpUsed: false
     };
   }
+  // Boundary grants ride the APPROVED brief (metadata.authorizedBoundaries and
+  // metadata.scopePatterns), so coverage is enumerated at GO-time and can never
+  // widen itself mid-run: the grant is inside briefHash, which the approval
+  // signs. The grantable set is a hard allowlist — gate-arming is never
+  // grantable (doctrine lock in the guard), and anything outside the list
+  // degrades to the workspace-write default so a typo cannot open a door.
+  // A grant with boundaries but no scope patterns also degrades: coverage
+  // must have a form, not just a state.
+  const grantedBoundaryReceipt = briefBoundaryGrant(normalized);
   const predictedWatermark = currentLedgerWatermark(root) + 1;
   const run = {
     schema: RUN_SCHEMA_V2,
@@ -4498,8 +4547,8 @@ function dispatch(root, options) {
     sessionId: readSessionAnchor(root).sessionId,
     transcriptId: readSessionAnchor(root).transcriptId,
     scratchRoots,
-    authorizedBoundaries: ["workspace-write"],
-    scopePatterns: normalized.scope?.files || [],
+    authorizedBoundaries: grantedBoundaryReceipt.boundaries,
+    scopePatterns: grantedBoundaryReceipt.patterns,
     metadata: {
       mode: "local",
       receiptType: "canonicalDispatchReceipt",
@@ -4507,8 +4556,8 @@ function dispatch(root, options) {
       targetModel,
       scratchRoots,
       scopeFiles: normalized.scope?.files || [],
-      authorizedBoundaries: ["workspace-write"],
-      scopePatterns: normalized.scope?.files || [],
+      authorizedBoundaries: grantedBoundaryReceipt.boundaries,
+      scopePatterns: grantedBoundaryReceipt.patterns,
       successCriteria: normalized.successCriteria || [],
       stopCriteria: normalized.stopCriteria || [],
       executionRole: executionPair.executionRole,

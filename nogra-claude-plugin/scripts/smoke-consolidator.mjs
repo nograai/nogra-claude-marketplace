@@ -97,7 +97,7 @@ function main() {
     assert(/never\s+`?rm`?|[Mm]ove-not-delete|MOVE .*archive/.test(contract), "contract: must require move-not-delete (never delete a memory file)");
     assert(/[Aa]rchive the full original before any in-place rewrite/.test(contract), "contract: must require archive-full before in-place rewrites (compression is never the only copy)");
     assert(/[Mm]aintain USER\.md/.test(contract) && /CREATE it by distilling/.test(contract), "contract: must maintain USER.md (create-if-missing, bounded pinned profile)");
-    assert(/boligscout/.test(contract), "contract: must fence out boligscout/customer scope");
+    assert(/product-scoped path the workspace protects/.test(contract), "contract: must fence out product/customer scope");
     assert(/# Consolidator Report/.test(contract), "contract: must define the receipt return shape");
 
     console.log(

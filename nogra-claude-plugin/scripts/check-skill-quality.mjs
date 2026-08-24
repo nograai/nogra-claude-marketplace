@@ -65,11 +65,18 @@ function validateSkillDirectory(skillName) {
   const text = read(relativePath);
   const { frontmatter, body } = parseFrontmatter(text, relativePath);
   const keys = Object.keys(frontmatter).sort();
-  const expectedKeys = skillName === "transcript-diagnostic"
-    ? ["description", "disable-model-invocation", "name"]
-    : ["description", "name"];
+  // `internal: true` is the mechanical never-shipped flag (CEO fence 20/08:
+  // the release cut excludes internal skills). Optional, and only ever true.
+  const internalKeys = frontmatter.internal !== undefined ? ["internal"] : [];
+  const expectedKeys = [
+    ...(skillName === "transcript-diagnostic" ? ["description", "disable-model-invocation", "name"] : ["description", "name"]),
+    ...internalKeys
+  ].sort();
 
   assert(JSON.stringify(keys) === JSON.stringify(expectedKeys), `${relativePath} frontmatter contains an unsupported field set`);
+  if (frontmatter.internal !== undefined) {
+    assert(frontmatter.internal === "true", `${relativePath} internal must be true when present (the never-shipped flag)`);
+  }
   assert(frontmatter.name === `nogra-${skillName}`, `${relativePath} name must be nogra-${skillName}`);
   if (skillName === "transcript-diagnostic") {
     assert(frontmatter["disable-model-invocation"] === "true", `${relativePath} must be user-only`);

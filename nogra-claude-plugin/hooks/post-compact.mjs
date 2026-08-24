@@ -1,11 +1,22 @@
 #!/usr/bin/env node
 
 import { existsSync, readFileSync } from "node:fs";
+// Walls: open operational walls ride along in the recovery pointer so a compacted session does not rediscover them.
 import { join, resolve } from "node:path";
 import { resolveBootContext } from "../runtime/local/boot-context.mjs";
 import { renderCacheSafeConvergenceGuardContext } from "../runtime/local/convergence-guard.mjs";
 import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
+
+function openWallsBlock(root) {
+  try {
+    const file = join(resolve(root), ".nogra", "state", "WALLS.md");
+    if (!existsSync(file)) return "";
+    const lines = readFileSync(file, "utf8").split("\n").filter((l) => l.startsWith("- "));
+    if (lines.length === 0) return "";
+    return `<NOGRA_OPEN_WALLS>\n${lines.slice(0, 6).join("\n")}\nRule: a blocker is a lookup before it is a diagnosis — check these before acting on a symptom.\n</NOGRA_OPEN_WALLS>`;
+  } catch { return ""; }
+}
 
 function readStdin() {
   try {
@@ -102,4 +113,6 @@ state=${boot.state || ""}
 This is a thin recovery pointer after context compaction. Recovery is not Nogra GO and does not authorize continuation. Do not relitigate Nogra routing after compaction. If current-state claims matter, read only the project-local .nogra/state files and current git state needed for those claims.
 </NOGRA_COMPACT_POINTER>
 
-${renderCacheSafeConvergenceGuardContext({ root, eventName: "PostCompact" })}`);
+${renderCacheSafeConvergenceGuardContext({ root, eventName: "PostCompact" })}
+
+${openWallsBlock(root)}`);

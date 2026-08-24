@@ -30,18 +30,6 @@
         ]
       }
     ],
-    "InstructionsLoaded": [
-      {
-        "matcher": "session_start|nested_traversal|path_glob_match|include|compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observe-event.mjs\"",
-            "async": true
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
       {
         "matcher": "clear|resume|logout|prompt_input_exit|bypass_permissions_disabled|other",
@@ -67,15 +55,6 @@
             "async": false
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observe-event.mjs\"",
-            "async": true
-          }
-        ]
       }
     ],
     "UserPromptSubmit": [
@@ -87,15 +66,21 @@
             "async": false
           }
         ]
-      }
-    ],
-    "UserPromptExpansion": [
+      },
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observe-event.mjs\"",
-            "async": true
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pace-context.mjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/wall-recall.mjs\""
           }
         ]
       }
@@ -122,18 +107,16 @@
         ]
       }
     ],
-    "PostToolUse": [
+    "PostToolUseFailure": [
       {
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observe-event.mjs\"",
-            "async": true
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/wall-recall.mjs\""
           }
         ]
-      }
-    ],
-    "PostToolUseFailure": [
+      },
       {
         "hooks": [
           {
@@ -147,11 +130,6 @@
     "PostToolBatch": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observe-event.mjs\"",
-            "async": true
-          },
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sync-tick.mjs\"",
@@ -171,40 +149,16 @@
         ]
       }
     ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observe-event.mjs\"",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observe-event.mjs\"",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observe-event.mjs\"",
-            "async": true
-          }
-        ]
-      }
-    ],
     "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/delivery-gate.mjs\"",
+            "async": false
+          }
+        ]
+      },
       {
         "hooks": [
           {
@@ -236,28 +190,6 @@
       }
     ],
     "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observe-event.mjs\"",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "ConfigChange": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/observe-event.mjs\"",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "CwdChanged": [
       {
         "hooks": [
           {

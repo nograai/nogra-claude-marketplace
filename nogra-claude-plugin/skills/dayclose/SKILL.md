@@ -52,9 +52,19 @@ Use this skill when the user:
    HERE" block (running services, waiting decisions, resume paths). Pulse gets its EOD
    line. Task lists get synced. A projection updated tomorrow is a projection that lied
    tonight — same move, no exceptions.
-4. **Run the memory write-loop.** What did today teach that outlives today? New laws,
-   corrections, adopted patterns → memory files per the workspace write-loop; update the
-   index. Skip what the repo already records. If the operator anchored something today
+4. **Run the memory write-loop — measure the window first.** Before deciding what to write,
+   measure what memory already carries:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-brain.mjs" status --root "<absolute-workspace-root>"
+   ```
+
+   The board says whether MEMORY.md is inside its load window, how far `brain/` is behind the
+   ledger, and whether the valve has an unanswered `consolidation_due`. If the verdict is over
+   the window, OFFER `/nogra:brain consolidate` — never run it inside the close, and never
+   without the operator's GO. Then do the write-loop itself: what did today teach that outlives
+   today? New laws, corrections, adopted patterns → memory files per the workspace write-loop;
+   update the index. Skip what the repo already records. If the operator anchored something today
    ("gem den", "lås den"), confirm it actually landed.
 5. **Inbox hygiene.** Triage what landed today (screenshots, drops): file, reference, or
    archive. Artifacts produced today (reports, prompts, logs in the out-tray) get named
@@ -62,7 +72,19 @@ Use this skill when the user:
 6. **Git honesty.** For every repo touched today: name the uncommitted state explicitly —
    committed (with sha), or PARKED with a reason and an owner. Never leave a dirty tree
    unnamed. Do not commit as part of the close unless the operator says so.
-7. **The Pinocchio pass — measure everything claimed closed.** Last step, always:
+7. **Refresh the Paper's "Lige nu" — the last projection before the measured close.**
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/paper-now.mjs" --root "<absolute-workspace-root>"
+   ```
+
+   It measures (ledger, doors, open decisions, newest finds) and rewrites the page between its
+   markers. Run it AFTER the ledger stamp and the projections, so the page mirrors the day that
+   just closed and not the one that was still running. A workspace with no `paper` key exits 2
+   with one line — note it and move on; it never blocks the close. Tell the operator the page
+   was refreshed and still needs their republish.
+
+8. **The Pinocchio pass — measure everything claimed closed.** Last step, always:
    processes claimed dead are measured dead (ps/port checks), services claimed stopped
    answer nothing, stamps claimed written are read back, the checkpoint block exists.
    An absence stated as fact without a measurement is the exact failure this pass

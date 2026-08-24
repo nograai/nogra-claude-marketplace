@@ -401,7 +401,12 @@ export const NUDGE_STALE_MS = 24 * 60 * 60 * 1000; // a seat silent for a day ea
 // to the network). No git, no upstream, or any error → null → silence. Facts only.
 export function readGitTreeState(root) {
   const run = (args) =>
-    execFileSync("git", ["-C", root, ...args], { timeout: 1500, stdio: ["ignore", "pipe", "ignore"] })
+    execFileSync("git", ["-C", root, ...args], {
+      timeout: 1500,
+      stdio: ["ignore", "pipe", "ignore"],
+      // Optional locks off: a hook read must never take index.lock under a live seat.
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }
+    })
       .toString()
       .trim();
   try {

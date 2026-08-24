@@ -179,7 +179,9 @@ const RM_NOT_COVERED_BASELINE = askJson([
   "Impact: may delete local files recursively or forcefully; reversibility may be low",
   `Why: recent Nogra run ${RECEIPT_RUN_ID} exists, but it does not cover destructive rm`,
   "Next: approve once to continue, or stop and brief this action first",
-  `Audit: action=destructive rm; coverage=not-covered; receipt=${RECEIPT_RUN_ID} status=queued.`
+  // Intent-binding (16/08): audit lines carry brief=<briefId> so a
+  // not-covered line always names which intent it ran under.
+  `Audit: action=destructive rm; coverage=not-covered; receipt=${RECEIPT_RUN_ID} status=queued brief=${RECEIPT_BRIEF_ID}.`
 ].join("\n"));
 
 const RM_NO_RECEIPT_BASELINE = askJson([

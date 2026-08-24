@@ -1,5 +1,221 @@
 # Changelog
 
+## 0.9.4 — 2026-08-23 "brain & paper" (dom 37: braincheck, sprinkleren, Papiret som projektion)
+
+- **`/nogra:brain` + `/nogra:paper` — the alarm speaks again, and the board becomes a projection**
+  (23/08; tegning `drawings/nogra-brain-and-paper-2026-08-23.md`, CEO dom 37 "dans og byg", built
+  a→g one step at a time, each gated). **The valve:** `runtime/local/brain-valve.mjs` +
+  `hooks/session-end.mjs` measure native auto-memory at session end and, only past the margin, log
+  ONE `consolidation_due` and drop ONE line in `inbox/out/consolidation-due-<date>.md` — once per
+  workspace per day, fail-open (SessionEnd shares a 1.5 s budget). `hooks/memory-load.mjs` says it
+  once at the next start: `⚠ consolidation due since <date>: MEMORY.md <n> lines / <kb> KB — offer
+  /nogra:brain consolidate`. It states what it measured; it never asks. The window is **dom 34**,
+  matched against the platform docs: Claude Code loads at most the first 200 lines / 25 KB of
+  MEMORY.md → house window 200 / 25 KB, alarm margin 150 / 15 KB, checkpoint ≤ 150 lines; file count
+  free. Line counts use `wc -l` semantics so any printed number survives a hand-check. Cause: the
+  alarm died when hooks moved into the plugin — the last `consolidation_due` in the y26 ledger was
+  **20/07**, and `.nogra/hooks/consolidation-due.sh` had been unwired ever since.
+  **`skills/brain`** (`/nogra:brain`): `status` prints ≤ 12 measured lines + one verdict (memory
+  window, largest file, checkpoint, USER.md, last consolidator receipt, brain's gap behind the
+  ledger, the valve, whether the drawings registry lags) and writes `brain-status` (numbers only);
+  `line` is the one-line form `/nogra:status` carries; `consolidated --receipt <archive/…>` reads a
+  real consolidator receipt, writes `brain-consolidated` and appends ONE MEMORY.md footer line —
+  refusing any path outside `archive/` and idempotent against the ledger; `mark`/`stamp` are
+  `bin/brain-run` moved under the plugin roof (same `brain-compiled` event, same
+  `metadata.watermark`); `consolidate` documents the Manager flow — measure, stop at "afventer GO"
+  without it, then dispatch `agents/consolidator.md` (copy-before-edit, archive-never-delete,
+  USER.md/checkpoint/law texts untouched, index hooks ≤ ~140 chars, receipt + ⚠-list; long runs =
+  Opus). `skills/brain-init` stays as `/nogra:brain init`'s alias for one release.
+  **`skills/paper`** (`/nogra:paper`): `bind` is `bin/papir-bind` ported to
+  `scripts/paper-bind.mjs` — proved **diff 0** against the python on the same paper, on both
+  branches (marker replacement and anchor insertion); markers renamed `PAPER-BIND` with a
+  compatibility read of the old `PAPIR-BIND` so an existing paper migrates in place instead of
+  double-inserting; event `paper-bound` (count + sha256). `now` (`scripts/paper-now.mjs`) measures
+  the "Lige nu" page — ledger, doors via `curl` with a 10 s ceiling, open decisions by a stated
+  heuristic, newest finds, an optional workspace command whose output is escaped as text — between
+  `<!-- PAPER-NOW START/END -->`, idempotent, reusing only the paper's own classes; event
+  `paper-now`. `publish` stays the Manager's call.
+  **The bindings:** `decide` runs `scripts/nogra-decide-hook.mjs` right after the append, so the
+  projection follows the truth in the same grip (`Papiret opdateret (N domme) — republicér.`) and
+  can never block a ruling; `dayclose` measures the memory window before the write-loop and
+  refreshes "Lige nu" as the last projection before the Pinocchio pass; `status` gained the line
+  `brain: inden for vinduet · brain-gap N dage · paper: bundet HH:MM`.
+  Config: `.nogra/config.json → paper { file, artifactUrl, decisions, ledger, doors?, sql?,
+  openMarkers? }` — one paper per workspace; a missing key prints the exact JSON to add and never
+  writes itself. Smokes: `scripts/smoke-brain-valve.mjs` (42 facits incl. the receipt loop) and
+  `scripts/smoke-paper.mjs` (25 facits). Boundary throughout: it measures and offers — consolidation
+  never runs without the operator's GO, the paper is a projection and never a source, and no
+  transcript is ever read.
+
+## 0.9.3 — 2026-08-22 (CEO 7a: hooks skåret til kernen)
+
+- **Walls — "a blocker is a lookup before it is a diagnosis."** `runtime/local/walls.mjs` + `hooks/wall-recall.mjs` (UserPromptSubmit, PostToolUseFailure — PostToolUse blev skåret af CEO 7a 22/08, hooks 33→21): when a prompt or tool result carries a wall signal (error page, denied, timeout, 401/403/5xx, cannot attach…), the ledger is searched for earlier events with the same symptom terms and the latest matches are injected as `<NOGRA_WALL_RECALL>` context before the next action; repeated hits without a `wall` record NAG. New event type `wall` (symptom · cause · cure now · who clicks · durable fix · status) with projection `.nogra/state/WALLS.md`; `scripts/nogra-wall.mjs record|list|match|project`; open walls ride in the post-compact pointer (`<NOGRA_OPEN_WALLS>`) and ground step 0. `hooks/task-deleted.mjs` blev bygget til PostToolUse TaskUpdate→deleted (task-receipt i ledgeren) men er UDE AF DRIFT efter samme 7a-skæring — filen står som genoplivnings-kandidat, registreret af ingen hook-map. Smoke `scripts/smoke-walls.mjs` (6 facits). Generic defaults (English); workspaces extend `walls.signalPatterns` in `.nogra/config.json`. Born 21/08/2026 from the Safe Browsing wall that was rediscovered at full price (CEO GO).
+
+- hooks.json: 33 → 21 indgange. `observe-event` kun på Stop · PreCompact · PostToolUseFailure · PermissionDenied · StopFailure (session-identitet + fejlsignaler); ud af ConfigChange, CwdChanged, InstructionsLoaded, Notification, UserPromptExpansion, SubagentStart/Stop, PostToolBatch, PostToolUse, PermissionRequest. `wall-recall` ud af PostToolUse (står på UserPromptSubmit + PostToolUseFailure). `task-deleted` ud. `stop-intent.mjs`-shim slettet. Kernen urørt: boot-order, session-start, sync-pull/-tick/-push, post-compact, pace-context, user-prompt-submit, pre-tool-use ×2, permission-request, delivery-gate, stop-nudge, session-end. Før-kopi: `hooks/hooks.json.foer-skaering-2026-08-22.bak`. Smokes grønne: local-runtime, gate-triad, gate-arming-git, anchor-v1.
+
+- walls: wall-recall now recalls on SUCCESSFUL tool results only for STRONG signals (error page, security error, cannot attach, permission denied, forbidden, unauthorized, ECONN*, connection refused/reset/lost, captcha, dangerous site, access denied, not allowed); prompts and failed tool calls keep the full signal set. Larger stopword list (tool/house-generic tokens: usernames, UI verbs, harness words) and `minTermHits` 2 -> 3. Red-tested: generic output with "failed"/"404" is silent; PostToolUseFailure "permission denied" and PostToolUse "Security error ... cannot attach" still recall. Why: the hook fired on nearly every Bash result and filled context (cost per turn).
+
+- **Delivery gate + pace — a message to the operator is a delivery, not a claim** (21/08;
+  CEO yellow card: a dev server reported "up" measured from the assistant's own machine, and
+  operator decisions handed out as chat homework; CEO "anker beslutningen, og nup den … candidate /
+  english first"). `hooks/delivery-gate.mjs` (Stop) blocks loopback links, requires a
+  `delivery-receipt` ledger event (< window) for house links (private IPs, `*.local`, `*.workers.dev`,
+  configured hosts), and blocks operator-homework phrases without a board reference; downgrades to a
+  `systemMessage` when `stop_hook_active`; audit line `delivery-gate` per decision; workspace config
+  `deliveryGate: { enabled, receiptWindowMinutes, hostPatterns, homeworkPhrases, boardRefPatterns }`.
+  `scripts/nogra-delivery-receipt.mjs <url> <screenshot>` writes the receipt ONLY with a fresh
+  screenshot file (the operator's browser is the truth). `hooks/pace-context.mjs` (UserPromptSubmit)
+  turns the operator's "slow down" / "full speed" into persisted `.nogra/state/PACE.json` and injects
+  one `<NOGRA_PACE>` line per turn while SLOW; `scripts/nogra-pace.mjs status|slow|normal`; workspace
+  `pace: { slowPhrases, normalPhrases }`. `scripts/smoke-delivery-gate.mjs` = 10 known facits.
+
+- **Ask-grants — the operator's words become the receipt** (21/08; CEO idea
+  "bind mit 'gider du køre det fix' til hooks så coverage dækkes og receipt er
+  covered af intent", GO "go på den candidate, husk grade"). `gate.grants[]`
+  on the running intent binds the operator's LITERAL ask to ONE boundary class
+  with optional scope patterns and a TTL (`turn` / `next` / `N turns` / `30m` /
+  `1h` / `1d`, or `intent` = lives with the intent). `scripts/nogra-grant.mjs`
+  (`add` / `list` / `revoke` / `expire-turn`) is the deterministic hand; the
+  `authorize` skill documents the ritual (quote the ask verbatim, echo the
+  binding in chat BEFORE acting, never automatic — the runtime derives nothing
+  from prompt text). The gate evaluates grants after `gate.authorize` and
+  before receipts with the same semantics (no scope = skip-only; scope match +
+  `gate.autoApprove` = allow), stamps ONE `ask-grant-used` ledger line per use
+  quoting the ask (PreToolUse only — PermissionRequest never double-stamps),
+  and the UserPromptSubmit hook ticks turn-TTLs on every operator prompt.
+  gate-arming can never be granted: dropped at normalize, unreachable by
+  evaluation order, refused by the CLI. The authorize ladder grew from 13 to 21
+  rows (⑥ allow + exactly one ledger line quoting the ask · ⑦ expired asks ·
+  ⑧ no scope = skip-only · ⑨ no cross-leak · ⑩ turn-grant allows before the
+  next prompt and asks after it · ⑪ gate-arming dropped); red-proved by
+  sabotage (flipped ⑥ expectation → FAIL) and by running the ladder against
+  the HEAD guard without the grant branch (⑥/⑩ FAIL). Measured cause, 21/08
+  08:5x: `rm -rf ~/.bun` asked under an intent authorizing git/deploy — and
+  correctly so: the CEO's words said "install", not "delete". The grant form
+  keeps that honesty — a grant covers what the words say; the Manager's own
+  additions still ask.
+
+- Suite hygiene found on the way (the full `smoke-local-runtime` was RED before
+  this work, on four older items — blamed before fund, each measured identical
+  against the HEAD guard): `skills/drawings` description trimmed to the 360-char
+  trigger cap (403 → 342); `skills/fund` and `skills/grade` frontmatter aligned
+  with the skill-quality contract (`name: nogra-<dir>`, trigger clause "Use
+  when …"); `check-skill-quality.mjs` learned the optional `internal: true`
+  flag (the never-shipped marker, CEO fence 20/08 — only ever true);
+  `smoke-gate-arming-git.mjs` byte-baselines for checkout/switch/restore/push
+  moved from the 03/07 ask-bytes to the routine-git OBSERVE bytes written into
+  the guard 16/08 (clean/reset/deploy keep their ask-bytes). Suite green again,
+  exit 0.
+
+
+## 0.9.2 — 2026-08-20 "the loop release" (the gate reads MCP receipts' scope)
+
+- Two of the graded POLISH items executed (20/08, CEO GO "kør de fixes"):
+  `convergence-guard.mjs` now reads `metadata.scopePatterns` as scope fallback
+  (symmetric with the boundaries fallback on the previous line) — red/green
+  proven against the same run record through HEAD vs fixed module: old guard
+  yields `scope: []` (a transport_register receipt could never allow-match),
+  fixed guard carries `["npx wrangler deploy**"]`. And the `authorize` skill
+  documents command-scope glob semantics: a single `*` never crosses `/`, so
+  command patterns need `**` — measured falling through silently 20/08.
+  Remaining POLISH (brief_save validator UX) stays queued.
+
+- New skill `grade` (`/nogra:grade`): the five-step source-quality verdict —
+  anchor tasting against the shelf's richest (seeded, replayable), mechanical
+  field statistics over the WHOLE population, eye on a hole-class AND a typical
+  representative, 🔴🟡🟢 grades where red GATES the decision, verdict to the
+  builder before anything fires. Proven same-day it was named: first run caught
+  234/443 public-identifier law breaches BEFORE a revival put them in
+  production. Binds to the `fund` skill for indexing. (CEO-named and ordered
+  bound 20/08: "den kan du lige gemme som grade metode".)
+
+- Graded (Patrick + Fable layer, 20/08 — evidence in
+  `.nogra/evidence/GRADING-plugin-x-mcp-2026-08-20.md`): authorize/active-intent
+  flow KEEP (mechanically closed end-to-end: operator words as objective,
+  operator hand as root of trust, gate red/green-proven — in-scope deploy
+  matched, out-of-scope rm still asks); POLISH queued for command-scope glob
+  documentation (`*` never crosses `/` — command patterns with paths need `**`,
+  measured falling through live), for `convergence-guard.mjs:340`'s missing
+  `metadata.scopePatterns` fallback (boundaries have one, scope does not —
+  transport_register callers can never allow-match), and for `brief_save`'s
+  one-missing-key-at-a-time validator; transport_register's absent `nextOwner`
+  DEFERRED as possibly-correct state-only design; hosted MCP-server completion
+  DEFERRED by CEO ruling ("own product first").
+
+- Drawing reference visible in the gate's eye: when an intent-grant carries
+  `metadata.grantChain.drawing` ({name, source, artifact} — the reference,
+  never the content), the guard renders `currentActionDrawing=name(source)`
+  in the convergence context, both review paths, and the audit line — so the
+  receiver knows which drawing to read ONCE at their own ground. Purely
+  additive: receipts without a drawing render "none"/omit the field.
+  (Companion to the `nogra-drawings` skill, operator's order 19/08.)
+
+- New skill `nogra-drawings` (`/nogra:drawings`): canonical drawings live in the
+  workspace's `drawings/` registry (legacy name `tegninger/` accepted) — no
+  artifact-drawing publishes without its source file + one index line; a drawing
+  is read ONCE when grounding on its domain (then docs/turn rhythm, never carried
+  as transcript); and intent can cross artifact × drawing by REFERENCE
+  (`drawing: {name, source, artifact}` in a brief or grant) — the receiver reads
+  the source at their own ground. (Operator's order 19/08; the hub's registry
+  was renamed `tegninger/` → `drawings/` the same day.)
+
+- Migration-domain writes are judged by the action's home, not by a word in a
+  filename: a file inside a `migrations/` directory, or a `.sql`/`.prisma`
+  artifact whose own name declares migration intent, now classifies as
+  `data migration file` and maps to the `data-migration` boundary — coverable
+  by a dispatch receipt that declares it. A script merely *named* something
+  with "migration" is ordinary workspace-write. (Measured live 16/08: the
+  hook flagged a sandbox-only apply script on its name while the receipt had
+  no data-migration boundary to cover even the real migration file — a fence
+  that matched the word instead of the act, in both directions.)
+
+## 0.9.1 — 2026-08-16
+
+Released on the operator's grade+GO ("C — kør det hele"), same day the three
+headline changes ran a full factory day live. Two additions landed at the cut:
+
+- Bypass escalation: in `bypassPermissions` mode an "ask" is a prompt nobody
+  sees — for HIGH/CRITICAL uncovered boundaries the gate now escalates
+  ask → deny, so bypass sessions need a covering receipt (or a mode change)
+  for risk classes. Ordinary asks, covered allows and observe lines untouched.
+  (Measured live 16/08: an unseen ask let a shared-service deploy proceed.)
+- authorize-ladder smoke aligned with the routine-git doctrine already written
+  into the guard ("Nogra invites, it does not enforce — no prompt layer over
+  daily git"): uncovered routine git verbs are an OBSERVE line, never ask,
+  never allow; deploy/destructive/non-git boundaries keep their ask.
+
+- Audit lines now carry the intent: `brief=<briefId>` on covered, scratch and
+  not-covered decisions alike (the descriptive briefId is the intent name).
+  A "missing" in the log always has its "but under this intent" half —
+  operator-ordered 16/08; pairs with the gradelog enrichment so
+  invoke × action × decision × receipt × intent is one line.
+
+- Evidence artifacts are now preserved byte-for-byte in a local
+  digest-addressed vault when `evidence-save` runs. A mutable working
+  projection may change without erasing its historical receipt; active facts
+  still fail closed if neither live bytes nor the exact snapshot exists. One
+  explicitly named invalid legacy fact can be recovered only by a
+  same-subject, non-regressing replacement with independently valid evidence;
+  superseded historical drift no longer bricks every future fact/Anchor read.
+- PreToolUse live-log lines now carry the gate's verdict for gradability:
+  decision lines include the dense `Audit:` sentence (action/coverage/receipt)
+  as `nogra.reason` — previously empty, so ask/review/allow decisions could
+  not be graded from the log. The full review message loses its tail to the
+  240-char line bound; the audit sentence is preferred because the tail is
+  where grading lives. (Operator-ordered mount 16/08; reader:
+  `bin/nogra-gradelog` in the workspace sweeps per-workspace logs into a
+  daily gradebook.)
+- Dispatch receipts now carry the approved brief's boundary grant
+  (`metadata.authorizedBoundaries` + `metadata.scopePatterns`) instead of a
+  hardcoded `workspace-write`. Coverage is enumerated at GO-time inside
+  briefHash — a grant can never widen itself mid-run. Hard allowlist:
+  gate-arming, billing, secrets, permissions and customer-send are never
+  grantable by receipt; a grant without scope patterns degrades to the
+  default (coverage must have a form, not just a state). Pairs with the
+  existing `gate.autoApprove` opt-in: covered actions emit `allow` with the
+  audit line, everything else keeps asking. (The hook now carries intent —
+  operator-backlogged 2026-08-15.)
+
 ## 0.9.0 — 2026-08-14 "the spine release" (Quality Pass 0 goes public: contract spine, anchor, role leases)
 
 - Carries the 0.8.9 `/nogra:dayclose` skill forward unchanged. 0.8.9's

@@ -19,7 +19,7 @@ Read and write only `.nogra/runtime/active-intent.json`. App files, `.claude/`,
 `CLAUDE.md`, `.nogra/config.json`, package files, hooks, plugin files and agent
 spawning stay outside this skill.
 
-Within that file, write only `gate.authorize` and the `updatedAt` timestamp. Do
+Within that file, write only `gate.authorize`, `gate.grants` and the `updatedAt` timestamp. Do
 not modify `gate.nonGoals`, `objective`, `currentPlan`, or any other field. The
 single exception: creating a fresh minimal intent when none exists (below),
 after the user's explicit confirmation.
@@ -56,6 +56,12 @@ start one. On explicit confirmation, write `.nogra/runtime/active-intent.json`:
   scope the gate skips the ask for that class but never auto-allows; with a
   matching scope (and `gate.autoApprove` on in `.nogra/config.json`) it can
   emit an allow. Say which of the two the user is getting.
+- **Glob semantics — command patterns need `**`.** A single `*` never crosses
+  `/` (correct for path patterns, a silent trap for commands): `npx wrangler
+  deploy*` does NOT match `npx wrangler deploy -c ops/site/wrangler.toml`,
+  because the argument contains slashes. Write command patterns with `**`
+  (`npx wrangler deploy**`, `git **`). Measured 20/08: an intent fell through
+  on exactly this, silently — the gate asked as if no scope existed.
 - Closing it later: set `status` to `done` (or delete the file). Mention this
   in the receipt so the standing GO never outlives the work invisibly.
 
@@ -82,7 +88,7 @@ instruction-surface   CLAUDE.md, AGENTS.md, hooks, skills, plugin/settings files
 data-migration        supabase/prisma db push, migrate, reset; psql mutations
 billing               stripe/customer/email send, charge, refund
 destructive-write     rm -rf, find -delete/-exec
-boligscout            edits under a boligscout path
+<product-class>       edits under a path the workspace protects via `gate.pathClasses` (e.g. your product repo)
 ```
 
 If the user names something outside this list, do not invent a class. Show the
@@ -144,7 +150,7 @@ Nogra authorize
 Intent      Trial the active-intent runtime ...
 Authorized  git-history, production-deploy
 Recognized  git-history, production-deploy, instruction-surface,
-            data-migration, billing, destructive-write, boligscout
+            data-migration, billing, destructive-write, <product-class>
 ```
 
 For a bare `/nogra:authorize` with no change, skip the confirmation line and
@@ -158,3 +164,51 @@ show only the state block.
   with hard gating it is allowed instead of denied.
 - The written `gate.authorize` is local workspace state and is git-trackable, so
   the standing GO stays auditable.
+
+## Ask-grants — the operator's words as the receipt
+
+An ask-grant is the lighter-still path: the operator's LITERAL words in chat
+("gider du køre det fix"), bound to ONE boundary class, with an optional scope
+and a TTL. The gate then treats the class like `authorize` (no scope = skip
+its ask, never allow; scope match + `gate.autoApprove` = allow) and stamps
+every use as ONE ledger line (`ask-grant-used`) that quotes the ask verbatim —
+so the receipt IS the intent, readable in the clock afterwards.
+
+Record it with the deterministic hand, never by editing JSON by hand:
+
+```bash
+node "<plugin-root>/scripts/nogra-grant.mjs" add --root "<workspace-root>" \
+  --class destructive-write --scope "rm -rf ~/.bun**" --ttl turn \
+  --ask "gider du køre det fix vi manglede så champ for at kunne bruge bun"
+node "<plugin-root>/scripts/nogra-grant.mjs" list   --root "<workspace-root>"
+node "<plugin-root>/scripts/nogra-grant.mjs" revoke --root "<workspace-root>" --id <grant-id>
+```
+
+Rules — each one is a door that stays closed:
+
+- **The ask is quoted, never paraphrased.** `--ask` carries the operator's own
+  words. A grant covers what those words say; the Manager's own additions (a
+  cleanup, a "while I'm here") still ask. Measured 21/08: "kør fixet for bun"
+  covered the install, not the `rm -rf ~/.bun` that followed — the gate asked,
+  and that was correct.
+- **Echo the binding in chat BEFORE acting.** The Manager says what it binds
+  ("binder: destructive-write · scope `rm -rf ~/.bun**` · ttl turn — dine ord:
+  '…'") and then records it. Intent and action meet in Nogra before the risk,
+  where the operator can still say no.
+- **Never automatic.** The runtime does not derive grants from prompt text —
+  no classifier, no scoring, no "it sounded like a yes". The producing hand is
+  the operator's `/nogra:authorize` or the Manager's explicit echo. Nogra
+  invites; it does not enforce.
+- **TTL is the default shape.** `turn` dies at the operator's next prompt
+  (the UserPromptSubmit hook ticks it), `next` at the one after, `N turns`,
+  `30m`/`1h`/`1d`, or `intent` (lives with the intent, like `authorize`).
+  Prefer the shortest TTL that covers the work; `revoke` closes one early.
+- **gate-arming can never be granted** — dropped at normalize, unreachable by
+  evaluation order, and refused by the CLI. A live human approval is the only
+  door to the gate's own rules.
+- **Scope globs follow the authorize rule:** command patterns need `**`
+  (`rm -rf ~/.bun**`, `npx wrangler deploy**`).
+
+The receipt to the operator: grant id, class, scope, ttl and the quoted ask —
+and whether the door is skip-only or allow-capable in this workspace.
+

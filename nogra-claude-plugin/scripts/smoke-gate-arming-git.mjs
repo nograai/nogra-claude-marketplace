@@ -175,13 +175,36 @@ function askBaseline(action, impact) {
   });
 }
 
+// Routine-git doctrine (written into the guard 16/08 on CEO's GO; the
+// authorize ladder was aligned the same day): checkout/switch/restore/push
+// without a covering run are the operator's ordinary workbench — an OBSERVE
+// line, never an ask, native permissions govern. The 03/07 ask-bytes for
+// those verbs were therefore stale, and this smoke sat red until 21/08 (blamed
+// before fund: identical failure with the HEAD guard). clean/reset/deploy keep
+// their ask-bytes — the doctrine never touched them.
+function observeBaseline(action, impact) {
+  const message = [
+    `Nogra observe: ${action} — no active Nogra run covers it; not blocking`,
+    `Impact: ${impact}`,
+    "Claude Code's native permission rules remain the authority for this command",
+    `Audit: action=${action}; coverage=missing; receipt=none.`
+  ].join("\n");
+  return JSON.stringify({
+    systemMessage: message,
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: message
+    }
+  });
+}
+
 const GIT_TREE_IMPACT = "changes local working tree or Git state; reversibility depends on the command";
-const GIT_CHECKOUT_BASELINE = askBaseline("git checkout", GIT_TREE_IMPACT);
-const GIT_RESTORE_BASELINE = askBaseline("git restore", GIT_TREE_IMPACT);
-const GIT_SWITCH_BASELINE = askBaseline("git switch", GIT_TREE_IMPACT);
+const GIT_CHECKOUT_BASELINE = observeBaseline("git checkout", GIT_TREE_IMPACT);
+const GIT_RESTORE_BASELINE = observeBaseline("git restore", GIT_TREE_IMPACT);
+const GIT_SWITCH_BASELINE = observeBaseline("git switch", GIT_TREE_IMPACT);
 const GIT_CLEAN_BASELINE = askBaseline("git clean", GIT_TREE_IMPACT);
 const GIT_RESET_BASELINE = askBaseline("git reset", GIT_TREE_IMPACT);
-const GIT_PUSH_BASELINE = askBaseline("git push", "publishes commits to a remote branch and may trigger CI or deploy workflows");
+const GIT_PUSH_BASELINE = observeBaseline("git push", "publishes commits to a remote branch and may trigger CI or deploy workflows");
 const DEPLOY_BASELINE = askBaseline("production deploy", "may change the public production surface");
 const INSTRUCTION_SURFACE_BASELINE = askBaseline(
   "instruction-surface write",

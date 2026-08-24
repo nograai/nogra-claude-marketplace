@@ -2,7 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { readActiveIntent, renderActiveIntentContext } from "../runtime/local/active-intent.mjs";
+import { expireTurnGrants, readActiveIntent, renderActiveIntentContext } from "../runtime/local/active-intent.mjs";
 import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { resolveProjectFocus } from "../runtime/local/project-focus.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
@@ -118,6 +118,14 @@ if (!prompt || isGeneratedWrapperPrompt(prompt)) {
 }
 
 const userPrompt = userAuthoredText(prompt);
+// The operator's prompt is the clock for turn-TTL ask-grants: tick them here,
+// before any early return, so a /nogra command also closes the previous
+// turn's grants. Fail-open: a write error never blocks the prompt.
+try {
+  expireTurnGrants(root, { trigger: "user-prompt" });
+} catch {
+  // grants are an audit convenience; the prompt path never depends on them
+}
 if (!userPrompt || /^\s*\/nogra[:\s]/u.test(userPrompt) || isNograExtensionCommand(userPrompt)) {
   captureLiveHookEvent(root, input, { eventName: "UserPromptSubmit", decision: "silent" });
   process.exit(0);

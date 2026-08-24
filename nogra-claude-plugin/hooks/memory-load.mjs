@@ -6,6 +6,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { consolidationDueLine, countLines } from "../runtime/local/brain-valve.mjs";
+import { resolveProjectRoot } from "../runtime/local/gate-decision.mjs";
 import { resolveNativeMemory } from "../runtime/local/native-memory.mjs";
 
 const LOAD_WINDOW_LINES = 200;
@@ -65,7 +67,7 @@ export function memoryContext(input = {}, env = process.env) {
     let indexBytes = 0;
     try {
       const index = loadedIndexContent(readFileSync(join(dir, "MEMORY.md"), "utf8"));
-      indexLines = index.split("\n").length;
+      indexLines = countLines(index); // runde-2-fund 11: samme wc -l-semantik som ventilen — foer var de to alarmer uenige med en linje ved praecis 200
       indexBytes = Buffer.byteLength(index);
     } catch {}
 
@@ -94,7 +96,18 @@ export function memoryContext(input = {}, env = process.env) {
         " On explicit GO, dispatch the nogra:consolidator agent: move superseded originals to archive, never delete, then log the receipt." +
         " Always wait for GO and never silently consolidate; memory is advisory continuity, not project truth.\n</nogra-memory>"
       : "";
-    return [userPin, nudge].filter(Boolean).join("\n");
+
+    // The valve spoke at the last session end; this is the alarm being audible again. ONE line,
+    // stating what was measured and when — it never asks, and it stays silent once a consolidation
+    // receipt (`brain-consolidated`, or the pre-plugin `consolidation_done`) answers the due event.
+    // Review-fund 24/08 (MEDIUM): `root` er MEMORY-roden (Claude-projektmappen) — men ventilens
+    // skriver (session-end) walker op til naermeste .nogra/config.json. En session startet i en
+    // undermappe laeste derfor et ledger der aldrig fik consolidation_due, og alarmen tav.
+    // Laeseren skal staa hvor skriveren staar: samme delte resolver, samme rod.
+    const nograRoot = resolveProjectRoot(input);
+    const dueLine = consolidationDueLine(nograRoot, { hookInput: input, env });
+
+    return [userPin, dueLine, nudge].filter(Boolean).join("\n");
   } catch {
     return "";
   }

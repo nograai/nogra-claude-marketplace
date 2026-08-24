@@ -66,7 +66,7 @@ function gitIdentityRoot(projectDir, options) {
     const common = execFileSync(
       "git",
       ["-C", projectDir, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-      { encoding: "utf8", timeout: 1500, stdio: ["ignore", "pipe", "ignore"] }
+      { encoding: "utf8", timeout: 1500, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }
     ).trim();
     if (common) {
       const absolute = path.resolve(common);
@@ -74,7 +74,7 @@ function gitIdentityRoot(projectDir, options) {
       const topLevel = execFileSync(
         "git",
         ["-C", projectDir, "rev-parse", "--show-toplevel"],
-        { encoding: "utf8", timeout: 1500, stdio: ["ignore", "pipe", "ignore"] }
+        { encoding: "utf8", timeout: 1500, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }
       ).trim();
       if (topLevel) return path.resolve(topLevel);
     }
