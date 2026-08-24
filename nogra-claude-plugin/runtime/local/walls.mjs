@@ -80,11 +80,34 @@ export function symptomTerms(text, max = 12) {
   return [...terms].slice(0, max * 3).sort((a, b) => b.length - a.length).slice(0, max);
 }
 
-export function readLedgerEvents(root) {
+export function readLedgerEvents(root, { tailBytes = 0 } = {}) {
   const file = path.join(root, ".nogra", "ledger", "events.jsonl");
   if (!fs.existsSync(file)) return [];
+  // Review-fund 24/08 (LOW): den blokerende UserPromptSubmit-vej parsede HELE ledgeren (MB) ved
+  // hvert bredt signal. tailBytes > 0 laeser kun halen (foerste, potentielt halve, linje droppes);
+  // 0 = alt (projektionen skal se ALLE events). Samme form som brain-valves scanLedger.
+  let raw = "";
+  try {
+    const size = fs.statSync(file).size;
+    if (tailBytes > 0 && size > tailBytes) {
+      const handle = fs.openSync(file, "r");
+      try {
+        const buffer = Buffer.alloc(tailBytes);
+        const bytesRead = fs.readSync(handle, buffer, 0, tailBytes, size - tailBytes);
+        raw = buffer.toString("utf8", 0, bytesRead);
+        const firstBreak = raw.indexOf("\n");
+        raw = firstBreak >= 0 ? raw.slice(firstBreak + 1) : "";
+      } finally {
+        fs.closeSync(handle);
+      }
+    } else {
+      raw = fs.readFileSync(file, "utf8");
+    }
+  } catch {
+    return [];
+  }
   const out = [];
-  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+  for (const line of raw.split("\n")) {
     const s = line.trim(); if (!s) continue;
     let e; try { e = JSON.parse(s); } catch { continue; }
     const ts = e.createdAt || e.ts || e.timestamp || "";
@@ -104,7 +127,7 @@ function daysAgo(ts, now) {
 export function matchWalls(root, text, { config = DEFAULT_WALLS, now = Date.now() } = {}) {
   const terms = symptomTerms(text);
   if (terms.length === 0) return { terms, matches: [], repeats: 0 };
-  const events = readLedgerEvents(root);
+  const events = readLedgerEvents(root, { tailBytes: config.recallTailBytes ?? 512 * 1024 });
   const scored = [];
   for (const ev of events) {
     if (daysAgo(ev.ts, now) > (config.lookbackDays || 60)) continue;
