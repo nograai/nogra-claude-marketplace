@@ -203,11 +203,22 @@ export function applyBlock(paper, block, marker) {
   // renaming the markers can never double-insert the block.
   const existing = ["PAPER-BIND", "PAPIR-BIND"].find((name) => text.includes(`<!-- ${name}:DECISIONS START -->`));
   if (existing) {
+    // Runde-2-fund (HIGH, samme klasse som anker-guarden): grenen valgtes paa START-markoeren
+    // ALENE, men span-regexen kraever BEGGE — et papir med START uden END blev returneret UAENDRET
+    // mens bindPaper kvitterede groent med frisk sha. En skriver maa foerst kvittere naar den har
+    // maalt at skrivningen skete: kraev END, og kraev at replacen faktisk aendrede noget.
+    if (!text.includes(`<!-- ${existing}:DECISIONS END -->`)) {
+      throw new Error(`${existing}:DECISIONS START staar uden END-markoer i Papiret — bind ikke anvendt`);
+    }
     const span = new RegExp(
       `<!-- ${existing}:DECISIONS START -->[\\s\\S]*?<!-- ${existing}:DECISIONS END -->`,
       "gu"
     );
-    text = text.replace(span, () => block);
+    const replaced = text.replace(span, () => block);
+    if (replaced === text && !text.includes(block)) {
+      throw new Error(`${existing}:DECISIONS-markoererne matchede ikke (END foer START?) — bind ikke anvendt`);
+    }
+    text = replaced;
   } else {
     const anchorAt = text.indexOf(ANCHOR);
     if (anchorAt <= 0) throw new Error("s.7-ankeret mangler i Papiret");

@@ -188,8 +188,19 @@ export function buildNowSection({ stamp, ledger, doors, decisions, funds, comman
 
 export function applyNowSection(paper, section) {
   if (paper.includes(START)) {
+    // Runde-2-fund 2 (samme klasse som bind-markoer-fundet): grenen valgtes paa START alene,
+    // regexen kraever BEGGE — et papir med START uden END holdt stille op med at opdatere,
+    // mens paperNow kvitterede groent med friskmaalte tal. Siden der findes for at bevise
+    // "maalt, ikke husket" maa aldrig selv vaere kun husket.
+    if (!paper.includes(END)) {
+      throw new Error("PAPER-NOW START staar uden END-markoer i Papiret — now ikke anvendt");
+    }
     const span = new RegExp(`${START}[\\s\\S]*?${END}`, "gu");
-    return paper.replace(span, () => section);
+    const replaced = paper.replace(span, () => section);
+    if (replaced === paper && !paper.includes(section)) {
+      throw new Error("PAPER-NOW-markoererne matchede ikke (END foer START?) — now ikke anvendt");
+    }
+    return replaced;
   }
   // No section yet: put it at the END of the paper body, inside the book wrapper when there is one.
   const lastClose = paper.lastIndexOf("</div>");
@@ -220,7 +231,13 @@ export function paperNow({ root, paper = "", now = "", writeEvent = true } = {})
   const commandOut = config?.sql ? runCommandHook(String(config.sql), root) : null;
 
   const section = buildNowSection({ stamp, ledger, doors, decisions, funds, commandOut, markers });
-  fs.writeFileSync(paperPath, applyNowSection(readText(paperPath) ?? "", section), "utf8");
+  // Runde-2-fund 13 (datatab): readText sluger enhver laesefejl til null, og ?? "" gjorde en
+  // MISLYKKET laesning af en EKSISTERENDE fil (EACCES, kortvarig laas) til et tomt papir — naeste
+  // linje overskrev saa operatoerens HELE papir med kun NOW-sektionen og kvitterede groent.
+  // existsSync (:206) beviste at filen er der; laesningen skal derfor LYKKES foer der skrives.
+  const currentPaper = readText(paperPath);
+  if (currentPaper === null) return { status: "unreadable-paper", paper: paperPath };
+  fs.writeFileSync(paperPath, applyNowSection(currentPaper, section), "utf8");
 
   const htmlLines = section.split("\n").length;
   let event = null;
