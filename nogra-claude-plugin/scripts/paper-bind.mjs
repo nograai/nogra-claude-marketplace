@@ -206,7 +206,13 @@ export function applyBlock(paper, block, marker) {
     const anchorAt = text.indexOf(ANCHOR);
     if (anchorAt <= 0) throw new Error("s.7-ankeret mangler i Papiret");
     const leadAt = text.indexOf('<p class="lead">', anchorAt);
-    const cut = text.indexOf("</p>", leadAt) + 4;
+    // Review-fund 24/08 (HIGH): indexOf(-1) klamper til 0 og indexOf("</p>", -1)+4 kan give cut=3 —
+    // blokken blev splejset over ankeret eller midt i aabningstagget, og receipten meldte groent paa
+    // oedelagt papir. Et bind der ikke kan finde sin plads skal STOPPE, aldrig gaette.
+    if (leadAt < 0) throw new Error("s.7-ankerets lead-afsnit mangler i Papiret — bind ikke anvendt");
+    const closeAt = text.indexOf("</p>", leadAt);
+    if (closeAt < 0) throw new Error("s.7-ankerets lead-afsnit er ulukket i Papiret — bind ikke anvendt");
+    const cut = closeAt + 4;
     text = `${text.slice(0, cut)}\n${block}\n${text.slice(cut)}`;
   }
   if (!text.includes(".bind details")) {
