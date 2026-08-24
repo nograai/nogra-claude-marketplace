@@ -153,7 +153,9 @@ function gateSettings(root) {
     mode: cleanInline(modeSource).toLowerCase() === "hard" ? "hard" : "advisory",
     // Default OFF is locked by doctrine — do not flip. Only literal true
     // opts this workspace into receipt-driven allow emission.
-    autoApprove: gateObject.autoApprove === true
+    autoApprove: gateObject.autoApprove === true,
+    // Product-specific boundary classes live in the workspace, not the code.
+    pathClasses: Array.isArray(gateObject.pathClasses) ? gateObject.pathClasses : []
   };
 }
 
@@ -178,13 +180,19 @@ function recordAskGrantUse(root, input, info) {
   }
 }
 
-function boundaryClass(risk, name, payload = {}) {
+function boundaryClass(risk, name, payload = {}, pathClasses = []) {
   // gate-arming is never auto-approvable — locked by doctrine; do not add it
   // to any approval path. The mapping stays first so no other class label can
   // shadow a write to the gate's own arming surface.
   if (risk === "gate-arming write") return "gate-arming";
   const fp = cleanInline(payload.file_path || payload.path || "").toLowerCase();
-  if (fp.includes("boligscout")) return "boligscout";
+  // Inhouse-grade 24/08: product-specific path classes come from the WORKSPACE
+  // (`gate.pathClasses` in .nogra/config.json), never from this shipped code —
+  // a public runtime must not carry one house's product names.
+  for (const rule of pathClasses) {
+    const match = cleanInline(rule?.match || "").toLowerCase();
+    if (match && fp.includes(match)) return cleanInline(rule?.class || match);
+  }
   if (/^git /u.test(risk)) return "git-history";
   if (risk === "production deploy") return "production-deploy";
   if (risk === "instruction-surface write") return "instruction-surface";
@@ -1958,7 +1966,8 @@ export function evaluateToolConvergenceRisk({ root, input } = {}) {
   const settings = gateSettings(root);
   const mode = settings.mode;
   const intent = readActiveIntent(root);
-  const cls = boundaryClass(risk, name, payload);
+  const pathClasses = Array.isArray(settings.pathClasses) ? settings.pathClasses : [];
+  const cls = boundaryClass(risk, name, payload, pathClasses);
   const target = scopeActionTarget(name, payload);
 
   // Non-goals stay first in evaluation order and override any receipt.

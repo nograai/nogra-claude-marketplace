@@ -1170,7 +1170,11 @@ function workspaceIndexEntries(root) {
 
 function promotionProjection(root, config = {}, bridge = {}, git = {}) {
   const entries = workspaceIndexEntries(root);
-  const devHub = entries.find((entry) => cleanInline(entry.workspaceId) === "y26dev");
+  // Inhouse-grade 24/08: the dev-hub's NAME is the workspace's business, not this
+  // shipped script's — `promotion.devWorkspaceId` in .nogra/config.json names it.
+  // Without the key the projection says "unknown" honestly instead of guessing.
+  const devHubId = cleanInline(config.promotion?.devWorkspaceId || "");
+  const devHub = devHubId ? entries.find((entry) => cleanInline(entry.workspaceId) === devHubId) : null;
   if (!devHub) {
     return {
       schema: "nogra.local.promotion_projection.v1",
@@ -1184,12 +1188,13 @@ function promotionProjection(root, config = {}, bridge = {}, git = {}) {
   if (bridge.status !== "live-ready") blockedBy.push("bridge-live-gate");
   if (git.status === "dirty") blockedBy.push("dirty-worktree");
   if (git.status === "unknown") blockedBy.push("git-unknown");
-  const rootWorkspace = cleanInline(config.workspaceId);
   return {
     schema: "nogra.local.promotion_projection.v1",
     status: blockedBy.length ? "gate-required" : "ready-for-review",
     source: ".nogra/index/workspaces.jsonl + status projections",
-    lane: rootWorkspace === "y26" ? "y26dev-to-y26-public" : "dev-to-public",
+    lane: cleanInline(config.promotion?.publicWorkspaceId)
+      ? `${devHubId}-to-${cleanInline(config.promotion.publicWorkspaceId)}-public`
+      : "dev-to-public",
     devWorkspaceId: cleanInline(devHub.workspaceId),
     devWorkspacePath: cleanInline(devHub.path, 240),
     blockedBy,

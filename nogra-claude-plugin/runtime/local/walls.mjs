@@ -41,13 +41,15 @@ const STOP = new Set(("the a an and or of to in on at for with from by is are wa
   + "into onto over under not no yes via per de det den der som og i på til af for med er var en et de vi du jeg han hun "
   + "action actions tool tools result output error errors failed failure exit code status ok true false null undefined "
   + "http https www com dk dev html json id tab tabs page frame showing call calls remaining completed "
-  // tool-/house-generic tokens that say nothing about a symptom (names, UI verbs, harness words):
-  + "users patricklarsen y26dev projects inbox ledger events jsonl nogra fable computer left_click screenshot captured "
+  // tool-generic tokens that say nothing about a symptom (UI verbs, harness words). House-specific
+  // vocabulary (product names, people, register) belongs in `walls.stopWords` in the WORKSPACE
+  // config — a public runtime carries no house's inner language (inhouse-grade 24/08).
+  + "users projects inbox ledger events jsonl nogra computer left_click screenshot captured "
   + "successfully executed element elements matching found reference removed accessibility subsection interrupted "
   + "nooutputexpected returncodeinterpretation isimage matches tabid navigate navigated wait seconds returned context "
   + "available title href generic button link option options listbox combobox heading menu menuitem textbox dropdown "
   + "input query tree select click clicked type typed scroll scrolled drag dragged pressed keys chrome browser window "
-  + "viewport boligscout katrine kilde kilden vores prod fabrik worker workers script brormand champ chef").split(/\s+/));
+  + "viewport prod worker workers script").split(/\s+/));
 
 export function readWallsConfig(root) {
   const cfg = readJson(path.join(root, ".nogra", "config.json")) || {};
@@ -56,6 +58,7 @@ export function readWallsConfig(root) {
     ...DEFAULT_WALLS,
     ...w,
     signalPatterns: [...DEFAULT_WALLS.signalPatterns, ...(Array.isArray(w.signalPatterns) ? w.signalPatterns : [])],
+    stopWords: Array.isArray(w.stopWords) ? w.stopWords.map((t) => String(t).toLowerCase()) : [],
     workspaceId: cfg.workspaceId || "workspace"
   };
 }
@@ -67,7 +70,8 @@ export function hasWallSignal(text, config = DEFAULT_WALLS, { strong = false } =
 }
 
 /** Terms worth searching for: words >= 4 chars (not stopwords), URL paths, status codes, quoted phrases. */
-export function symptomTerms(text, max = 12) {
+export function symptomTerms(text, max = 12, extraStop = []) {
+  const stop = extraStop.length ? new Set([...STOP, ...extraStop]) : STOP;
   // Tool results often arrive JSON-stringified: turn literal \n / \t / \" back into separators first.
   const t = String(text || "").replace(/\\[ntr]/g, " ").replace(/\\"/g, " ");
   const terms = new Set();
@@ -75,7 +79,7 @@ export function symptomTerms(text, max = 12) {
   for (const m of t.matchAll(/\b(?:40[0-9]|429|5\d\d)\b/gu)) terms.add(m[0]);
   for (const m of t.matchAll(/[\p{L}][\p{L}\p{N}_-]{3,}/gu)) {
     const w = m[0].toLowerCase();
-    if (!STOP.has(w) && !/^\d+$/u.test(w)) terms.add(w);
+    if (!stop.has(w) && !/^\d+$/u.test(w)) terms.add(w);
   }
   return [...terms].slice(0, max * 3).sort((a, b) => b.length - a.length).slice(0, max);
 }
@@ -125,7 +129,7 @@ function daysAgo(ts, now) {
 
 /** Rank earlier events by how many symptom terms they carry. Wall events win ties and get a boost. */
 export function matchWalls(root, text, { config = DEFAULT_WALLS, now = Date.now() } = {}) {
-  const terms = symptomTerms(text);
+  const terms = symptomTerms(text, 12, config.stopWords || []);
   if (terms.length === 0) return { terms, matches: [], repeats: 0 };
   const events = readLedgerEvents(root, { tailBytes: config.recallTailBytes ?? 512 * 1024 });
   const scored = [];

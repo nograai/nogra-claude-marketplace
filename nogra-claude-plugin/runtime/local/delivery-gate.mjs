@@ -16,7 +16,7 @@
 //
 // Defaults are English and generic; a workspace extends them in .nogra/config.json:
 //   "deliveryGate": { "enabled": true, "receiptWindowMinutes": 15, "homeworkMinOccurrences": 2,
-//                     "hostPatterns": ["nogra-house(\\.local)?"], "homeworkPhrases": ["dit greb"],
+//                     "hostPatterns": ["my-dev-host(\\.local)?"], "homeworkPhrases": ["your move"],
 //                     "boardRefPatterns": ["tavlen\\.y26\\.dev"] }
 // Fail-open everywhere: any error -> no output, exit 0. Never loops: when stop_hook_active is
 // already set the gate downgrades to a systemMessage.

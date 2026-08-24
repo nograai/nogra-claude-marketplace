@@ -60,7 +60,7 @@ unresolved or disabled result blocks consolidation.
 
 - Touch ONLY: the native memory directory, `brain/`, the ledger (append), and the consolidation flag/note.
 - Never touch application code, project source, `.nogra/` beyond the ledger append and flag clear, customer
-  data, or any `boligscout`-scoped path.
+  data, or any product-scoped path the workspace protects (see `gate.pathClasses`).
 - **Preserve signal.** Promote-before-prune. Move-not-delete. When unsure whether something is durable,
   keep it (archive, don't destroy). Consolidation compresses the theory-of-you; it never loses it.
 - **Projection boundary.** Native memory is advisory continuity, not the workspace fact authority. Never

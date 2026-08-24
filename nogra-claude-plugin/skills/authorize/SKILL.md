@@ -88,7 +88,7 @@ instruction-surface   CLAUDE.md, AGENTS.md, hooks, skills, plugin/settings files
 data-migration        supabase/prisma db push, migrate, reset; psql mutations
 billing               stripe/customer/email send, charge, refund
 destructive-write     rm -rf, find -delete/-exec
-boligscout            edits under a boligscout path
+<product-class>       edits under a path the workspace protects via `gate.pathClasses` (e.g. your product repo)
 ```
 
 If the user names something outside this list, do not invent a class. Show the
@@ -150,7 +150,7 @@ Nogra authorize
 Intent      Trial the active-intent runtime ...
 Authorized  git-history, production-deploy
 Recognized  git-history, production-deploy, instruction-surface,
-            data-migration, billing, destructive-write, boligscout
+            data-migration, billing, destructive-write, <product-class>
 ```
 
 For a bare `/nogra:authorize` with no change, skip the confirmation line and
