@@ -323,7 +323,15 @@ export function receiptAlreadyStamped(root, receiptName) {
  */
 export function recordConsolidated({ root, receipt, memoryDir = "", now = new Date() }) {
   const file = path.resolve(receipt);
-  if (!path.dirname(file).split(path.sep).includes("archive")) {
+  const dir = memoryDir || measureMemory({ root }).dir;
+  // Review-fund 24/08 (lokalt): leds-tjekket accepterede ENHVER sti med et "archive"-led — en
+  // receipt i /tmp/archive/ kunne lukke alarmen uden at memory var konsolideret. Naar memory-
+  // hjemmet kendes, skal receipten ligge i DETS archive/; kun naar hjemmet ikke kan maales,
+  // staar det gamle leds-tjek tilbage (fail-open, aldrig strengere end vi kan bevise).
+  if (dir) {
+    const rel = path.relative(path.join(path.resolve(dir), "archive"), file);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) return { status: "not-archived", file };
+  } else if (!path.dirname(file).split(path.sep).includes("archive")) {
     return { status: "not-archived", file };
   }
   if (!fs.existsSync(file)) return { status: "missing-receipt", file };
@@ -331,7 +339,6 @@ export function recordConsolidated({ root, receipt, memoryDir = "", now = new Da
   if (!parsed) return { status: "unreadable", file };
   if (receiptAlreadyStamped(root, parsed.name)) return { status: "already", file, receipt: parsed };
 
-  const dir = memoryDir || measureMemory({ root }).dir;
   const indexPath = dir ? path.join(dir, "MEMORY.md") : "";
   // A number the receipt did not carry is measured now where that is honest, never invented.
   const liveIndex = indexPath ? readText(indexPath) : null;
