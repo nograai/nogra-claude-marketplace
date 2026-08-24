@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { consolidationDueLine } from "../runtime/local/brain-valve.mjs";
 import { resolveNativeMemory } from "../runtime/local/native-memory.mjs";
 
 const LOAD_WINDOW_LINES = 200;
@@ -94,7 +95,13 @@ export function memoryContext(input = {}, env = process.env) {
         " On explicit GO, dispatch the nogra:consolidator agent: move superseded originals to archive, never delete, then log the receipt." +
         " Always wait for GO and never silently consolidate; memory is advisory continuity, not project truth.\n</nogra-memory>"
       : "";
-    return [userPin, nudge].filter(Boolean).join("\n");
+
+    // The valve spoke at the last session end; this is the alarm being audible again. ONE line,
+    // stating what was measured and when — it never asks, and it stays silent once a consolidation
+    // receipt (`brain-consolidated`, or the pre-plugin `consolidation_done`) answers the due event.
+    const dueLine = consolidationDueLine(root, { hookInput: input, env });
+
+    return [userPin, dueLine, nudge].filter(Boolean).join("\n");
   } catch {
     return "";
   }

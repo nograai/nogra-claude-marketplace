@@ -76,6 +76,18 @@ After versions, show:
 - Local continuity migration status when present: show `ready` or
   `migration-needed`. If migration is needed, say `/nogra:setup` will merge the
   missing local continuity layout without replacing app files or user-set config.
+- Memory and Paper in ONE line when the workspace has them. Two read-only calls, no events:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/nogra-brain.mjs" line --root "<absolute-workspace-root>"
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/paper-bind.mjs" --last --root "<absolute-workspace-root>"
+  ```
+
+  `nogra-brain.mjs line` already folds the newest `paper-bound` event in and prints the whole
+  form: `brain: inden for vinduet · brain-gap 2 dage · paper: bundet 15:41`. Use `paper-bind.mjs
+  --last` only when the Paper's binding time is wanted on its own. Print the line as measured —
+  never restate it as a verdict Nogra did not measure, and never offer consolidation from here
+  (that is `/nogra:brain`).
 - Local live hook observability when present: show the log path, event count and
   latest event summary from `continuity.liveHooks`. Do not dump raw JSONL; if the
   user asks to watch it live, route to `/nogra:watch`. That command can show a
@@ -118,6 +130,9 @@ Transport:
 - Active: transport-... running 3m, executor anthropic:sonnet
 - Latest: transport-... ok, returned, report yes, output no
 - Consistency: ok
+
+Memory/Paper:
+- brain: inden for vinduet · brain-gap 2 dage · paper: bundet 15:41
 
 Ledger:
 - Watermark: 4, Anchor source 2, Anchor stale_ledger

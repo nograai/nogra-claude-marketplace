@@ -5,6 +5,10 @@ description: Re-scaffold the brain/ knowledge vault. Use when the user runs /nog
 
 # Nogra Brain Init
 
+**This command is now the `init` verb of `/nogra:brain`.** `/nogra:brain init` runs exactly this
+flow. `/nogra:brain-init` is kept as an alias for one release, then retires with a receipt — see
+`skills/brain/SKILL.md` for the braincheck (`status`), the valve and the consolidation boundary.
+
 `brain/` is the workspace's deep-work knowledge vault. It ships with the
 workspace (`/nogra:setup` scaffolds it via the init bundle) and is never
 auto-loaded. Use this skill only when the user explicitly asks — to

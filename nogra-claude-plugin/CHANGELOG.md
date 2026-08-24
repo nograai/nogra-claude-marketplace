@@ -1,7 +1,52 @@
 - **Walls — "a blocker is a lookup before it is a diagnosis."** `runtime/local/walls.mjs` + `hooks/wall-recall.mjs` (UserPromptSubmit, PostToolUse, PostToolUseFailure): when a prompt or tool result carries a wall signal (error page, denied, timeout, 401/403/5xx, cannot attach…), the ledger is searched for earlier events with the same symptom terms and the latest matches are injected as `<NOGRA_WALL_RECALL>` context before the next action; repeated hits without a `wall` record NAG. New event type `wall` (symptom · cause · cure now · who clicks · durable fix · status) with projection `.nogra/state/WALLS.md`; `scripts/nogra-wall.mjs record|list|match|project`; open walls ride in the post-compact pointer (`<NOGRA_OPEN_WALLS>`) and ground step 0. `hooks/task-deleted.mjs` (PostToolUse TaskUpdate→deleted) recovers the task's subject/description from the transcript and stamps `task-deleted` in the ledger so a pointer never vanishes with its list. Smoke `scripts/smoke-walls.mjs` (6 facits). Generic defaults (English); workspaces extend `walls.signalPatterns` in `.nogra/config.json`. Born 21/08/2026 from the Safe Browsing wall that was rediscovered at full price (CEO GO).
 # Changelog
 
-## Unreleased
+## 0.9.4 — 2026-08-23 "brain & paper" (dom 37: braincheck, sprinkleren, Papiret som projektion)
+
+- **`/nogra:brain` + `/nogra:paper` — the alarm speaks again, and the board becomes a projection**
+  (23/08; tegning `drawings/nogra-brain-and-paper-2026-08-23.md`, CEO dom 37 "dans og byg", built
+  a→g one step at a time, each gated). **The valve:** `runtime/local/brain-valve.mjs` +
+  `hooks/session-end.mjs` measure native auto-memory at session end and, only past the margin, log
+  ONE `consolidation_due` and drop ONE line in `inbox/out/consolidation-due-<date>.md` — once per
+  workspace per day, fail-open (SessionEnd shares a 1.5 s budget). `hooks/memory-load.mjs` says it
+  once at the next start: `⚠ consolidation due since <date>: MEMORY.md <n> lines / <kb> KB — offer
+  /nogra:brain consolidate`. It states what it measured; it never asks. The window is **dom 34**,
+  matched against the platform docs: Claude Code loads at most the first 200 lines / 25 KB of
+  MEMORY.md → house window 200 / 25 KB, alarm margin 150 / 15 KB, checkpoint ≤ 150 lines; file count
+  free. Line counts use `wc -l` semantics so any printed number survives a hand-check. Cause: the
+  alarm died when hooks moved into the plugin — the last `consolidation_due` in the y26 ledger was
+  **20/07**, and `.nogra/hooks/consolidation-due.sh` had been unwired ever since.
+  **`skills/brain`** (`/nogra:brain`): `status` prints ≤ 12 measured lines + one verdict (memory
+  window, largest file, checkpoint, USER.md, last consolidator receipt, brain's gap behind the
+  ledger, the valve, whether the drawings registry lags) and writes `brain-status` (numbers only);
+  `line` is the one-line form `/nogra:status` carries; `consolidated --receipt <archive/…>` reads a
+  real consolidator receipt, writes `brain-consolidated` and appends ONE MEMORY.md footer line —
+  refusing any path outside `archive/` and idempotent against the ledger; `mark`/`stamp` are
+  `bin/brain-run` moved under the plugin roof (same `brain-compiled` event, same
+  `metadata.watermark`); `consolidate` documents the Manager flow — measure, stop at "afventer GO"
+  without it, then dispatch `agents/consolidator.md` (copy-before-edit, archive-never-delete,
+  USER.md/checkpoint/law texts untouched, index hooks ≤ ~140 chars, receipt + ⚠-list; long runs =
+  Opus). `skills/brain-init` stays as `/nogra:brain init`'s alias for one release.
+  **`skills/paper`** (`/nogra:paper`): `bind` is `bin/papir-bind` ported to
+  `scripts/paper-bind.mjs` — proved **diff 0** against the python on the same paper, on both
+  branches (marker replacement and anchor insertion); markers renamed `PAPER-BIND` with a
+  compatibility read of the old `PAPIR-BIND` so an existing paper migrates in place instead of
+  double-inserting; event `paper-bound` (count + sha256). `now` (`scripts/paper-now.mjs`) measures
+  the "Lige nu" page — ledger, doors via `curl` with a 10 s ceiling, open decisions by a stated
+  heuristic, newest finds, an optional workspace command whose output is escaped as text — between
+  `<!-- PAPER-NOW START/END -->`, idempotent, reusing only the paper's own classes; event
+  `paper-now`. `publish` stays the Manager's call.
+  **The bindings:** `decide` runs `scripts/nogra-decide-hook.mjs` right after the append, so the
+  projection follows the truth in the same grip (`Papiret opdateret (N domme) — republicér.`) and
+  can never block a ruling; `dayclose` measures the memory window before the write-loop and
+  refreshes "Lige nu" as the last projection before the Pinocchio pass; `status` gained the line
+  `brain: inden for vinduet · brain-gap N dage · paper: bundet HH:MM`.
+  Config: `.nogra/config.json → paper { file, artifactUrl, decisions, ledger, doors?, sql?,
+  openMarkers? }` — one paper per workspace; a missing key prints the exact JSON to add and never
+  writes itself. Smokes: `scripts/smoke-brain-valve.mjs` (42 facits incl. the receipt loop) and
+  `scripts/smoke-paper.mjs` (25 facits). Boundary throughout: it measures and offers — consolidation
+  never runs without the operator's GO, the paper is a projection and never a source, and no
+  transcript is ever read.
 
 ## 0.9.3 — 2026-08-22 (CEO 7a: hooks skåret til kernen)
 
