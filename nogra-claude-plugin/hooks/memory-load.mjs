@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { consolidationDueLine } from "../runtime/local/brain-valve.mjs";
+import { consolidationDueLine, countLines } from "../runtime/local/brain-valve.mjs";
 import { resolveProjectRoot } from "../runtime/local/gate-decision.mjs";
 import { resolveNativeMemory } from "../runtime/local/native-memory.mjs";
 
@@ -67,7 +67,7 @@ export function memoryContext(input = {}, env = process.env) {
     let indexBytes = 0;
     try {
       const index = loadedIndexContent(readFileSync(join(dir, "MEMORY.md"), "utf8"));
-      indexLines = index.split("\n").length;
+      indexLines = countLines(index); // runde-2-fund 11: samme wc -l-semantik som ventilen — foer var de to alarmer uenige med en linje ved praecis 200
       indexBytes = Buffer.byteLength(index);
     } catch {}
 

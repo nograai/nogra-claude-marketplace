@@ -22,7 +22,7 @@ import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { parseDecisions, readPaperConfig, resolveIn } from "./paper-bind.mjs";
 import { appendLedger, findWorkspaceRoot } from "../runtime/local/walls.mjs";
-import { countLines, readWorkspaceId, tsValue } from "../runtime/local/brain-valve.mjs";
+import { countLines, readWorkspaceId } from "../runtime/local/brain-valve.mjs"; // runde-2-fund 14: doedt tsValue-import fjernet
 
 const START = "<!-- PAPER-NOW START -->";
 const END = "<!-- PAPER-NOW END -->";
