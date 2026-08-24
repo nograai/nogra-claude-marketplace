@@ -75,10 +75,16 @@ function md2html(source) {
 
 function statusOf(title, body) {
   const t = `${title} ${sliceCodePoints(body, 400)}`.toLowerCase();
-  if (t.includes("go ") || t.includes("— **go") || t.includes("go 23/08") || t.includes("lukket") || t.includes("dømt")) {
+  // Review-fund 24/08 (lokalt): "go " som SUBSTRING markerede aabne domme groenne — "afventer GO
+  // paa briefen" bar "go " og blev GO/lukket. Aaben-signalet vinder nu (en dom der AFVENTER go er
+  // aaben uanset ordet), og go matches paa ordgraense saa "go?"/"lego"/"algo" aldrig taeller.
+  if (t.includes("go?") || t.includes("åben") || t.includes("afventer") || t.includes("udestår")) {
+    return ["y", "åben"];
+  }
+  if (/(^|[^\p{L}\p{N}])go($|[^\p{L}\p{N}])/u.test(t) || t.includes("lukket") || t.includes("dømt")) {
     return ["g", "GO/lukket"];
   }
-  if (t.includes("åben") || t.includes("afventer") || t.includes("brief")) return ["y", "åben"];
+  if (t.includes("brief")) return ["y", "åben"];
   return ["", ""];
 }
 
