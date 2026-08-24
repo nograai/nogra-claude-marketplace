@@ -13,7 +13,7 @@ const argi = (n, f = "") => { const i = process.argv.indexOf(`--${n}`); return i
 const ROOT = path.resolve(argi("root", process.cwd()));
 const cfgFile = path.join(ROOT, ".nogra", "config.json");
 const cfg = fs.existsSync(cfgFile) ? JSON.parse(fs.readFileSync(cfgFile, "utf8")) : {};
-const PAPER = path.resolve(ROOT, (cfg.paper && cfg.paper.file) || argi("paper", ".nogra/paper/papiret.html"));
+const PAPER = path.resolve(ROOT, argi("paper", "") || (cfg.paper && cfg.paper.file) || ".nogra/paper/papiret.html"); // runde-2-fund 7: flag vinder
 const TASKS = path.resolve(ROOT, argi("tasks", ".nogra/state/CURRENT-TASKS.md"));
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -21,12 +21,13 @@ let html = fs.readFileSync(PAPER, "utf8");
 
 // ---- 1) id-injektion + TOC-data: hver <section class="page"> faar id="side-<pn>" ----
 const entries = [];
-html = html.replace(/<section class="page"(?: id="[^"]*")?>([\s\S]*?)<\/section>/gu, (m, body) => {
+html = html.replace(/<section class="page"( id="[^"]*")?>([\s\S]*?)<\/section>/gu, (m, hadId, body) => {
   const pn = (body.match(/<p class="pn">([^<]+)<\/p>/u) || [])[1]?.trim() || "";
   const ed = (body.match(/<div class="ed">([\s\S]*?)<\/div>/u) || [])[1] || "";
   const h2 = (body.match(/<h2>([\s\S]*?)<\/h2>/u) || [])[1] || "";
   const title = h2.replace(/<[^>]+>/gu, "").trim() || ed.replace(/<[^>]+>/gu, "").trim().slice(0, 80);
-  const id = pn ? `side-${pn.replace(/[^a-z0-9æøå]/giu, "")}` : "";
+  // Runde-2-fund 8: en sektion med haandsat id men uden pn fik sit id STRIPPET — bevar det.
+  const id = pn ? `side-${pn.replace(/[^a-z0-9æøå]/giu, "")}` : (hadId ? hadId.match(/id="([^"]*)"/u)[1] : "");
   // Bogens egne meta-sider (indhold/kort) er ikke kapitel-opslag — de staar fast i TOC'en selv.
   if (pn && title && pn !== "kort" && pn !== "indhold") entries.push({ pn, title, id });
   return `<section class="page"${id ? ` id="${id}"` : ""}>${body}</section>`;
@@ -39,8 +40,9 @@ for (const line of tasks) {
   const m = line.match(/^(\d+)\.\s+(.*)$/u);
   if (!m) continue;
   const [, num, rest] = m;
-  const closed = /^(?:✅|⚠?\s*✅)/u.test(rest) || rest.startsWith("✅");
+  // Runde-2-fund 9: fluebenet testes nu EFTER markdown-strippen ("**✅ ...**" laestes som aaben).
   const plain = rest.replace(/\*\*/gu, "").replace(/`/gu, "");
+  const closed = /^[~\s]*[✅✓]/u.test(plain);
   cards.push({ num: Number(num), closed, text: plain });
 }
 const open = cards.filter((c) => !c.closed);
@@ -80,7 +82,8 @@ if (html.includes("<!-- PAPER-KORT START -->")) {
   html = html.replace(/<!-- PAPER-KORT START -->[\s\S]*?<!-- PAPER-KORT END -->/u, () => kortBlock);
 } else {
   if (!html.includes("<!-- PAPER-NOW START -->")) throw new Error("PAPER-NOW-markøren mangler — kort-tavlen har intet anker");
-  html = html.replace("<!-- PAPER-NOW START -->", `${kortBlock}\n<!-- PAPER-NOW START -->`);
+  // Runde-2-fund 6: STRENG-formen tolkede $&, $` osv. i tasktekst som erstatningsmoenstre.
+  html = html.replace("<!-- PAPER-NOW START -->", () => `${kortBlock}\n<!-- PAPER-NOW START -->`);
 }
 if (html.includes("<!-- PAPER-TOC START -->")) {
   html = html.replace(/<!-- PAPER-TOC START -->[\s\S]*?<!-- PAPER-TOC END -->/u, () => tocBlock);
