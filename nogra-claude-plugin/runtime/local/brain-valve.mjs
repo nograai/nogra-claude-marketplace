@@ -69,9 +69,11 @@ export function scanLedger(root, { types = null, tailBytes = 0 } = {}) {
     if (tailBytes > 0 && size > tailBytes) {
       const handle = fs.openSync(file, "r");
       try {
-        const buffer = Buffer.allocUnsafe(tailBytes);
-        fs.readSync(handle, buffer, 0, tailBytes, size - tailBytes);
-        text = buffer.toString("utf8");
+        // Review-fund 24/08 (LOW): allocUnsafe + ignoreret bytesRead kunne dekode uinitialiseret
+        // heap som ledger-linjer ved kort laesning (fil roteret/trunkeret mellem stat og read).
+        const buffer = Buffer.alloc(tailBytes);
+        const bytesRead = fs.readSync(handle, buffer, 0, tailBytes, size - tailBytes);
+        text = buffer.toString("utf8", 0, bytesRead);
         const firstBreak = text.indexOf("\n");
         text = firstBreak >= 0 ? text.slice(firstBreak + 1) : "";
       } finally {
