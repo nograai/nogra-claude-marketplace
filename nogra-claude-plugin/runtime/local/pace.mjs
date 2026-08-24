@@ -43,7 +43,9 @@ function escapeRe(s) {
 export function matchPhrase(text, phrases) {
   const t = String(text).toLowerCase();
   for (const p of phrases) {
-    const pattern = escapeRe(p.toLowerCase()).replace(/([aeiouyæøå])/gu, "$1+").replace(/\\ /g, "\\s+");
+    // Review-fund 24/08 (LOW): escapeRe escaper ikke mellemrum, saa /\\ /-replacen ramte aldrig —
+    // whitespace-tolerancen var doedt kode ("slow  down" og "slow\ndown" satte ikke PACE).
+    const pattern = escapeRe(p.toLowerCase()).replace(/([aeiouyæøå])/gu, "$1+").replace(/ /g, "\\s+");
     const re = new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, "u");
     const m = t.match(re);
     if (m) return m[0];
