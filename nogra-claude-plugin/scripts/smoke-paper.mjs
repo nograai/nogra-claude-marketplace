@@ -17,8 +17,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const HUB = "/Users/patricklarsen/y26dev";
-const PAPER_FIXTURE = "/Users/patricklarsen/.claude/jobs/fbc1ef84/tmp/papiret-2026-08-21-22.html";
+// Local-workspace fixtures are OPTIONAL and env-supplied: the suite core is generic, and the
+// real-paper checks (d)/(e) only run where an operator points at a live workspace. Absolute
+// house paths never ship in the public tree (public-surface rule, 24/08).
+const HUB = process.env.NOGRA_SMOKE_HUB || "";
+const PAPER_FIXTURE = process.env.NOGRA_SMOKE_PAPER_FIXTURE || "";
 
 let fails = 0;
 let skipped = 0;
@@ -33,6 +36,7 @@ function bed({ paperKey = true, doors = null, sql = null } = {}) {
   beds.push(root);
   mkdirSync(join(root, ".nogra", "ledger"), { recursive: true });
   mkdirSync(join(root, ".nogra", "state"), { recursive: true });
+  if (!HUB || !PAPER_FIXTURE) return null;
   cpSync(PAPER_FIXTURE, join(root, "papiret.html"));
   cpSync(join(HUB, ".nogra", "state", "DECISIONS.md"), join(root, ".nogra", "state", "DECISIONS.md"));
   cpSync(join(HUB, ".nogra", "state", "FUND-INDEKS.md"), join(root, ".nogra", "state", "FUND-INDEKS.md"));
@@ -65,7 +69,7 @@ const countDetails = (root) => (paperOf(root).match(/<details><summary><b>/gu) |
 const ledgerLines = (root) =>
   readFileSync(join(root, ".nogra", "ledger", "events.jsonl"), "utf8").split("\n").filter((line) => line.trim()).length;
 
-if (!existsSync(PAPER_FIXTURE)) {
+if (!HUB || !PAPER_FIXTURE || !existsSync(PAPER_FIXTURE)) {
   console.log(`  skip  paper fixture missing (${PAPER_FIXTURE}) — (d)/(e) not measured`);
   skipped += 1;
 } else {

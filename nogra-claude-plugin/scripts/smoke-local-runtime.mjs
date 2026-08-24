@@ -822,7 +822,7 @@ function main() {
     workspace_roots: [temp],
     tool_name: "Write",
     tool_input: {
-      file_path: path.join(os.tmpdir(), "nogra-smoke-home", ".claude", "projects", "-Users-patricklarsen-y26", "memory", "foo.md"),
+      file_path: path.join(os.tmpdir(), "nogra-smoke-home", ".claude", "projects", "-Users-operator-example", "memory", "foo.md"),
       content: "# Native Claude Memory\n"
     },
     session_id: "session-pretool-native-claude-memory-001",

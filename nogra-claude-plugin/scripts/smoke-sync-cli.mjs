@@ -175,7 +175,7 @@ writeFileSync(join(sbDir, "token"), "ikke-et-token-overhovedet");
 r = run(sbRoot, ["run"]);
 check("S-B: run med MALFORMET token fejler højt, exit 1", r.code === 1 && /MALFORMED/.test(r.out));
 // et ægte-formet (usigneret) token: metadata skal kunne AFLÆSES uden at værdien printes
-const payload = Buffer.from(JSON.stringify({ sub: "patti", scopes: ["memory:read", "memory:append"], aud: "https://sync.example.com", exp: Math.floor(Date.now() / 1000) + 3600, seat: "testbænk" })).toString("base64url");
+const payload = Buffer.from(JSON.stringify({ sub: "operator", scopes: ["memory:read", "memory:append"], aud: "https://sync.example.com", exp: Math.floor(Date.now() / 1000) + 3600, seat: "testbænk" })).toString("base64url");
 writeFileSync(join(sbDir, "token"), `nst_${payload}.deadbeef`);
 r = run(sbRoot, ["status"]);
 check("S-B: status viser token-METADATA (seat+scopes+exp)", /seat=testbænk/.test(r.out) && /memory:read\+memory:append/.test(r.out));
@@ -186,7 +186,7 @@ writeFileSync(join(sbDir, "mode"), "replace\n");
 r = run(sbRoot, ["status"]);
 check("S-B: kohærens fanger HOME-sæde uden replace-scope (403-varsel m/ kur)", /coherence: ⚠ FAIL/.test(r.out) && /mint --home/.test(r.out));
 // udløbet token siger det selv
-const oldPayload = Buffer.from(JSON.stringify({ sub: "patti", scopes: ["memory:read"], aud: "x", exp: 1 })).toString("base64url");
+const oldPayload = Buffer.from(JSON.stringify({ sub: "operator", scopes: ["memory:read"], aud: "x", exp: 1 })).toString("base64url");
 writeFileSync(join(sbDir, "token"), `nst_${oldPayload}.deadbeef`);
 r = run(sbRoot, ["pull"]);
 check("S-B: udløbet token fejler højt med UDLØBET-navn", r.code === 1 && /EXPIRED/.test(r.out));
@@ -214,7 +214,7 @@ r = run(drRoot, ["doctor"]);
 check("S-C: doctor m/ enabled + TOM token = FEJL m/ inline-kur, exit 1", r.code === 1 && /EMPTY/.test(r.out) && /mint and place/.test(r.out));
 // velformet token på SLUKKET sæde: metadata aflæses, værdien forlader aldrig processen
 run(drRoot, ["off"]);
-const drPayload = Buffer.from(JSON.stringify({ sub: "patti", scopes: ["memory:read", "memory:append", "memory:replace"], aud: "https://sync.example.com", exp: Math.floor(Date.now() / 1000) + 3600, seat: "huset" })).toString("base64url");
+const drPayload = Buffer.from(JSON.stringify({ sub: "operator", scopes: ["memory:read", "memory:append", "memory:replace"], aud: "https://sync.example.com", exp: Math.floor(Date.now() / 1000) + 3600, seat: "huset" })).toString("base64url");
 writeFileSync(join(drDir, "token"), `nst_${drPayload}.deadbeef`);
 writeFileSync(join(drDir, "mode"), "replace\n");
 r = run(drRoot, ["doctor"]);
@@ -236,7 +236,7 @@ mkdirSync(sdDir, { recursive: true });
 writeFileSync(join(sdDir, "token"), "\n");
 r = run(sdRoot, ["bind", "http://127.0.0.1:9"]);
 check("S-D: bind m/ TOM token-fil venter ærligt m/ navngivet årsag, exit 0", r.code === 0 && /EMPTY/.test(r.out) && /self-verify: waiting/.test(r.out));
-const sdPayload = Buffer.from(JSON.stringify({ sub: "patti", scopes: ["memory:read", "memory:append"], aud: "http://127.0.0.1:9", exp: Math.floor(Date.now() / 1000) + 3600, seat: "smoke-sæde" })).toString("base64url");
+const sdPayload = Buffer.from(JSON.stringify({ sub: "operator", scopes: ["memory:read", "memory:append"], aud: "http://127.0.0.1:9", exp: Math.floor(Date.now() / 1000) + 3600, seat: "smoke-sæde" })).toString("base64url");
 writeFileSync(join(sdDir, "token"), `nst_${sdPayload}.deadbeef`);
 r = run(sdRoot, ["bind", "http://127.0.0.1:9"]);
 check("S-D: bind m/ raskt token prøver SELV proben — død himmel = ærlig fejl + doctor-kur, exit 1", r.code === 1 && /self-verify: the probe failed/.test(r.out) && /doctor/.test(r.out));

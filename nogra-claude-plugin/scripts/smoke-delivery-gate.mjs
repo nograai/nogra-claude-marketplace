@@ -73,13 +73,13 @@ function tinyPng(file) {
   fs.writeFileSync(file, png);
 }
 
-const root = makeWorkspace({ deliveryGate: { hostPatterns: ["nogra-house(?:\\.local)?"], homeworkPhrases: ["dit greb", "ceo-dom", "sig til når"], boardRefPatterns: ["tavlen\\.y26\\.dev"] } });
+const root = makeWorkspace({ deliveryGate: { hostPatterns: ["my-dev-host(?:\\.local)?"], homeworkPhrases: ["dit greb", "ceo-dom", "sig til når"], boardRefPatterns: ["tavlen\\.y26\\.dev"] } });
 
 // 1
 let r = gate(root, "TAKT is up: http://localhost:3001 — click.");
 assert(r?.decision === "block" && /loopback/u.test(r.reason), "1: loopback must block");
 // 2
-r = gate(root, "See http://nogra-house.local:3001 in your browser.");
+r = gate(root, "See http://my-dev-host.local:3001 in your browser.");
 assert(r?.decision === "block" && /without a delivery-receipt/u.test(r.reason), "2: house link without receipt must block");
 // 3 (workspace phrases, Danish, + default English)
 r = gate(root, "Dit greb: read the drawing. CEO-dom on 4b. Your call.");
@@ -93,9 +93,9 @@ assert(r === null, "5: plain message must be silent");
 // 6: receipt via CLI with fresh screenshot
 const shot = path.join(root, "shot.png");
 tinyPng(shot);
-const out = execFileSync(process.execPath, [RECEIPT, "http://nogra-house.local:3099", shot, "smoke", "--root", root], { encoding: "utf8" });
+const out = execFileSync(process.execPath, [RECEIPT, "http://my-dev-host.local:3099", shot, "smoke", "--root", root], { encoding: "utf8" });
 assert(/RECEIPT:/u.test(out), `6: receipt CLI should write a receipt: ${out}`);
-r = gate(root, "See http://nogra-house.local:3099 in your browser.");
+r = gate(root, "See http://my-dev-host.local:3099 in your browser.");
 assert(r === null, "6: house link with fresh receipt must be silent");
 // 7
 r = gate(root, "http://localhost:3001", { stop_hook_active: true });
@@ -124,7 +124,7 @@ const old = path.join(root, "old.png");
 tinyPng(old);
 const past = new Date(Date.now() - 60 * 60 * 1000);
 fs.utimesSync(old, past, past);
-let stale = spawnSync(process.execPath, [RECEIPT, "http://nogra-house.local:3100", old, "--root", root], { encoding: "utf8" });
+let stale = spawnSync(process.execPath, [RECEIPT, "http://my-dev-host.local:3100", old, "--root", root], { encoding: "utf8" });
 assert(stale.status === 66, `10a: stale screenshot must be refused (got ${stale.status})`);
 stale = spawnSync(process.execPath, [RECEIPT, "http://localhost:3100", shot, "--root", root], { encoding: "utf8" });
 assert(stale.status === 67, `10b: loopback url must be refused (got ${stale.status})`);
