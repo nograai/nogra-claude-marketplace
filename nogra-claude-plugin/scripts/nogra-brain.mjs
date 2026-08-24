@@ -181,11 +181,13 @@ function collect(root) {
   const memory = measureMemory({ root });
   const receipt = memory.dir ? lastConsolidationReceipt(memory.dir) : null;
   const brain = measureBrain(root);
-  const compiled = scanLedger(root, { types: ["brain-compiled"] })
-    .sort((left, right) => tsValue(left.ts) - tsValue(right.ts))
-    .pop() || null;
-  const dueEvents = scanLedger(root, { types: ["consolidation_due"] })
+  // Runde-2-fund 10 (delvis kur): compiled + due fra SAMME parse (6 fulde ledger-parses -> 4-5).
+  // Fuld hejsning paa tvaers af pendingConsolidation/ledgerLines/lastBound er en tvaer-modul-
+  // refaktor og staar som noteret rest — en varm sti skal kureres i dagslys, ikke sent.
+  const brainEvents = scanLedger(root, { types: ["brain-compiled", "consolidation_due"] })
     .sort((left, right) => tsValue(left.ts) - tsValue(right.ts));
+  const compiled = brainEvents.filter((e) => (e.raw?.eventType || e.raw?.event || e.raw?.type) === "brain-compiled").pop() || null;
+  const dueEvents = brainEvents.filter((e) => (e.raw?.eventType || e.raw?.event || e.raw?.type) === "consolidation_due");
   const lastDue = dueEvents.length ? dueEvents[dueEvents.length - 1] : null;
   return {
     root,
