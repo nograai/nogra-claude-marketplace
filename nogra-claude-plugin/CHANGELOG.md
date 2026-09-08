@@ -29,8 +29,6 @@
 
 - Fix the lifecycle wiring test that still encoded the pre-2.1.214 SessionStart
   matcher; the invariant it guards is that slot 0 never carries `compact`.
-- Release cut: this version publishes `nogra-claude-plugin` only. The
-  function-hook experiments in the candidate repository stay private.
 
 ## 0.9.8 - 2026-09-02
 
