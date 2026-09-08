@@ -1,1491 +1,998 @@
 # Changelog
 
+All notable changes to the Nogra plugin for Claude Code. Versions follow
+semantic versioning; each entry lists what changed for users of the plugin.
+
 ## 0.9.9 - 2026-09-08
 
-- Repin the local `USER.md` profile on `SessionStart:compact`, retaining its
-  advisory boundary and the existing recovery pointer. Disabled native memory
-  remains disabled; compact recovery reads only the profile.
-- Measure the loaded memory index against the shared 200-line/25,000-byte window.
-  Large topic files no longer trigger an index-overflow warning, and startup
-  avoids reading every topic body merely to measure memory size.
-- Preserve the local memory pin when an unexpected sync adapter exception occurs.
-  The fallback reports local-memory use without exposing raw exception details.
+- Repin the `USER.md` profile on `SessionStart:compact`, keeping its advisory
+  boundary and the existing recovery pointer. Compact recovery reads only the
+  profile; disabled native memory stays disabled.
+- Measure the loaded memory index against the shared 200-line / 25,000-byte
+  window. Large topic files no longer trigger an index-overflow warning, and
+  session start no longer reads every topic body just to measure size.
+- Keep the local memory pin when the sync adapter throws unexpectedly. The
+  fallback reports local-memory use without exposing exception details.
+- Add a "Learned today" section at the top of the bound Paper block: `fund`,
+  `rettelse`, `kur` and `kur-stop` ledger events from the last 24 hours, read
+  from the ledger alone. `learnedToday(events)` is exported.
+- Exclude future-dated learning events from the 24-hour projection, skip
+  non-object ledger values, measure ellipsis truncation in Unicode code points,
+  and label learned-event timestamps as UTC.
 - Add hook-process regression checks for profile continuity, bounded reads,
-  disabled memory, adapter failure and UTF-8 byte limits to the runtime smoke suite.
-
-- Add a "Learned today" section at the top of the bound Paper block: ledger
-  events of type `fund`, `rettelse`, `kur` and `kur-stop` from the last 24 hours,
-  read from the ledger alone (`learnedToday(events)` is exported). The Paper now
-  shows what the house learned, not only what it did. This is the first slice of
-  the compounding-memory drawing (`drawings/compounding-memory-2026-09-02.md`).
-- Grade follow-up: exclude future-dated learning events from the last-24-hour
-  projection, skip non-object ledger values, and measure ellipsis truncation in
-  Unicode code points. Add ten deterministic learned-today checks to the core
-  runtime suite, including timestamp boundaries and HTML escaping.
-- Label learned-event timestamps as UTC and distinguish ledger watermarks from
-  legacy parsed-entry references. This is the block-level summary slice of the
-  drawing; per-page klasse/hegn/kvittering fields and the cumulative last page
-  remain outside this implementation.
-
-- Fix the lifecycle wiring test that still encoded the pre-2.1.214 SessionStart
-  matcher; the invariant it guards is that slot 0 never carries `compact`.
+  disabled memory, adapter failure and UTF-8 byte limits, plus ten
+  deterministic learned-today checks, to the runtime smoke suite.
+- Fix the lifecycle wiring test that still encoded the pre-2.1.214
+  `SessionStart` matcher. The invariant it guards is that the first matcher
+  never carries `compact`.
 
 ## 0.9.8 - 2026-09-02
 
-- Added ONE locked ledger door for plugin code (`runtime/local/ledger-append.mjs`):
-  next watermark = highest existing `ledgerWatermark` + 1 (never the line count),
-  a supplied watermark that collides or skips is refused, idempotent by `eventId`,
-  exclusive lock file with mtime-judged stale recovery. Measured before the change
-  on the hub ledger: the plugin would have numbered the next event 5508 while the
-  workspace's own door (`bin/uret-append`) numbers it 4890 — two authorities on one
-  file (4,299 legacy lines carry no watermark). `nogra-ledger.mjs` (three sites) and
-  the evidence writer in `fact-store.mjs` (`events.length + 1`, a third authority)
-  now append through the door. Smoke test pins the rule with 48 concurrent writes
-  from six processes; its first run caught a fresh-lock steal (duplicate #28) that
-  content-based staleness allowed — staleness is now judged by the lock's mtime.
-- Added `hooks/pre-compact.mjs`: PreCompact stamps a `compaction` event (trigger
-  manual|auto, session, transcript) in the ledger through the door BEFORE the
-  context folds; the observer still records the live event. Fail-open.
-- Added `SubagentStop` (observed) and `PostToolUse` for `Edit|Write|MultiEdit|NotebookEdit`
-  (observed) so successful write effects and subagent ends reach the live-hook log —
-  the evidence layer no longer watches only failures. `TaskUpdate` wiring unchanged.
-- Corrected the convergence doc: role agents deliberately carry NO `model:`/`effort:`
-  frontmatter (the runtime smoke test pins "should not hardcode model"). Authority
-  is the plugin's runtime profile (`/nogra:settings`) plus Claude Code's live
-  `/model`; a frontmatter model would silently override both — and the doc claimed
-  the opposite. Verified against the sub-agents reference (fields exist: `model`,
-  `effort`); the choice not to use them is the contract, now written down.
-- Released the `PreModelSwitch`/`PostModelSwitch` observer registration that 0.9.7
-  left unreleased (same version number on two artifacts — the drift the 0.9.5/0.9.6
-  entries forbid).
-- Not yet through the door (they write `nogra.event.v1` without a watermark and do
-  not compete for numbers): `pace.mjs`, `delivery-gate.mjs`, `active-intent.mjs`,
-  `paper-chapter.mjs`, `walls.appendLedger`. Follow-up: route them for torn-write
-  protection.
+- Add one locked ledger door for plugin code (`runtime/local/ledger-append.mjs`).
+  The next watermark is the highest existing watermark plus one, never the line
+  count; a supplied watermark that collides or skips is refused; appends are
+  idempotent by `eventId`; an exclusive lock file with mtime-based stale
+  recovery serializes writers. All plugin ledger writers now append through it.
+- Add `hooks/pre-compact.mjs`: `PreCompact` stamps a `compaction` event
+  (trigger, session, transcript) in the ledger before the context folds.
+  Fail-open.
+- Observe `SubagentStop` and `PostToolUse` for `Edit|Write|MultiEdit|NotebookEdit`,
+  so successful write effects and subagent completions reach the live-hook log
+  alongside failures.
+- Correct the convergence document: role agents deliberately carry no `model:`
+  or `effort:` frontmatter. The runtime profile (`/nogra:settings`) and Claude
+  Code's live `/model` are the authority.
+- Ship the `PreModelSwitch` / `PostModelSwitch` observer registration that
+  0.9.7 built but did not release.
+- Known gap: `pace`, `delivery-gate`, `active-intent`, `paper-chapter` and the
+  walls ledger helper still write `nogra.event.v1` records without a watermark.
+  Routing them through the door is queued.
 
 ## 0.9.7 - 2026-08-29
 
-- Added the paper `page` verb and generated chapter ordering, so the book's chapter
-  order is produced from the ledger instead of maintained by hand.
-- Fixed the local-runtime smoke test that still encoded the pre-2.1.214 SessionStart
-  matcher set (missing `fork`): 0.9.6 fixed hooks.json without fixing the test's
-  expected value, so the suite guarded the old platform assumption.
+- Add the paper `page` verb and generate chapter order from the ledger instead
+  of maintaining it by hand.
+- Fix the local-runtime smoke test that still expected the pre-2.1.214
+  `SessionStart` matcher set without `fork`.
 
 ## 0.9.6 - 2026-08-29
 
-- Fixed seven hooks and scripts to resolve the workspace root via `CLAUDE_PROJECT_DIR`
-  first — the platform never sets `CLAUDE_PROJECT_ROOT` — with smoke tests pinning the
-  contract so the assumption cannot silently return.
-- Fixed the SessionStart matcher to include `fork` (Claude Code 2.1.214 added it).
-- Changed the brain valve to measure against the platform's real load window (25,000
-  bytes, ~200 characters per index line), reporting the longest line and the entries
-  over the limit instead of a guessed threshold.
-- Fixed boot-order to use the same root resolver as session-start, so the two hooks can
-  never disagree about which workspace they are in.
-- Added the task-deleted hook wiring (PostToolUse on TaskUpdate).
-- Fixed post-compact context labels to say SessionStart:compact.
-- Fixed a permission-rule comment that implied allow could override deny; it never does.
-- Fixed paper-cards to accept both h1 and h2 headings and carried the paper-now finds
-  cure (both Aug 26 fixes, previously uncommitted, now in the cut).
-- Changed dayclose step 7 to the full paper chain — close → open → cards → bind → now →
-  audit → republish — with a paper-published receipt; publish is the Manager's stamped
-  step, and only paper-chapter-opened/closed are chapter events.
-- Changed the status skill to point at /tasks instead of the removed /ps.
-- Release note: a cached 0.9.5 build differed from the candidate under the same number;
-  from this cut onward a version number names exactly one artifact.
+- Resolve the workspace root through `CLAUDE_PROJECT_DIR` first in seven hooks
+  and scripts, with smoke tests pinning the contract.
+- Include `fork` in the `SessionStart` matcher (added in Claude Code 2.1.214).
+- Measure the memory valve against the platform's real load window (25,000
+  bytes, roughly 200 characters per index line) and report the longest line and
+  the entries over the limit.
+- Use the same root resolver in `boot-order` and `session-start`, so the two
+  hooks can never disagree about the workspace.
+- Wire the task-deleted hook (`PostToolUse` on `TaskUpdate`).
+- Label post-compact context as `SessionStart:compact`.
+- Fix a permission-rule comment that implied `allow` could override `deny`.
+- Accept both `h1` and `h2` headings in paper cards, and carry the paper-now
+  finds fix.
+- Run the full paper chain in dayclose step 7 (close, open, cards, bind, now,
+  audit, republish) with a `paper-published` receipt. Publish remains an
+  explicit Manager step; only chapter open/close are chapter events.
+- Point the status skill at `/tasks` instead of the removed `/ps`.
+- Release note: a cached 0.9.5 build once differed from the candidate under the
+  same number. From this release on, a version number names exactly one artifact.
 
 ## 0.9.5 - 2026-08-24
 
-- Fixed the paper writers so a green receipt always means a measured write: the bind and
-  now marker branches require both markers and verify the replacement changed the
-  document (a START-without-END paper previously froze silently behind green receipts);
-  the now verb refuses to write when reading the existing paper fails instead of
-  replacing it with only the status section; the chapter audit gate fails honestly when
-  the paper is missing instead of reporting an empty book as covered.
-- Fixed the consolidation-due reader to resolve the workspace root with the same shared
-  resolver as the writer, so the alarm fires in sub-directory sessions; unified index
+- Make paper writers honest: bind and now require both markers and verify that
+  the replacement changed the document; the now verb refuses to write when the
+  existing paper cannot be read; the chapter audit fails when the paper is
+  missing instead of reporting an empty book as covered.
+- Resolve the consolidation-due reader with the same shared root resolver as
+  the writer, so the alarm also fires in sub-directory sessions, and unify index
   line counting between the session-start nudge and the valve.
-- Fixed the archive guard for consolidation receipts to require the resolved memory
-  home's archive directory when the home is known, instead of accepting any path with an
-  archive segment.
-- Fixed smaller review findings: card-board rendering uses function replacements so task
-  text can never act as a replacement pattern, preserves hand-set section ids, and
-  classifies done-markers after markdown stripping; the pace phrase matcher tolerates
-  whitespace again; the walls recall path reads only a bounded ledger tail while
-  projections still read everything; ledger tail reads use zeroed buffers and respect
-  short reads; the CGNAT host pattern matches only 100.64.0.0/10; explicit CLI flags win
-  over workspace config in the paper card and chapter tools; a dead import was removed
-  and duplicate ledger scans were merged on the status path.
-- Moved house-specific boundary logic and vocabulary from shipped code into workspace
-  configuration: `gate.pathClasses` for product path classes, `promotion` for the
-  dev-to-public lane (an unset key reports unknown instead of guessing), and
-  `walls.stopWords` for workspace vocabulary; examples in agent and skill docs were
-  generalized, and test fixtures no longer carry workspace names, hosts or absolute
-  local paths (local-only fixtures are env-supplied with an honest skip).
-- Removed an internal-only skill from the repository and its entire history; the
-  published tree and every reachable commit are measured clean of internal markers.
+- Require the resolved memory home's `archive/` directory for consolidation
+  receipts instead of accepting any path with an archive segment.
+- Fix review findings: function replacements in card-board rendering so task
+  text can never act as a replacement pattern; hand-set section ids preserved;
+  done-markers classified after markdown stripping; whitespace-tolerant pace
+  matching; bounded ledger tail reads on the walls recall path; zeroed buffers
+  and short-read handling in ledger tail reads; the CGNAT host pattern limited
+  to 100.64.0.0/10; explicit CLI flags win over workspace config in the paper
+  tools; a dead import removed and duplicate ledger scans merged on the status
+  path.
+- Move deployment-specific boundary logic and vocabulary out of shipped code
+  into workspace configuration: `gate.pathClasses`, `promotion` (an unset key
+  reports unknown instead of guessing) and `walls.stopWords`. Examples and test
+  fixtures no longer carry workspace names, hosts or absolute local paths;
+  local-only fixtures are env-supplied with an explicit skip.
+- Remove an internal-only skill from the repository and its history.
 
 ## 0.9.4 - 2026-08-23
 
-- Added `/nogra:brain` with a session-end memory valve: `runtime/local/brain-valve.mjs`
-  plus `hooks/session-end.mjs` measure native auto-memory at session end and, only past
-  the margin, log one `consolidation_due` event and write one line to
-  `inbox/out/consolidation-due-<date>.md` — once per workspace per day, fail-open.
-  `hooks/memory-load.mjs` reports it once at the next session start and never asks.
-- Documented the memory window against the platform docs: Claude Code loads at most the
-  first 200 lines / 25 KB of MEMORY.md, so the window is 200 lines / 25 KB with an alarm
-  margin of 150 lines / 15 KB and a 150-line checkpoint bound; file count stays free.
-  Line counts use `wc -l` semantics so any printed number survives a hand-check.
-- Fixed the root cause the valve exists for: the consolidation alarm died when hooks moved
-  into the plugin, and the previous shell hook had been unwired since the last
-  `consolidation_due` event on record.
-- Added `/nogra:brain` verbs: `status` prints at most 12 measured lines plus one verdict
-  and writes a numbers-only `brain-status` event; `line` is the one-line form used by
-  `/nogra:status`; `consolidated --receipt <archive/...>` validates a real consolidator
-  receipt, writes `brain-consolidated` and appends one MEMORY.md footer line, refuses any
-  path outside `archive/`, and is idempotent against the ledger; `mark`/`stamp` port the
-  workspace compile-bookkeeping helpers under the plugin (same `brain-compiled` event and
-  watermark metadata); `consolidate` documents the Manager flow — measure first, stop
-  without an explicit operator GO, then dispatch `agents/consolidator.md`
-  (copy-before-edit, archive-never-delete, profile/checkpoint/law texts untouched,
-  index hooks capped, receipt with a warning list; long runs use Opus).
-  `skills/brain-init` remains as an alias for one release.
-- Added `/nogra:paper` verbs: `bind` ports the workspace paper-binder to
-  `scripts/paper-bind.mjs`, proved byte-identical against the original on both branches
-  (marker replacement and anchor insertion); markers renamed to `PAPER-BIND` with a
-  compatibility read of the old marker name so an existing paper migrates in place
-  instead of double-inserting; writes a `paper-bound` event with count and sha256.
-  `now` (`scripts/paper-now.mjs`) measures the live-status page — ledger, doors via
-  `curl` with a 10 s ceiling, open decisions by a stated heuristic, newest finds, and an
-  optional workspace command whose output is escaped as text — between idempotent
-  markers, reusing only the paper's own CSS classes; writes a `paper-now` event.
-  `publish` stays a documented Manager step.
-- Added the paper bindings: `decide` refreshes the projection right after the ledger
-  append and can never block a ruling; `dayclose` measures the memory window before the
-  write-loop and refreshes the live page as its last projection; `status` gained a
-  combined brain/paper one-liner.
-- Added paper configuration under `.nogra/config.json` (`paper { file, artifactUrl,
-  decisions, ledger, doors?, sql?, openMarkers? }`): one paper per workspace; a missing
-  key prints the exact JSON to add and is never written by the skill.
-- Added smoke suites for the valve (42 checks including the receipt loop) and the paper
-  verbs (25 checks). Boundary throughout: the skill measures and offers — consolidation
-  never runs without the operator's GO, the paper is a projection and never a source,
-  and no transcript is ever read.
+- Add `/nogra:brain` with a session-end memory valve. `runtime/local/brain-valve.mjs`
+  and `hooks/session-end.mjs` measure native auto-memory at session end and,
+  only past the margin, log one `consolidation_due` event and write one line to
+  `inbox/out/consolidation-due-<date>.md`, once per workspace per day,
+  fail-open. `hooks/memory-load.mjs` reports it once at the next session start
+  and never asks.
+- Document the memory window against the platform: Claude Code loads at most
+  the first 200 lines / 25 KB of `MEMORY.md`. The alarm margin is 150 lines /
+  15 KB with a 150-line checkpoint bound; file count stays free. Line counts use
+  `wc -l` semantics.
+- Fix the root cause the valve exists for: the consolidation alarm stopped
+  firing when hooks moved into the plugin.
+- Add `/nogra:brain` verbs: `status` (at most 12 measured lines plus one
+  verdict, numbers-only `brain-status` event), `line` (the one-line form used by
+  `/nogra:status`), `consolidated --receipt <archive/...>` (validates a real
+  consolidator receipt, writes `brain-consolidated`, appends one `MEMORY.md`
+  footer line, refuses paths outside `archive/`, idempotent against the ledger),
+  `mark` / `stamp` (compile bookkeeping with `brain-compiled` events) and
+  `consolidate` (measure first, stop without an explicit GO, then dispatch
+  `agents/consolidator.md`). `skills/brain-init` remains as an alias for one
+  release.
+- Add `/nogra:paper` verbs: `bind` (`scripts/paper-bind.mjs`, byte-identical
+  port with `PAPER-BIND` markers and a compatibility read of the old marker name,
+  `paper-bound` event with count and sha256), `now` (`scripts/paper-now.mjs`,
+  measures the live-status page between idempotent markers using only the
+  paper's own CSS classes, `paper-now` event) and `publish` (a documented
+  Manager step).
+- Bind the paper into `decide` (refresh right after the ledger append, never
+  blocking a ruling), `dayclose` (measure the memory window before the
+  write-loop, refresh the live page last) and `status` (combined brain/paper
+  one-liner).
+- Add paper configuration under `.nogra/config.json`
+  (`paper { file, artifactUrl, decisions, ledger, doors?, sql?, openMarkers? }`).
+  A missing key prints the exact JSON to add and is never written by the skill.
+- Add smoke suites for the valve (42 checks) and the paper verbs (25 checks).
+  Consolidation never runs without an explicit GO, the paper is a projection and
+  never a source, and no transcript is ever read.
 
 ## 0.9.3 - 2026-08-22
 
-- Added walls — recorded blockers that resurface before re-diagnosis:
-  `runtime/local/walls.mjs` plus `hooks/wall-recall.mjs` (UserPromptSubmit and
-  PostToolUseFailure) search the ledger for earlier events sharing the symptom terms of a
-  detected wall signal (error page, denied, timeout, 401/403/5xx, cannot attach, ...) and
-  inject the latest matches as context before the next action; repeated hits without a
-  `wall` record nag until one is written. Added the `wall` event type (symptom, cause,
-  immediate cure, owner, durable fix, status) with the `.nogra/state/WALLS.md`
-  projection, `scripts/nogra-wall.mjs record|list|match|project`, and open walls in the
-  post-compact pointer and the ground skill's step 0. Defaults are generic English;
-  workspaces extend `walls.signalPatterns` in `.nogra/config.json`.
-- Reduced the hook map from 33 to 21 entries on the operator's cut: observation events
-  now register only on Stop, PreCompact, PostToolUseFailure, PermissionDenied and
-  StopFailure; `wall-recall` left PostToolUse (it stays on prompts and failures);
-  the task-deleted hook left the map and its file remains as a revival candidate
-  registered by no hook map; a legacy stop shim was deleted. The core map is untouched
-  and a pre-cut copy of the hook map is kept in the repository. All gate suites stayed
-  green through the cut.
-- Restricted wall recall on successful tool results to strong signals only (security
-  errors, permission/authorization failures, connection failures, captcha and
-  bot-detection pages); prompts and failed tool calls keep the full signal set. Grew the
-  stopword list for tool-generic tokens and raised the minimum term hits from 2 to 3.
-  Red-tested both directions: generic output stays silent, strong signals still recall.
-  Cause: the hook fired on nearly every shell result and filled context.
-- Added the delivery gate — a message to the operator is a delivery, not a claim:
-  `hooks/delivery-gate.mjs` (Stop) blocks loopback links, requires a fresh
-  `delivery-receipt` ledger event for house links (private IPs, `*.local`,
-  `*.workers.dev`, configured hosts), and blocks operator-homework phrases without a
-  board reference; it downgrades to a system message when the stop hook is already
-  active and writes one audit line per decision. `scripts/nogra-delivery-receipt.mjs`
-  writes the receipt only with a fresh screenshot file. Workspace configuration under
-  `deliveryGate { enabled, receiptWindowMinutes, hostPatterns, homeworkPhrases,
-  boardRefPatterns }`.
-- Added pace: `hooks/pace-context.mjs` (UserPromptSubmit) persists the operator's
-  slow-down/full-speed phrases into `.nogra/state/PACE.json` and injects one pace line
-  per turn while slow; `scripts/nogra-pace.mjs status|slow|normal`; workspace
-  `pace { slowPhrases, normalPhrases }`. Smoke suite with 10 checks.
-- Added ask-grants — the operator's literal words become the receipt: `gate.grants[]` on
-  the running intent binds a verbatim ask to one boundary class with optional scope
-  patterns and a TTL (turn-, duration- or intent-scoped). `scripts/nogra-grant.mjs`
-  (`add`/`list`/`revoke`/`expire-turn`) is the deterministic hand; the `authorize` skill
-  documents the ritual (quote the ask verbatim, echo the binding before acting, never
-  automatic — the runtime derives nothing from prompt text). The gate evaluates grants
-  after `gate.authorize` and before receipts with identical semantics, stamps one
-  `ask-grant-used` ledger line per use quoting the ask, and turn TTLs tick on every
-  operator prompt. Gate-arming can never be granted: dropped at normalization,
-  unreachable by evaluation order, refused by the CLI. The authorize test ladder grew
-  from 13 to 21 rows and was red-proved by sabotage and by running against the previous
-  guard without the grant branch.
-- Fixed four older suite items found on the way (each blamed before fixing, measured
-  identical against the shipped guard): a skill description trimmed to the trigger cap;
-  two skill frontmatters aligned with the skill-quality contract; the quality checker
-  learned the optional `internal: true` marker; and four git byte-baselines moved from
-  stale ask-bytes to the observe-bytes actually written into the guard.
+- Add walls: recorded blockers that resurface before re-diagnosis.
+  `runtime/local/walls.mjs` and `hooks/wall-recall.mjs` (`UserPromptSubmit`,
+  `PostToolUseFailure`) search the ledger for earlier events that share the
+  symptom terms of a detected wall signal and inject the latest matches as
+  context; repeated hits without a `wall` record prompt for one. Add the `wall`
+  event type (symptom, cause, immediate cure, owner, durable fix, status), the
+  `.nogra/state/WALLS.md` projection, `scripts/nogra-wall.mjs record|list|match|project`,
+  and open walls in the post-compact pointer and the ground skill. Defaults are
+  generic English; workspaces extend `walls.signalPatterns`.
+- Reduce the hook map from 33 to 21 entries. Observation events register only
+  on `Stop`, `PreCompact`, `PostToolUseFailure`, `PermissionDenied` and
+  `StopFailure`; `wall-recall` stays on prompts and failures; a legacy stop shim
+  is removed. A pre-cut copy of the hook map is kept in the repository.
+- Restrict wall recall on successful tool results to strong signals (security
+  errors, permission and authorization failures, connection failures, captcha
+  and bot-detection pages); prompts and failed tool calls keep the full signal
+  set. Grow the stopword list and raise the minimum term hits from 2 to 3.
+- Add the delivery gate: a message to the user is a delivery, not a claim.
+  `hooks/delivery-gate.mjs` (`Stop`) blocks loopback links, requires a fresh
+  `delivery-receipt` ledger event for internal links (private IPs, `*.local`,
+  `*.workers.dev`, configured hosts) and blocks homework phrases without a board
+  reference. It downgrades to a system message when the stop hook is already
+  active and writes one audit line per decision.
+  `scripts/nogra-delivery-receipt.mjs` writes the receipt only with a fresh
+  screenshot file. Configuration under
+  `deliveryGate { enabled, receiptWindowMinutes, hostPatterns, homeworkPhrases, boardRefPatterns }`.
+- Add pace: `hooks/pace-context.mjs` (`UserPromptSubmit`) persists slow-down /
+  full-speed phrases into `.nogra/state/PACE.json` and injects one pace line per
+  turn while slow; `scripts/nogra-pace.mjs status|slow|normal`; configuration
+  under `pace { slowPhrases, normalPhrases }`.
+- Add ask-grants: `gate.grants[]` on the running intent binds a verbatim ask to
+  one boundary class with optional scope patterns and a TTL (turn, duration or
+  intent scoped). `scripts/nogra-grant.mjs add|list|revoke|expire-turn` is the
+  deterministic hand; the `authorize` skill documents the ritual. The gate
+  evaluates grants after `gate.authorize` and before receipts, stamps one
+  `ask-grant-used` ledger line per use, and ticks turn TTLs on every prompt.
+  Gate arming can never be granted. The authorize test ladder grew from 13 to
+  21 rows.
+- Fix four older suite items: a skill description trimmed to the trigger cap,
+  two skill frontmatters aligned with the skill-quality contract, the quality
+  checker's optional `internal: true` marker, and four git byte-baselines moved
+  to the bytes the guard actually writes.
 
 ## 0.9.2 - 2026-08-20
 
-- Two of the graded POLISH items executed (20/08, operator GO):
-  `convergence-guard.mjs` now reads `metadata.scopePatterns` as scope fallback
-  (symmetric with the boundaries fallback on the previous line) — red/green
-  proven against the same run record through HEAD vs fixed module: old guard
-  yields `scope: []` (a transport_register receipt could never allow-match),
-  fixed guard carries `["npx wrangler deploy**"]`. And the `authorize` skill
-  documents command-scope glob semantics: a single `*` never crosses `/`, so
-  command patterns need `**` — measured falling through silently 20/08.
-  Remaining POLISH (brief_save validator UX) stays queued.
-
-- New skill `grade` (`/nogra:grade`): the five-step source-quality verdict —
-  anchor tasting against the shelf's richest (seeded, replayable), mechanical
-  field statistics over the WHOLE population, eye on a hole-class AND a typical
-  representative, 🔴🟡🟢 grades where red GATES the decision, verdict to the
-  builder before anything fires. Proven same-day it was named: first run caught
-  234/443 public-identifier law breaches BEFORE a revival put them in
-  production. Binds to the `fund` skill for indexing. (CEO-named and ordered
-  bound 20/08: "den kan du lige gemme som grade metode".)
-
-- Graded (Patrick + Fable layer, 20/08 — evidence in
-  `.nogra/evidence/GRADING-plugin-x-mcp-2026-08-20.md`): authorize/active-intent
-  flow KEEP (mechanically closed end-to-end: operator words as objective,
-  operator hand as root of trust, gate red/green-proven — in-scope deploy
-  matched, out-of-scope rm still asks); POLISH queued for command-scope glob
-  documentation (`*` never crosses `/` — command patterns with paths need `**`,
-  measured falling through live), for `convergence-guard.mjs:340`'s missing
-  `metadata.scopePatterns` fallback (boundaries have one, scope does not —
-  transport_register callers can never allow-match), and for `brief_save`'s
-  one-missing-key-at-a-time validator; transport_register's absent `nextOwner`
-  DEFERRED as possibly-correct state-only design; hosted MCP-server completion
-  DEFERRED by CEO ruling ("own product first").
-
-- Drawing reference visible in the gate's eye: when an intent-grant carries
-  `metadata.grantChain.drawing` ({name, source, artifact} — the reference,
-  never the content), the guard renders `currentActionDrawing=name(source)`
-  in the convergence context, both review paths, and the audit line — so the
-  receiver knows which drawing to read ONCE at their own ground. Purely
-  additive: receipts without a drawing render "none"/omit the field.
-  (Companion to the `nogra-drawings` skill, operator's order 19/08.)
-
-- New skill `nogra-drawings` (`/nogra:drawings`): canonical drawings live in the
-  workspace's `drawings/` registry (legacy name `tegninger/` accepted) — no
-  artifact-drawing publishes without its source file + one index line; a drawing
-  is read ONCE when grounding on its domain (then docs/turn rhythm, never carried
-  as transcript); and intent can cross artifact × drawing by REFERENCE
-  (`drawing: {name, source, artifact}` in a brief or grant) — the receiver reads
-  the source at their own ground. (Operator's order 19/08; the hub's registry
-  was renamed `tegninger/` → `drawings/` the same day.)
-
-- Migration-domain writes are judged by the action's home, not by a word in a
-  filename: a file inside a `migrations/` directory, or a `.sql`/`.prisma`
-  artifact whose own name declares migration intent, now classifies as
-  `data migration file` and maps to the `data-migration` boundary — coverable
-  by a dispatch receipt that declares it. A script merely *named* something
-  with "migration" is ordinary workspace-write. (Measured live 16/08: the
-  hook flagged a sandbox-only apply script on its name while the receipt had
-  no data-migration boundary to cover even the real migration file — a fence
-  that matched the word instead of the act, in both directions.)
+- Read `metadata.scopePatterns` as the scope fallback in `convergence-guard.mjs`,
+  symmetric with the boundaries fallback. Without it a `transport_register`
+  receipt could never allow-match.
+- Document command-scope glob semantics in the `authorize` skill: a single `*`
+  never crosses `/`, so command patterns with paths need `**`.
+- Add the `grade` skill (`/nogra:grade`): a five-step source-quality verdict.
+  Seeded, replayable anchor tasting; mechanical field statistics over the whole
+  population; a look at a hole class and a typical representative; red, amber
+  and green grades where red gates the decision; verdict to the builder before
+  anything runs. Binds to the `fund` skill for indexing.
+- Render the drawing reference in the gate's context: when an intent grant
+  carries `metadata.grantChain.drawing` (`{name, source, artifact}`), the guard
+  shows `currentActionDrawing=name(source)` in the convergence context, both
+  review paths and the audit line. Receipts without a drawing render `none`.
+- Add the `nogra-drawings` skill (`/nogra:drawings`): canonical drawings live in
+  the workspace's `drawings/` registry (legacy `tegninger/` accepted); no drawing
+  is published as an artifact without its source file and one index line; a
+  drawing is read once when grounding on its domain; intent can reference a
+  drawing by `{name, source, artifact}` in a brief or grant.
+- Classify migration-domain writes by the action's home, not by a word in a
+  filename: a file inside a `migrations/` directory, or a `.sql` / `.prisma`
+  artifact whose own name declares migration intent, maps to the
+  `data-migration` boundary. A script merely named "migration" is ordinary
+  workspace write.
 
 ## 0.9.1 - 2026-08-16
 
-Released on the operator's grade and GO, same day the three
-headline changes ran a full factory day live. Two additions landed at the cut:
-
-- Bypass escalation: in `bypassPermissions` mode an "ask" is a prompt nobody
-  sees — for HIGH/CRITICAL uncovered boundaries the gate now escalates
-  ask → deny, so bypass sessions need a covering receipt (or a mode change)
-  for risk classes. Ordinary asks, covered allows and observe lines untouched.
-  (Measured live 16/08: an unseen ask let a shared-service deploy proceed.)
-- authorize-ladder smoke aligned with the routine-git doctrine already written
-  into the guard ("Nogra invites, it does not enforce — no prompt layer over
-  daily git"): uncovered routine git verbs are an OBSERVE line, never ask,
-  never allow; deploy/destructive/non-git boundaries keep their ask.
-
-- Audit lines now carry the intent: `brief=<briefId>` on covered, scratch and
-  not-covered decisions alike (the descriptive briefId is the intent name).
-  A "missing" in the log always has its "but under this intent" half —
-  operator-ordered 16/08; pairs with the gradelog enrichment so
-  invoke × action × decision × receipt × intent is one line.
-
-- Evidence artifacts are now preserved byte-for-byte in a local
-  digest-addressed vault when `evidence-save` runs. A mutable working
-  projection may change without erasing its historical receipt; active facts
-  still fail closed if neither live bytes nor the exact snapshot exists. One
-  explicitly named invalid legacy fact can be recovered only by a
-  same-subject, non-regressing replacement with independently valid evidence;
-  superseded historical drift no longer bricks every future fact/Anchor read.
-- PreToolUse live-log lines now carry the gate's verdict for gradability:
-  decision lines include the dense `Audit:` sentence (action/coverage/receipt)
-  as `nogra.reason` — previously empty, so ask/review/allow decisions could
-  not be graded from the log. The full review message loses its tail to the
-  240-char line bound; the audit sentence is preferred because the tail is
-  where grading lives. (Operator-ordered mount 16/08; reader:
-  `bin/nogra-gradelog` in the workspace sweeps per-workspace logs into a
-  daily gradebook.)
-- Dispatch receipts now carry the approved brief's boundary grant
-  (`metadata.authorizedBoundaries` + `metadata.scopePatterns`) instead of a
-  hardcoded `workspace-write`. Coverage is enumerated at GO-time inside
-  briefHash — a grant can never widen itself mid-run. Hard allowlist:
-  gate-arming, billing, secrets, permissions and customer-send are never
-  grantable by receipt; a grant without scope patterns degrades to the
-  default (coverage must have a form, not just a state). Pairs with the
-  existing `gate.autoApprove` opt-in: covered actions emit `allow` with the
-  audit line, everything else keeps asking. (The hook now carries intent —
-  operator-backlogged 2026-08-15.)
+- Escalate uncovered HIGH and CRITICAL boundaries from ask to deny in
+  `bypassPermissions` mode, where an ask is a prompt nobody sees. Ordinary asks,
+  covered allows and observe lines are unchanged.
+- Treat uncovered routine git verbs as an observe line, never an ask or an
+  allow; deploy, destructive and non-git boundaries keep their ask. The
+  authorize-ladder smoke matches.
+- Carry the intent on audit lines: `brief=<briefId>` on covered, scratch and
+  not-covered decisions alike.
+- Preserve evidence artifacts byte for byte in a local digest-addressed vault
+  when `evidence-save` runs. A mutable working projection may change without
+  erasing its historical receipt; active facts still fail closed if neither the
+  live bytes nor the exact snapshot exists. One explicitly named invalid legacy
+  fact can be recovered only by a same-subject, non-regressing replacement.
+- Include the gate's verdict on `PreToolUse` live-log lines as `nogra.reason`
+  (the dense `Audit:` sentence), so ask, review and allow decisions can be
+  graded from the log.
+- Carry the approved brief's boundary grant on dispatch receipts
+  (`metadata.authorizedBoundaries`, `metadata.scopePatterns`) instead of a
+  hardcoded `workspace-write`. Coverage is enumerated at GO time inside the brief
+  hash and cannot widen mid-run. Gate arming, billing, secrets, permissions and
+  customer-send are never grantable by receipt; a grant without scope patterns
+  degrades to the default.
 
 ## 0.9.0 - 2026-08-14
 
-- Carries the 0.8.9 `/nogra:dayclose` skill forward unchanged. 0.8.9's
-  session-quality lane is intentionally NOT carried: Phase 6 hidden-scoring
-  isolation supersedes it with the explicit, user-only
-  `/nogra:transcript-diagnostic` (no hidden SessionEnd scoring, ever).
-- Documented the role-lease worktree boundary in the dispatch contract:
+- Carry the 0.8.9 `/nogra:dayclose` skill forward unchanged. The 0.8.9
+  session-quality lane is intentionally not carried; hidden-scoring isolation
+  supersedes it with the explicit, user-only `/nogra:transcript-diagnostic`.
+- Document the role-lease worktree boundary in the dispatch contract:
   `scope.files` patterns match workspace-relative paths, so briefs targeting a
-  sister worktree must prefix entries with the worktree path. Known sharp edge,
-  documented rather than hidden; runtime normalization is queued.
-- Added the canonical contract spine
-  `brief.v1 -> approval.v1 -> run.v2 -> run-event.v2 -> evidence.v1 -> verdict.v1` with
-  schema-closed validation, scoped single-use approvals, lifecycle/outcome/
-  verdict separation, replay recovery and frozen legacy reads.
-- Added English-first Anchor v1 continuity: `/nogra:anchor`,
-  `nogra.anchor.v1`, immutable JSON records, atomic current JSON/Markdown
-  projections, evidence-gated `verifiedDone`, separate `claimedDone` and
-  `unknown`, approved brief/GO binding, ledger and Git freshness, content
-  dedupe, `supersedes`, and interrupted-projection recovery.
-- Anchor complements Claude Code's native rewind checkpoints. It does not
-  grant GO, infer readiness, read transcripts or invent a native checkpoint
-  identifier that Claude hooks do not expose.
-- Added Phase 3 factual identity: immutable content-addressed
-  `nogra.evidence.v1` receipts, append-only `nogra.fact.v1` ledger records,
-  one active fact per stable subject, explicit `supersedes`, non-regressing
-  evidence levels and a rebuildable `CURRENT-FACTS.json` projection. Ship
-  verdicts now require canonical evidence IDs, Anchor completion claims bind
-  active facts, and artifact digests are checked before evidence can support a
-  fact or verdict.
-- Native MEMORY/USER and hosted sync remain the one continuity home and
-  transport, but are explicitly advisory projections. Memory/sync sources are
-  capped at `reported` and cannot create or upgrade verified facts; sync state,
-  receipts and SessionStart context carry that boundary without changing the
-  HOME/seat/adopt protocol.
-- Added Phase 4 strict role isolation. Manager now issues one short-lived,
-  run-revision-bound `nogra.role.lease.v1` before a public role starts.
-  PreToolUse binds the lease to Claude's `agent_type` and `agent_id`; missing,
+  sister worktree must prefix entries with the worktree path.
+- Add the canonical contract spine
+  `brief.v1 -> approval.v1 -> run.v2 -> run-event.v2 -> evidence.v1 -> verdict.v1`
+  with schema-closed validation, scoped single-use approvals, lifecycle,
+  outcome and verdict separation, replay recovery and frozen legacy reads.
+- Add English-first Anchor v1 continuity: `/nogra:anchor`, `nogra.anchor.v1`,
+  immutable JSON records, atomic current JSON and Markdown projections,
+  evidence-gated `verifiedDone`, separate `claimedDone` and `unknown`, approved
+  brief and GO binding, ledger and Git freshness, content dedupe, `supersedes`
+  and interrupted-projection recovery. Anchor complements Claude Code's native
+  rewind checkpoints; it does not grant GO, infer readiness or read transcripts.
+- Add factual identity: immutable content-addressed `nogra.evidence.v1`
+  receipts, append-only `nogra.fact.v1` ledger records, one active fact per
+  stable subject, explicit `supersedes`, non-regressing evidence levels and a
+  rebuildable `CURRENT-FACTS.json` projection. Ship verdicts require canonical
+  evidence ids, Anchor completion claims bind active facts, and artifact digests
+  are checked before evidence can support a fact or verdict.
+- Treat native `MEMORY.md` / `USER.md` and hosted sync as the one continuity
+  home and transport, and explicitly as advisory projections: memory and sync
+  sources are capped at `reported` and cannot create or upgrade verified facts.
+- Add strict role isolation. The Manager issues one short-lived,
+  run-revision-bound `nogra.role.lease.v1` before a public role starts;
+  `PreToolUse` binds the lease to Claude's `agent_type` and `agent_id`; missing,
   expired, swapped-agent and out-of-scope Executor operations fail closed.
-  Public Executor and Verifier no longer receive Bash. Verifier is mechanically
-  limited to Read, Grep and Glob, while Manager owns command/test probes and
-  canonical evidence.
-- Added schema-valid `nogra.role.report.v1` returns. Executor reports are claims
+  Public Executor and Verifier no longer receive Bash; the Verifier is limited
+  to Read, Grep and Glob; the Manager owns command and test probes and canonical
+  evidence.
+- Add schema-valid `nogra.role.report.v1` returns. Executor reports are claims
   and cannot recommend a verdict; Verifier reports are read-only recommendations
-  bound to canonical evidence. Manager alone finalizes executor outcome and
-  writes `nogra.verdict.v1`. Adversarial regression covers scope escape,
+  bound to canonical evidence; the Manager alone finalizes the executor outcome
+  and writes `nogra.verdict.v1`. Adversarial regression covers scope escape,
   control-plane writes, agent swaps, role escalation, arbitrary shell, mutation,
   missing evidence and unstructured verifier claims.
-- Added Phase 5 explicit boot and native-memory adapter contracts.
-  `nogra.boot.context.v2` projects `fresh`, `detected`, `focused`, `resumed`
-  and `recovering`; checkpoint existence is detection-only and only Claude
-  Code's native SessionStart source may produce resume/recovery states. Boot
-  never loads checkpoint contents or grants authority.
-- Added one shared `nogra.memory.resolution.v1` path resolver for USER pinning,
+- Add explicit boot and native-memory adapter contracts. `nogra.boot.context.v2`
+  projects `fresh`, `detected`, `focused`, `resumed` and `recovering`; checkpoint
+  existence is detection-only and only Claude Code's native `SessionStart`
+  source may produce resume or recovery states. Boot never loads checkpoint
+  contents or grants authority.
+- Add one shared `nogra.memory.resolution.v1` path resolver for USER pinning,
   sync, diagnostics and consolidation. It honors observable settings,
   `CLAUDE_CONFIG_DIR`, runtime transcript identity and Git repository identity,
-  supports an explicit runtime bridge for CLI/remote-only settings, respects
-  disabled Auto Memory and fails closed on invalid or escaping default paths.
-  SessionStart now orders optional sync pull before reading the resolved USER
-  pin/bound state.
-- Added Phase 6 hidden-scoring isolation. SessionEnd no longer reads
-  transcripts or writes session-quality receipts, and default status/statusline
-  no longer project stale language judgments. The former numeric quality score,
-  severity ladder and GO/stop interpretation are removed.
-- Added optional `nogra.transcript.diagnostic.v1` behind the user-only
-  `/nogra:transcript-diagnostic` skill. It reports bounded lexical observations
-  and limitations with `authority=none`, neutral control/truth effects and no
-  score or verdict. Preview writes nothing; saving requires explicit `--write`.
-- Restored the post-0.8.8 TREE sync leg on top of the Quality Pass runtime.
-  `tree` is a read/check, while `tree pull` and `tree push` remain explicit,
-  collision-gated operator actions with receipts. Hooks never move git.
-- Preserved the sync fingerprint's NUL domain separator as a visible source
-  escape so forensic text tools no longer classify `sync-client.mjs` as binary.
-- Restored the Claude Code changelog watcher as an explicit, fail-open
-  diagnostic. It is intentionally not a SessionStart hook: detection-only boot
-  must not hide network calls or state writes.
-- Added a narrow `workspace-migrate` upgrade lane for existing Nogra
-  workspaces. It merge-preserves config and updates only `.nogra/` contract
-  lanes, preventing full setup from copying hub-owned `brain/`, `inbox/` or
-  `projects/` surfaces into project-local seats.
-- The migration explicitly upgrades known `nogra.boot_policy.v1` configs to
-  v2 and removes only the retired parallel-memory path/hint keys. Unknown
-  operator config remains preserved.
-- Legacy Markdown checkpoint migration is freshness-conservative. It keeps a
-  watermark explicitly declared by the checkpoint itself and otherwise writes
-  `SourceWatermark: 0` (unknown); it never labels old prose current merely
-  because a newer ledger exists.
+  supports an explicit runtime bridge for CLI and remote-only settings,
+  respects disabled Auto Memory and fails closed on invalid or escaping default
+  paths. `SessionStart` orders the optional sync pull before reading the
+  resolved USER pin.
+- Add hidden-scoring isolation. `SessionEnd` no longer reads transcripts or
+  writes session-quality receipts, and status surfaces no longer project stale
+  language judgments. The former numeric quality score, severity ladder and
+  GO/stop interpretation are removed.
+- Add the optional `nogra.transcript.diagnostic.v1` behind the user-only
+  `/nogra:transcript-diagnostic` skill: bounded lexical observations with
+  `authority=none`, no score and no verdict. Preview writes nothing; saving
+  requires `--write`.
+- Restore the tree sync leg on the new runtime: `tree` is a read and check,
+  while `tree pull` and `tree push` remain explicit, collision-gated actions
+  with receipts. Hooks never move git.
+- Preserve the sync fingerprint's NUL domain separator as a visible source
+  escape so text tools no longer classify `sync-client.mjs` as binary.
+- Restore the Claude Code changelog watcher as an explicit, fail-open
+  diagnostic, deliberately not a `SessionStart` hook.
+- Add a narrow `workspace-migrate` upgrade lane for existing workspaces. It
+  merge-preserves config, updates only `.nogra/` contract lanes, upgrades known
+  `nogra.boot_policy.v1` configs to v2 and removes only the retired
+  parallel-memory keys. Full setup no longer copies hub-owned `brain/`, `inbox/`
+  or `projects/` surfaces into project-local seats.
+- Keep legacy Markdown checkpoint migration freshness-conservative: a watermark
+  declared by the checkpoint is kept, otherwise `SourceWatermark: 0`; old prose
+  is never labelled current because a newer ledger exists.
 
 ## 0.8.9 - 2026-08-05
 
-- **New skill: `/nogra:dayclose`** — the evening counterpart to the morning brief. Seven
-  measured steps: sweep every open thread (agents, background jobs, dev services, overnight
-  wakers — each survivor checked against the pinned-model law), stamp the day in the ledger,
-  update every projection in the same move, run the memory write-loop, inbox hygiene, git
-  honesty (every touched repo named committed-or-PARKED), and a final Pinocchio pass where
-  everything claimed closed is measured closed. `--weekly` extends the close with a
-  week-level digest incl. north-star metric delta. Graded KEEP on live-run evidence
-  (first real close 2026-08-04) before publish.
-- **Honesty rule hardened by the first live run:** predictions about what happens after
-  close ("drains by itself", "resolves overnight") require a mechanism receipt or must be
-  written as an OPEN item — the first close carried one such line and the morning proved
-  it false. The rule now ships in the skill.
-- **`/nogra:status` invocation discipline** — fixes the operator-ruled failure where a
-  pinned headless seat ran ad-hoc tool calls instead of loading the skill first
-  (pre-measuring), or answered from session memory (stale render). The skill now states:
-  loading it is the FIRST action of the turn; the skill directs the measurements, never
-  the reverse; every shown value comes from a fresh, skill-directed read. Validated
-  headless on a pinned seat before publish: command-expansion first, references read
-  before any measurement, output in the spec form.
+- Add `/nogra:dayclose`, the evening counterpart to the morning brief. Seven
+  measured steps: sweep every open thread (agents, background jobs, dev
+  services, overnight wakers), stamp the day in the ledger, update every
+  projection in the same move, run the memory write-loop, inbox hygiene, git
+  honesty (every touched repository named committed or parked), and a final
+  pass where everything claimed closed is measured closed. `--weekly` adds a
+  week-level digest.
+- Require a mechanism receipt for any prediction about what happens after the
+  close; otherwise it is written as an open item.
+- Make `/nogra:status` load the skill first and measure under its direction,
+  so every shown value comes from a fresh, skill-directed read rather than
+  session memory.
 
 ## 0.8.8 - 2026-07-17
 
-- **Union seats now ADOPT the home's consolidated truth on pull — they no longer union-grow it.**
-  `unionMerge` is add-only by construction: it can append an unseen line but can never propagate a
-  line the home *removed*. So when the home consolidated (dropped stale lines, replaced the sky), a
-  union seat pulling it kept its own stale copy and merged the home's new lines on top — growing
-  monotonically past budget, never converging. Proven live: a union seat pulled a
-  2849-char home consolidation and ended at 3653 chars with the same checkpoint line three times.
-- **The fix, client-only, on the drawn law** (DECISIONS #43 "the bench is a projection that must
-  adopt the house's truth", #57 "bench seats only clean their local copy and never re-push a line
-  the cloud has discarded", #127 the RAMMEN watermark motor). `syncPull` gains an adopt branch
-  behind a conservative gate: when the sky's watermark has advanced past the seat's last-seen mark
-  and the seat is a union seat (never the home, which IS the truth), it adopts —
-  - **clean seat:** takes the home's memory/user verbatim (line-removals finally land);
-  - **diverged seat** (dirty + advanced): a three-way `adoptMerge(base, local, remote)` = the home's
-    truth plus the seat's *genuine* additions (local minus the last adopted base), so a home-discarded
-    line is never revived and a real unpushed line is never lost;
-  - **first contact / no stored base yet:** an honest one-time union-merge that records the base, so
-    the next advanced pull adopts cleanly — a named, self-healing gap, not a silent one.
-  On adopt the sky's content becomes the seat's push-baseline, so a clean adopt never spuriously
-  re-pushes, and the `stale_base` cure now flows through adopt for free.
-- **Untouched by design:** the server, `unionMerge` itself, the budget/front-6/race-streg guards,
-  the replace verb, and the home seat. Line-level tombstones remain drawn for a later release
-  (DECISIONS #59). Verified independently at the bench: client-smoke 87/87 ×3, sync-cli 52/52,
-  server 89/89, and today's 3653 ghost as a verbatim FAIL→PASS test.
+- Make union seats adopt the home seat's consolidated memory on pull instead of
+  union-growing it. `unionMerge` is add-only and could never propagate a line
+  the home removed, so a seat could grow past budget without converging.
+  `syncPull` now adopts when the hosted watermark has advanced past the seat's
+  last-seen mark: a clean seat takes the home's memory verbatim; a diverged seat
+  gets a three-way `adoptMerge(base, local, remote)` that keeps its genuine
+  additions and never revives a discarded line; first contact records the base
+  with one honest union-merge. On adopt the hosted content becomes the push
+  baseline, so a clean adopt never re-pushes.
+- Leave the server, `unionMerge`, the budget and stale-base guards, the replace
+  verb and the home seat untouched. Line-level tombstones remain queued.
 
 ## 0.8.7 - 2026-07-17
 
-- **The crown never rebases — the home-seat tick race closed structurally.** Proven three
-  times by receipts (16/07 "replace 3098c -> 3098c": a pull union-merged ghosts back 104ms
-  before replace read the file; the home seat's two failed cure attempts on 17/07 — the
-  tick's write-trigger fired on every save and pulled the dirty sky back into the freshly
-  cleaned file; the bench's 12-minute re-infection): the tick ran pull→push identically on
-  every seat, but the HOME seat has no base to rebase against — the crown IS the base.
-  The law, one sentence: "When the crown writes, the crown speaks. The crown listens only
-  when it has nothing to say." In code: on replace-mode seats a write-triggered tick pushes
-  ALONE (replace, no pull in the same tick — the cure reaches the sky untouched), and a
-  quiet interval tick pulls ALONE (ingesting union seats' contributions for the next
-  consolidation — safe now that the stale and budget guards keep the sky clean). Union
-  seats are byte-identically unchanged: pull-before-push remains their law (front 6).
-  Tick receipts on the home seat carry the crown's voice: `crown: speaks` / `crown: listens`.
-  Evidence: 10 new smoke checks including the 16/07 scenario verbatim ("dirty sky + fresh
-  cure + write-tick → the cure must win"), client smoke 75/75 ×3, full suite green.
-  House dogfood (operator's hand: one consolidation, receipt showing push without pull)
-  completes the drawing's acceptance.
+- Close the home-seat tick race structurally. The tick ran pull then push on
+  every seat, but the home seat has no base to rebase against. On replace-mode
+  seats a write-triggered tick now pushes alone, and a quiet interval tick pulls
+  alone. Union seats are unchanged: pull before push remains their rule. Tick
+  receipts on the home seat name which mode ran.
 
 ## 0.8.6 - 2026-07-17
 
-- **The budget guard — the last ghost hole closed: a union may never RESULT in over-budget
-  state.** The server now refuses (409 `over_budget`) any union push that would grow a bounded
-  file past its limit — the morning ghost of 17/07 (06:29) was exactly such a merge: a legacy
-  seat union-pushed its old 3098-char brain into a cleaned 2743-char sky, and the merge was
-  STORED with only a warning. The refusal is whole (no partial merge, no turns, no seat-board
-  stamp) and receipted with sizes and the cure: "union can add but never clean — consolidate at
-  the home and replace." A file already over budget from before never blocks the OTHER file's
-  honest growth, and the home's `replace` remains the one cure verb. Side effect that matters:
-  this guard also catches pre-0.8.6 seats WITHOUT `base_wm` — a ghost payload is by definition
-  the old big brain, so the wall holds even before every seat upgrades. Client side (this
-  release): a 409 `over_budget` is an honest STOP, never a retry (a pull only makes the local
-  union bigger) — receipt carries `refused: over_budget`, the return names the cure, and the
-  session-start knock surfaces it to the operator. Guard chain hardened: `stale_base` still
-  self-heals with exactly one rebase retry, and if the REBASED push hits the budget wall the
-  client stops honestly (front6 → budget chain proven in smoke). The MCP `memory_append` names
-  the refusal the same way. Narrowed on purpose: unknown 409s no longer blind-retry — only
-  `stale_base` does. Evidence: server 89/89 ×3 (7 new guard tests incl. the morning scenario
-  verbatim), client smoke 65/65 ×3 (+5).
-
-- **Ground hardened: docs are drawings (hard block).** The ground skill gains a mandatory
-  step: read the platform's own documentation and namespace BEFORE building on or naming
-  anything that touches a platform surface. Born from a real naming defect: the 0.8.5
-  `doctor` verb collides in conversation with Claude Code's own `claude doctor` / `/doctor`
-  — no technical collision, but the operator had to ask which one was meant, and that
-  question is the defect. Ruled a hard block by the operator, not a guideline.
-
-- **The door for the windows — a real OAuth 2.1 authorization server, self-hosted in the
-  worker (trin 02 complete).** claude.ai and the phone can now become windows onto the one
-  clock: RFC 8414 discovery, dynamic client registration (RFC 7591), authorization-code +
-  PKCE S256 (required, never optional), and a consent page where approval is the OPERATOR'S
-  HAND — a 10-minute `--approve` token from the mint script whose only power is opening the
-  door (scope `oauth:approve`, reads nothing). The whole AS is stateless: client-ids and
-  codes are HMAC-signed blobs — no client table, no code table, signatures ARE the state.
-  Issued connector tokens are ordinary seat-forged sync tokens (read+append, NEVER replace
-  — a window never holds the crown) so the existing fence verifies them unchanged, and the
-  seat board NAMES the window. Every opened door stamps an `oauth` receipt in the clock.
-  Fail-closed line moved to where it belongs: no signing secret, no AS (501).
-
-- **The pulse lives in the brain — the clock breathes on its own (trin 03 complete).** The
-  user DO now schedules its own heartbeat (a DO alarm every 30 minutes — the drawing's own
-  economy line): each beat stamps a receipt, looks at the seat board and NAMES stalled seats
-  — the stall signal born in the clock itself, not only at a seat's pull. `go_armed` ships
-  as the episode's socket (trin 04 plugs in here): a receipted switch behind the crown's
-  scope (`memory:replace`), and nothing acts on it yet, by design. New surface:
-  `POST /sync/heartbeat` (append scope) · `POST /sync/go` (crown) · status carries the pulse
-  home, and `doctor` reads it aloud. Watermark law: breathing is not a change of mind.
-
-- **The stale-base guard — ghost front 6 closed in code, not just in law.** Every pull now
-  remembers the watermark it saw (`lastSeenWm`); every union push carries it as `base_wm`.
-  A push built on a sky the seat never looked at gets a 409 `stale_base` from the server and
-  self-heals: pull, rebase, exactly one retry. Born from the night of 16/07, where a cure was
-  overwritten by its own step order ("replace 3098c -> 3098c"). Legacy seats without `base_wm`
-  still pass (fail-open for compatibility). Client fix in the same cut: `syncPush` re-reads
-  state at write time so a retry's fresh pull is never clobbered by a stale in-memory object.
-
-- **The decide skill — a ruling becomes law, receipted.** `/nogra:decide` records an operator
-  decision in the workspace decision log using the drawn shape (Date · Decision · Why ·
-  Alternatives considered · Owner · Linked brief/run/evidence) and leaves one ledger receipt.
-  Append-only; superseding rulings name what they replace. Claude offers candidate wordings and
-  names (English first) — the operator rules and names, always. Born from the operator's own
-  design: "intent + source = truth, PLUS N decisions with WHY and HOW."
+- Add the budget guard: the server refuses (409 `over_budget`) any union push
+  that would grow a bounded file past its limit. The refusal is whole and
+  receipted with sizes and the cure (consolidate at the home and replace). A
+  file already over budget never blocks the other file's growth. Client side, a
+  409 `over_budget` is a stop, never a retry; `stale_base` still self-heals with
+  exactly one rebase retry; unknown 409s are no longer blind-retried.
+- Make the ground skill read the platform's own documentation and namespace
+  before building on or naming anything that touches a platform surface.
+- Add a self-hosted OAuth 2.1 authorization server in the sync worker: RFC 8414
+  discovery, dynamic client registration (RFC 7591), authorization code with
+  PKCE S256 (required), and a consent page approved by a short-lived
+  `--approve` token from the mint script. The server is stateless: client ids
+  and codes are HMAC-signed blobs. Issued connector tokens are ordinary
+  read-and-append sync tokens, never replace-capable, and every opened door
+  stamps an `oauth` receipt. Without a signing secret the server answers 501.
+- Add a heartbeat in the hosted memory: a scheduled alarm every 30 minutes
+  stamps a receipt, reads the seat board and names stalled seats. `go_armed`
+  ships as a receipted switch behind the replace scope; nothing acts on it yet.
+  New surface: `POST /sync/heartbeat` (append scope), `POST /sync/go` (replace
+  scope); status carries the pulse and `doctor` reads it.
+- Add the stale-base guard: every pull remembers the watermark it saw
+  (`lastSeenWm`) and every union push carries it as `base_wm`. A push built on
+  a hosted state the seat never saw gets a 409 `stale_base` and self-heals with
+  one pull, rebase and retry. `syncPush` re-reads state at write time so a
+  retry's fresh pull is never clobbered.
+- Add `/nogra:decide`: record a decision in the workspace decision log
+  (Date, Decision, Why, Alternatives considered, Owner, Linked brief, run or
+  evidence) with one ledger receipt. Append-only; superseding rulings name what
+  they replace.
 
 ## 0.8.5 - 2026-07-16
 
-Born the same day as 0.8.4, from the same war: every manual step the operator had
-to take to verify a seat was a product gap wearing a task costume. Four stones,
-built one GO at a time; no operator is ever the sync engine again.
-
-- **The root is found upward (S-A).** `sync-cli` walks up from cwd to the nearest
-  `.nogra/`; run it from any subdirectory and it binds to the right truth. OUTSIDE
-  a workspace it says so LOUDLY and exits 1 — the silent "no changes" that cost a
-  round on 16/07 (running from `~`) cannot happen again. `CLAUDE_PROJECT_DIR` still wins.
-- **The honest seat (S-B).** The token is INSPECTED, never printed: `status` shows
-  seat · scopes · exp (metadata only — the value never leaves the process, smoke-
-  enforced). An empty (1 byte!), malformed or expired token fails LOUD on called
-  verbs (run/pull/push) with its name, its byte count and its cure — 0 bytes looked
-  exactly like success on 16/07, twice. Status now also carries `you`, the full
-  seat board (dated "as of last pull") and ROLE COHERENCE: a home-mode seat without
-  `memory:replace` gets its 403 foretold, with the cure. Hook edges stay fail-open.
-- **The doctor (S-C).** `sync-cli doctor` — the day's two-hour hunts as ONE call:
-  eight falsifiable checks, each with its cure. Root(+source) · enabled · endpoint ·
-  token metadata · aud binding (the 403 class caught locally) · role coherence · a
-  LIVE authorized probe (200 = wm + turns + the seat board by name + latency; 401 =
-  "can only be signature/expiry" — authz law quoted in the cure; 403 = aud/scope;
-  6s timeout) · bounds in the server's own measure + the receipt tail with verdicts.
-- **bind proves itself (S-D).** With a healthy token, `bind` runs the first pull
-  itself (which stamps the board) and answers in writing: "seat 'x' is on the board
-  (set <ts>)". Missing/empty tokens get honest instructions and a promise: run
-  `bind` again after placing it. A dead sky points to `doctor`, exit 1. The nine
-  manual board confirmations of 16/07 are dead.
-- Smokes: cli 32 -> 52 (+20 guards, incl. "the value is never printed" and a
-  deterministic dead-sky probe via loopback). Client suite untouched, 55/55.
+- Find the workspace root upward: `sync-cli` walks up from the current
+  directory to the nearest `.nogra/`; outside a workspace it says so and exits 1.
+  `CLAUDE_PROJECT_DIR` still wins.
+- Inspect the token, never print it: `status` shows seat, scopes and expiry;
+  an empty, malformed or expired token fails loudly on `run`, `pull` and `push`
+  with its name, byte count and cure. Status also carries the seat board and
+  role coherence (a home-mode seat without `memory:replace` gets its 403
+  foretold).
+- Add `sync-cli doctor`: eight falsifiable checks, each with its cure: root and
+  source, enabled, endpoint, token metadata, audience binding, role coherence,
+  a live authorized probe (with a 6 s timeout) and bounds in the server's own
+  measure, plus the receipt tail with verdicts.
+- Make `bind` prove itself: with a healthy token it runs the first pull, stamps
+  the board and answers in writing; missing or empty tokens get instructions;
+  a dead endpoint points to `doctor` and exits 1.
+- Grow the CLI smoke suite from 32 to 52 checks, including a deterministic
+  dead-endpoint probe over loopback and a check that the token value is never
+  printed.
 
 ## 0.8.4 - 2026-07-16
 
-Sync learns WHO: the clock keeps a seat board, and a seat can never again believe
-it is in sync when it is not.
-
-- **The stall-signal (the knock's third leg).** Every pull carries the seat board home
-  (seats' last_seen · last_pushed · dirty — metadata only, never content). When ANOTHER
-  seat is active with unpushed state, session start knocks: facts name the seat and the
-  Manager weaves an honest staleness line into answers it touches — never blocks, never
-  waits. Born from the ghost-war 15/07: three live races this board would have called out.
-- **Replace consumes history (server, ghost-front 4 — 16/07).** An accepted `replace` now
-  CLEARS the cloud turn log: consolidation ate that history, and leaving it made every
-  fresh-cursor pull resurrect the pre-consolidation past into a clean seat (caught live:
-  a re-minted seat's first pull replayed two fat old turns straight into a just-cleaned
-  brain). Rowids stay monotonic, old cursors stay valid; a refused wipe clears nothing.
-  Receipt says how many turns were consumed. Server suite 64/64.
-- **The seat reports honestly.** The pull sends one bit — `dirty` — computed from the
-  fingerprint machinery that already knows. A landed push clears it on the board.
-- **Identity is mint-forged (D1).** The seat's name lives ONLY in the token's `seat`
-  claim; tokens minted before seat-awareness read as "ukendt" — visible, never invisible.
-  (Server side: `mint-token.mjs --seat <navn>`, seat_board in the user-DO, board on
-  /sync/pull, /sync/status and the MCP sync_status tool — the chat surface is a seat too.)
-- Process laws booked the hard way: after consolidation = pure push, never pull-first ·
-  clean the CLOUD first, empty the seats after (union can never clean).
+- Add the seat board: every pull carries metadata for all seats (last seen,
+  last pushed, dirty), never content. When another seat is active with unpushed
+  state, session start injects one honest staleness line; it never blocks.
+- Make `replace` consume history on the server: an accepted replace clears the
+  hosted turn log so a fresh-cursor pull can no longer resurrect
+  pre-consolidation state. Row ids stay monotonic, old cursors stay valid, and a
+  refused wipe clears nothing.
+- Report `dirty` on every pull, computed from the fingerprint machinery; a landed
+  push clears it on the board.
+- Forge seat identity in the token: the seat name lives only in the token's
+  `seat` claim; tokens minted before seat awareness read as unknown, visibly.
 
 ## 0.8.3 - 2026-07-14
 
-The pulse release: sync stops being an act and becomes a heartbeat — push/pull is
-never a manual step again.
-
-- **The tick — RAMMEN's third trigger, live.** `syncTick` runs mid-session on
-  `PostToolBatch` (async, zero added latency): debounced to one tick per 20 minutes,
-  except a write to either bounded file beats the debounce (push-on-write). The stamp
-  is written BEFORE the network calls, so a failing endpoint debounces too — no hot
-  loop, and every tick leaves its own receipt (`op:"tick"`, trigger named).
-- **Write-detection is clock-skew-proof (grade catch).** The tick's fast-path never
-  compares file mtime to the wall clock — they are different clocks and they skew
-  (measured live: tmpfs mtime ~4ms behind `Date.now()`, which silently swallowed
-  push-on-write). Each tick remembers the bounded files' fingerprints (mtime + size);
-  a write is any fingerprint not seen before.
-- **The run verb — the one door.** `sync-cli.mjs run` does pull→push in a single
-  call with an aggregate receipt (`op:"run"`), honest exit (1 on push failure). The
-  same engine the automatic edges and the tick use; "sync now" is now one word.
-- **bind guarantees the gitignore law.** `bind` retrofits `memory/sync/` into
-  `.nogra/.gitignore` when missing (idempotent, receipted) — the seat file and token
-  can never travel via git, even on workspaces initialized before sync existed.
-- **The malformed-reply smoke is real now (grade catch).** The stub cloud actually
-  serves garbage for one pull; the smoke proves fail-open: note admits the failure,
-  local files untouched, error receipt logged. (The old check was a tautology.)
-- **The knock-knock (operator's design, verdict "DONE" on the spot) — and it watches
-  the WHOLE workspace.** Sync is one system with two legs: the BRAIN rides the hosted
-  clock (automatic — pull/push/tick), the TREE rides git (curated commits, operator-
-  gated). When either leg couldn't keep its promise — unpushed memory, a failing
-  receipt, a bound-but-tokenless seat, a silent seat, **or a tree behind/ahead of its
-  upstream (as of the last fetch)** — session start gets ONE honest fact-line
-  (`<nogra-sync-nudge>`) offering the matching move: `/nogra:sync run`, a git pull, or
-  a curated push that stays the operator's call. The hook emits facts; the Manager
-  delivers them in the operator's own register. Nothing here ever pulls or pushes git
-  by itself. Knocks BEFORE the pull so "diff" means truth, not fresh-merge noise.
-  Silent when sync is off (off is a choice, not a fault) and when everything converged.
-- **Ground reads the drawings first (operator's correction, made law).** The ground
-  skill gains a step: before proposing on a domain, list and read the workspace's
-  canonical drawings for it (a `tegninger/`/`drawings/` registry, or one named in the
-  map) — the operator may already HAVE the thing you are about to invent. And a rule:
-  a wall is a STOP, never a detour — an unreachable source (403, missing file) means
-  stop, say so, hunt local copies; never substitute inference for the drawing.
-- **Docs truth-synced.** The sync skill and README now name `run`; skill description
-  fits the trigger-metadata bound.
+- Add the sync tick: `syncTick` runs mid-session on `PostToolBatch`
+  asynchronously, debounced to one tick per 20 minutes, except that a write to
+  either bounded file beats the debounce. The stamp is written before the network
+  calls, so a failing endpoint debounces too, and every tick leaves a receipt.
+- Make write detection clock-skew-proof: the tick compares file fingerprints
+  (mtime plus size) it has seen before, never file mtime against the wall clock.
+- Add `sync-cli run`: pull then push in one call with an aggregate receipt and
+  an honest exit code.
+- Make `bind` retrofit `memory/sync/` into `.nogra/.gitignore` when missing, so
+  the seat file and token can never travel via git.
+- Make the malformed-reply smoke real: the stub serves garbage for one pull and
+  the suite proves fail-open behaviour.
+- Add the session-start sync nudge. Sync has two legs, the memory leg on the
+  hosted service and the tree leg on git. When either cannot keep its promise
+  (unpushed memory, a failing receipt, a bound but tokenless seat, a silent
+  seat, or a tree behind or ahead of its upstream as of the last fetch), session
+  start emits one fact line (`<nogra-sync-nudge>`) with the matching move.
+  Nothing pulls or pushes git by itself; silent when sync is off or converged.
+- Make the ground skill list and read the workspace's canonical drawings for a
+  domain before proposing on it, and treat an unreachable source as a stop, not
+  a detour.
+- Name `run` in the sync skill and README; fit the skill description to the
+  trigger-metadata bound.
 
 ## 0.8.2 - 2026-07-13
 
-The home release: one seat owns consolidation, and the cloud finally learns to forget.
-Both changes were proven in production the day they were built — the first replace-push
-landed 11:05:54Z and made a consolidation durable for the first time, and the seat-file
-fix closed a real incident where "home" traveled to a second machine via git.
-
-- **The home verb: replace.** One seat per user — the HOME, where consolidation lives — may
-  now hand the cloud its consolidated state verbatim instead of union-merging. Union-only
-  clouds never forget (proven 13/07: a consolidation removed three resurrected index lines,
-  one pointing at retired infrastructure — and the next pull would have brought them all
-  back). Client: `sync.mode: "replace"` in config routes the session-end push to
-  `/sync/replace` (no turns ride along); `bind <endpoint> --home` sets it; status names the
-  seat (`home (replace)` vs `remote (union)`); re-bind without the flag never demotes a home.
-  Server-side the verb is scope-gated (`memory:replace`, minted with `--home`, never on an
-  append token) with a wipe-guard: replacing non-empty state with empty is refused whole,
-  with a receipt. Memory bound raised 2200 → 3000 (operator decision, ledger #123 — 2200
-  left 5 chars of headroom after a clean consolidation). Smokes: +11 checks across
-  client/cli (27+27 green), 9 new server tests (49 green).
-
-- **The seat file: "home" can never travel via git.** Learned live the same day it shipped:
-  the home mode briefly lived in `.nogra/config.json`, which is committed — so it traveled
-  by git to a second machine and marked THAT seat home too (only the `memory:replace` scope
-  fence caught it). The mode now lives in `.nogra/memory/sync/mode` — a gitignored SEAT FILE
-  — and where a seat file exists it always wins over any pulled config (tested invariant).
-  A seat with NO seat file still honors a legacy config-mode — but the server-side
-  `memory:replace` scope fence refuses that push without a home token (403, fail-open
-  receipt), and every `bind` strips the mode from the shared config, so the legacy path
-  drains itself. `bind --home` writes the seat file and keeps the shared config mode-free;
-  status names the effective mode and its source. Smokes: cli 28, client 29, all green.
+- Add the `replace` verb: one home seat per user may hand the hosted service
+  its consolidated memory verbatim instead of union-merging, so removed lines
+  finally stay removed. `sync.mode: "replace"` routes the session-end push to
+  `/sync/replace`; `bind <endpoint> --home` sets it; status names the seat mode;
+  re-binding without the flag never demotes a home. Server side the verb is
+  scope-gated (`memory:replace`) with a wipe guard: replacing non-empty state
+  with empty is refused whole. Memory bound raised from 2,200 to 3,000
+  characters.
+- Keep the home mode out of git: it now lives in the gitignored seat file
+  `.nogra/memory/sync/mode`, which always wins over pulled config. A seat
+  without a seat file still honors a legacy config mode, but the server-side
+  scope fence refuses that push without a home token, and every `bind` strips
+  the mode from the shared config.
 
 ## 0.8.1 - 2026-07-13
 
-The sync release: the hosted-brain edges ship as a whole — hooks, client and the human
-handle — so wiring a seat is one command, never a hand-built bridge. Proven the day it
-was cut: the first machine to move in this way was our own dev seat, its own
-hooks pulling the brain on their very first run, 6/6 green.
-
-- **`/nogra:sync` — sync as a function, not a terminal incantation.** One skill, five
-  verbs, all backed by `scripts/sync-cli.mjs`: `status` (enabled, endpoint, token
-  PRESENCE, last pull/push, cursor, inbox depth, recent receipts — facts, not vibes),
-  `pull` / `push` on demand (fail-open, receipt per run, never re-run to "make it
-  green"), `bind <endpoint>` (wires a seat: enables sync, HTTPS-only with refusal,
-  preserves every foreign config key, leaves a receipt), and `off` (disable, keep the
-  endpoint). The binding contract: **the token never passes through the model** — not
-  as an argument, not in output, not in chat; status reports presence only, and storing
-  the value is the operator's own hand. If the last push says over-budget, the skill
-  says what it means (the home consolidates; remote surfaces only remember) instead of
-  hiding it. 22 offline smoke checks (`smoke-sync-cli.mjs`) incl. the negatives:
-  plain-http refusal, uninitialized workspace, token-silence under both env and file.
-
-- **The boot order, bound.** A new `boot-order` SessionStart hook: any workspace with existing
-  Nogra state now gets the ground order injected at every session start, regardless of which
-  model answers — checkpoint + tasks, then the ledger tail, then the pinned profile, then THE
-  STANDING AGREEMENT for whatever is about to be touched. Yesterday's agreement is law until the
-  operator changes it; a GO inherits the plan and never authorizes shortcuts around the drawing.
-  Silent on fresh workspaces, static and cache-safe, fail-open. (The covenant's own rule applied
-  to booting: a partner that boots right cannot be a session's mood.)
-
-- **Nogra Sync: the local edges (pull at session start, push at session end).** When
-  `.nogra/config.json` carries `sync.enabled` and a token exists (env `NOGRA_SYNC_TOKEN` or the
-  gitignored `.nogra/memory/sync/token`), the SessionStart hook pulls the hosted brain and
-  union-merges it into the native memory home BEFORE the profile pin reads it, and the SessionEnd
-  hook pushes the two bounded files back — only when they changed (never pay for unchanged
-  state). Remote turns land cursor-gated in `.nogra/memory/sync/inbox.jsonl` as raw material for
-  the next consolidation: remote surfaces may remember; only the home cleans up. OFF by default,
-  TLS-only endpoints, fail-open always (a broken network never breaks a session), and every run
-  — success, skip or failure — leaves a receipt in `.nogra/memory/sync/log.jsonl`. The client
-  mirrors the cloud's union-merge semantics exactly so both sides converge. 21 smoke checks over
-  a stub cloud (`smoke-sync-client.mjs`), including the negatives (bad token, offline, disabled,
-  plain-http refusal), sabotage-tested.
+- Add `/nogra:sync` with five verbs backed by `scripts/sync-cli.mjs`: `status`
+  (enabled, endpoint, token presence, last pull and push, cursor, inbox depth,
+  recent receipts), `pull` and `push` on demand, `bind <endpoint>` (enables sync,
+  HTTPS only, preserves foreign config keys, leaves a receipt) and `off`. The
+  token never passes through the model, in arguments, output or chat; status
+  reports presence only. An over-budget push is explained, not hidden. 22
+  offline smoke checks including the negatives.
+- Add the `boot-order` `SessionStart` hook: any workspace with existing Nogra
+  state gets the ground order injected at session start (checkpoint and tasks,
+  then the ledger tail, then the pinned profile, then the standing agreement
+  for what is about to be touched). Silent on fresh workspaces, static,
+  cache-safe and fail-open.
+- Add the local sync edges: when `.nogra/config.json` carries `sync.enabled` and
+  a token exists (`NOGRA_SYNC_TOKEN` or the gitignored `.nogra/memory/sync/token`),
+  `SessionStart` pulls the hosted memory and union-merges it into the native
+  memory home before the profile pin reads it, and `SessionEnd` pushes the two
+  bounded files back only when they changed. Remote turns land cursor-gated in
+  `.nogra/memory/sync/inbox.jsonl` as raw material for the next consolidation.
+  Off by default, TLS-only endpoints, fail-open, and every run leaves a receipt
+  in `.nogra/memory/sync/log.jsonl`. 21 smoke checks over a stub service.
 
 ## 0.8.0 - 2026-07-10
 
-The memory release: the full Layer-1 loop (a bounded `USER.md` profile, pinned every session,
-maintained by the consolidator) plus the write-loop that keeps durable memory under the load
-window. Graded jointly before release (2 HIGH + 5 minor defects, all found and fixed below).
-
-- **The Layer-1 pin: USER.md loads every session.** If the native memory home holds a `USER.md`
-  (the bounded user profile), the SessionStart hook now pins it into context every session — on
-  top of native auto-memory, never a second copy (the file lives IN the native home). The 1375-char
-  bound is a forcing function, not a shredder: an over-bound profile is pinned whole and flagged
-  for consolidation. 8 new smoke checks (`smoke-memory-load.mjs`), sabotage-tested.
-  **And the write side:** the consolidator contract now MAINTAINS the profile (creates `USER.md`
-  by distilling the user/feedback topic files if missing; keeps it under the bound on every pass),
-  and the workspace CLAUDE.md + README teach Claude to fold durable user facts into it. Read side
-  + write side together = the full Layer-1 loop, smoke-asserted.
-- **The retired `.nogra/memory/local/` store is fully unwired.** Path B (0.7.6) moved durable
-  memory to Claude's native store but left pointers behind: the init-bundle config
-  (`memoryLocal`/`memoryIndex`/`memorySummaries` + a `bootPolicy` hint), the workspaces index
-  template, `boot-context.mjs`'s fallback, and — the sharp edge — `/nogra:create` still scaffolding
-  the dead directory and re-pointing hub configs at it. All retired; 0.7.6's "no longer scaffolded"
-  claim is now true on every path. New negative smokes assert init AND create-project never
-  scaffold or reference it. Sabotage-tested.
-- **Consolidator: archive-full before in-place rewrites.** The role contract now requires copying
-  the untouched original to `memory/archive/<name>-<date>.md` before trimming or merging into any
-  file that stays in the root — compression is never the only surviving copy. Smoke-asserted.
-- **Setup self-check truth-synced (grade catch).** The setup skill's root allow-list still named
-  only `CLAUDE.md`, `inbox/.gitkeep`, `projects/.gitkeep` — predating the two-way inbox (0.7.5) and
-  the bundled brain (0.7.6) — so a literal reading aborted every fresh setup. The rule is now
-  structural (`CLAUDE.md` plus paths under `inbox/`, `projects/`, `brain/` — nothing else at the
-  root) so it cannot drift when a lane gains a file, and the setup preview now names the full
-  package.
-- **README gate copy truth-synced (grade catch).** The hooks section still claimed match reviews
-  "do not send `permissionDecision: allow`" — stale since the 0.7.8/0.7.9 standing-GO ladder. All
-  three gate passages now state the shipped behavior: default = context + one extra ask, the
-  explicit `gate.autoApprove` opt-in is the only allow lane (class + scope + receipt), hard mode
-  can deny, and the gate narrows within Claude Code's permission model, never widens it.
-- **Honest failure messages (grade catches).** A corrupt `.nogra/config.json` now reports
-  "invalid local config (…)" in text status instead of the misleading "not initialized" (the JSON
-  payload already knew). A well-formed but unknown brief id gets a domain message ("no brief with
-  that id — save or promote one first") instead of a raw ENOENT. The README's Node.js 18+ promise
-  is now enforced in code with a clear stop instead of prose-only.
-
-- **The write-loop: bounded memory consolidation, Manager-in-the-middle.** The SessionStart
-  memory bound-check no longer only flags drift — when durable memory grows past what Claude
-  actually loads, it nudges an explicit, bounded consolidation the user approves. On GO the
-  Manager dispatches a new **`nogra:consolidator`** agent that promotes-before-pruning, *moves*
-  (never deletes) superseded notes to `memory/archive/`, and stays scope-fenced (never the
-  money-lane). Never silent, never a hoard — a theory of you, kept under the bound. Smoke-covered
-  (`smoke-consolidator.mjs`, `smoke-memory-load.mjs`), sabotage-tested.
-- **`/nogra:ground` — the re-anchor ritual.** A skill for when a session has drifted: read the
-  plan and state, verify claims against facts (never guess — an absence stated as fact is a lie),
-  put the hat on, match the operator's register, then hand the next decision back. Ground before
-  you propose; the projection is not the truth.
+- Pin `USER.md` every session: if the native memory home holds a bounded user
+  profile, the `SessionStart` hook pins it into context on top of native
+  auto-memory, never as a second copy. An over-bound profile is pinned whole and
+  flagged for consolidation. The consolidator contract now maintains the profile
+  (creates it from the user and feedback topic files if missing, keeps it under
+  the 1,375-character bound), and the workspace `CLAUDE.md` teaches Claude to
+  fold durable user facts into it.
+- Unwire the retired `.nogra/memory/local/` store completely: init-bundle config
+  keys, the workspaces index template, the `boot-context.mjs` fallback and
+  `/nogra:create` scaffolding. Negative smokes assert that init and
+  create-project never scaffold or reference it.
+- Require the consolidator to copy the untouched original to
+  `memory/archive/<name>-<date>.md` before trimming or merging any file that
+  stays in the root.
+- Make the setup self-check structural (`CLAUDE.md` plus paths under `inbox/`,
+  `projects/` and `brain/`, nothing else at the root) and let the setup preview
+  name the full package.
+- Update the README gate copy to the shipped behaviour: default is context plus
+  one extra ask, the explicit `gate.autoApprove` opt-in is the only allow lane,
+  hard mode can deny, and the gate narrows within Claude Code's permission model.
+- Improve failure messages: a corrupt `.nogra/config.json` reports "invalid
+  local config" instead of "not initialized"; an unknown brief id gets a domain
+  message instead of a raw `ENOENT`; the Node.js 18+ requirement is enforced in
+  code with a clear stop.
+- Add the memory write-loop: when durable memory grows past what Claude loads,
+  the `SessionStart` bound check nudges an explicit, bounded consolidation. On
+  GO the Manager dispatches the new `nogra:consolidator` agent, which promotes
+  before pruning and moves (never deletes) superseded notes to `memory/archive/`.
+- Add `/nogra:ground`: read the plan and state, verify claims against facts,
+  match the user's register, then hand the next decision back.
 
 ## 0.7.9 - 2026-07-06
 
-- **The authorize ladder is now a permanent smoke** (`smoke-gate-authorize-ladder.mjs`,
-  authored by the left-lane executor, graded and integrated by SBX). Drives the real
-  PreToolUse hook against temp fixtures and proves all 13 rungs of the standing-GO
-  ladder: no intent asks, opt-in-off skips (never allows), class+scope+opt-in is the
-  only allow, neighbouring classes still ask, scope-miss asks. Registered inside
-  `smoke-local-runtime.mjs`; prints the decision table on every run. Sabotage-tested:
-  flipping any expectation turns the smoke red ("a gate door moved"). Test-only —
-  no runtime behavior change.
+- Add the authorize ladder as a permanent smoke (`smoke-gate-authorize-ladder.mjs`).
+  It drives the real `PreToolUse` hook against temporary fixtures and proves all
+  13 rungs of the standing-GO ladder: no intent asks, opt-in off skips (never
+  allows), class plus scope plus opt-in is the only allow, neighbouring classes
+  still ask, scope miss asks. Test-only; no runtime behaviour change.
 
 ## 0.7.8 - 2026-07-06
 
-- **`/nogra:authorize` can now start the intent it binds to.** The active-intent
-  standing-GO lane shipped with a complete read side (prompt-context injection,
-  gate matching, smokes) but no producer — nothing ever created
-  `.nogra/runtime/active-intent.json`, so authorize always dead-ended on "no
-  running intent" (caught by the left-lane executor hitting the deploy gate).
-  The skill now offers to start a minimal intent (user-confirmed, objective in
-  the user's words, optional scope) using the shape the gate smokes already
-  prove. Fail-closed unchanged: no intent still means the gate asks; without a
-  declared scope the class is skip-only, never auto-allowed.
+- Let `/nogra:authorize` start the intent it binds to. The standing-GO lane
+  shipped with a complete read side but no producer, so authorize always ended
+  on "no running intent". The skill now offers to start a minimal intent
+  (user-confirmed objective, optional scope). Fail-closed behaviour is unchanged:
+  no intent still means the gate asks, and without a declared scope the class is
+  skip-only.
 
 ## 0.7.7 - 2026-07-06
 
-- **Truth-sync: brain/ ships with the workspace.** 0.7.6 folded the brain into
-  the init bundle, but five plugin strings still said "opt-in … never created
-  by default" (post-install message, setup + brain-init skills, both
-  brain/CLAUDE.md contract copies, brain-init manifest purposes). All now state
-  the shipped behavior: brain/ is scaffolded by setup, pull-first, never
-  auto-loaded; `/nogra:brain-init` re-scaffolds it if removed. Behavior
-  unchanged — copy now matches the manifest (caught by the left-lane executor
-  reading the code against the site copy).
+- Align five plugin strings with the shipped behaviour: `brain/` is scaffolded
+  by setup, pull-first, never auto-loaded, and `/nogra:brain-init` re-scaffolds
+  it if removed. No behaviour change.
 
 ## 0.7.6 - 2026-07-06
 
-- The complete package by default: /nogra:setup now scaffolds the full workspace form — CLAUDE.md,
-  .nogra/, the two-way inbox/, projects/, AND the brain/ knowledge vault (raw/ -> wiki/ -> index.md).
-  Brain stays pull-first (loaded only when you bring it in); it just ships with the structure now
-  instead of a separate command.
-- Path B memory: durable memory lives in Claude Code'''s own native Auto Memory
-  (~/.claude/projects/<slug>/memory/) — Claude writes and loads it; Nogra keeps no parallel copy.
-  The SessionStart hook is now a read-only bound-check that flags you to consolidate only when memory
-  drifts past what Claude actually loads. The deprecated .nogra/memory/local/ store is no longer scaffolded.
-- README rewritten to the full package (memory + brain + verify) with the marketplace install command.
-- Pure-local confirmed (no MCP bridge, carried from 0.7.5).
+- Scaffold the complete workspace by default: `/nogra:setup` now writes
+  `CLAUDE.md`, `.nogra/`, the two-way `inbox/`, `projects/` and the `brain/`
+  knowledge vault (`raw/` to `wiki/` to `index.md`). The brain stays
+  pull-first.
+- Move durable memory to Claude Code's native Auto Memory
+  (`~/.claude/projects/<slug>/memory/`). Claude writes and loads it; Nogra keeps
+  no parallel copy. The `SessionStart` hook is now a read-only bound check that
+  flags consolidation only when memory drifts past what Claude loads. The
+  deprecated `.nogra/memory/local/` store is no longer scaffolded.
+- Rewrite the README around the full package (memory, brain, verify) with the
+  marketplace install command.
 
 ## 0.7.5 - 2026-07-06
 
-- The plugin is now **pure local** — removed the MCP bridge (`.mcp.json` +
-  `scripts/mcp-launcher.mjs`). Nothing in hooks, skills, contracts or the local
-  runtime depended on it; briefs, dispatch receipts and verification all run on
-  the bundled local runtime as before. One less moving part, and the privacy
-  line is now literal: the plugin makes zero network calls, full stop.
-- The scaffolded `inbox/` is now the **two-way shared desk**: `screenshots/`
-  and `drops/` (you → Nogra) and `out/` (Nogra → you — receipts, drafts,
-  "ready for GO"; a review tray, not a done tray), plus an `inbox/README.md`
-  and a workspace-CLAUDE.md section so a fresh session understands the loop.
-- README truth-sync: added the missing **Memory** section (deterministic
-  every-session load, 2200/1375 bounds, consolidate-not-hoard, self-learning
-  on correction) and updated setup/install wording to match what setup
-  actually writes.
+- Make the plugin purely local: remove the MCP bridge (`.mcp.json` and
+  `scripts/mcp-launcher.mjs`). Briefs, dispatch receipts and verification run on
+  the bundled local runtime, and the plugin makes zero network calls.
+- Turn the scaffolded `inbox/` into a two-way shared desk: `screenshots/` and
+  `drops/` (user to Nogra) and `out/` (Nogra to user: receipts, drafts, "ready
+  for GO"), with an `inbox/README.md` and a workspace `CLAUDE.md` section.
+- Add the missing Memory section to the README (deterministic every-session
+  load, bounds, consolidate rather than hoard, self-learning on correction) and
+  align setup and install wording with what setup writes.
 
 ## 0.7.4 - 2026-07-06
 
-- Closed the memory loop with self-learning: the scaffolded CLAUDE.md now instructs Claude to write a
-  one-line lesson to MEMORY.md whenever it is corrected or catches its own mistake, so the bounded
-  memory improves every session — self-learning, but bounded (lessons consolidate, never pile up).
+- Close the memory loop with self-learning: the scaffolded `CLAUDE.md`
+  instructs Claude to write a one-line lesson to `MEMORY.md` whenever it is
+  corrected or catches its own mistake. Lessons consolidate; they never pile up.
 
 ## 0.7.3 - 2026-07-05
 
-- Added a bounded memory layer: .nogra/memory/local/MEMORY.md (<=2200 chars) and USER.md
-  (<=1375) load into every session deterministically via a SessionStart hook; the bound is
-  enforced on read (oldest content drops when full). Claude does the remembering; Nogra owns
-  the bound. Self-contained (no extra runtime).
+- Add a bounded memory layer: `.nogra/memory/local/MEMORY.md` (at most 2,200
+  characters) and `USER.md` (at most 1,375) load into every session through a
+  `SessionStart` hook. The bound is enforced on read. Claude does the
+  remembering; Nogra owns the bound.
 
 ## 0.7.2 - 2026-07-05
 
-- Removed the clickable `[Open brief](file://...)` link from the brief approval
-  flow: Claude Code's file viewer excludes hidden dot-directories, so a link
-  into `.nogra/` can never open — it was a promise no click could keep. The
-  brief stays in `.nogra/briefs/` (trust-state, not relocated); the inline
+- Remove the clickable `[Open brief](file://...)` link from the brief approval
+  flow. Claude Code's file viewer excludes hidden directories, so a link into
+  `.nogra/` could never open. The brief stays in `.nogra/briefs/`, the inline
   approval artifact is the review surface, and the brief is referenced by id
-  with its path as plain code text.
-- Docs: the MCP layer section now reflects the npx-first launcher (Node/npx is
-  always present, so no uv/Python is required) — matching the shipped behavior.
+  with its path as plain text.
+- Update the MCP layer documentation to the npx-first launcher.
 
 ## 0.7.1 - 2026-07-05
 
-- Fixed: the brain-init skill + contracts (skills/brain-init/, contracts/brain-init/)
-  were dropped from the 0.7.0 marketplace build; /nogra:brain-init now works on a fresh install.
+- Restore the `brain-init` skill and contracts that were dropped from the 0.7.0
+  marketplace build. `/nogra:brain-init` works on a fresh install again.
 
 ## 0.7.0 - 2026-07-04
 
-- Fresh installs now scaffold a **thin hub by default**: empty `inbox/` and
-  `projects/` folders (each a single `.gitkeep`) land next to `.nogra/` and
-  root `CLAUDE.md`, so incoming files and hub sub-projects have a home from
-  day one. Same `create_if_missing` convention as the other lanes; existing
+- Scaffold a thin hub by default on fresh installs: empty `inbox/` and
+  `projects/` folders next to `.nogra/` and the root `CLAUDE.md`. Existing
   folders are never touched.
-- Added the **`/nogra:brain-init` skill**: scaffolds an opt-in empty `brain/`
-  knowledge vault (`raw/`, `wiki/`, `index.md`, thin pull-first
-  `brain/CLAUDE.md`) on demand via the local runtime's new `brain-init`
-  command. Never created by setup, never auto-loaded, idempotent — a second
-  run preserves everything and writes nothing. Setup output and the shipped
-  workspace `CLAUDE.md` mention it in one line each.
-- Trimmed the shipped workspace `CLAUDE.md` (143 -> 93 lines) and
-  `.nogra/README.md` (21 -> 12 lines) to minimum lines without dropping any
-  rule.
-- Added the **MCP bridge**: the plugin now carries Nogra's own MCP server with
-  it. A plugin-root `.mcp.json` registers the server automatically on install,
-  exposing the 32 public tools (briefs, transport, registry, events, redaction)
-  in public mode — private/dev-lane tools are excluded at the server boundary.
-  The server ships separately as `nogra-mcp` on PyPI; the plugin only points at
-  it, it does not vendor it.
-- Added the **MCP launcher** (`scripts/mcp-launcher.mjs`) between `.mcp.json`
-  and the server: resolves a runner from PATH — `npx` first, `uvx` second,
-  `pipx` third — and when none exists prints exactly one instruction line on
-  stderr and exits non-zero. `npx` is tried first because Node (and therefore
-  `npx`) is always present wherever Claude Code runs, while `uv`/`pipx` are
-  not; npm's `@nograai/mcp` ships standalone platform binaries, so the npx
-  rung needs no Python at all. `uvx`/`pipx` remain as fallbacks for the PyPI
-  `nogra-mcp` package. It never auto-installs anything and never touches the
-  network itself; signals are forwarded and the server's exit code passes
-  through on every rung.
-- Added a **verify-nudge config toggle**: `verifyNudge: "off"` in
-  `.nogra/config.json` turns the observe-only Stop nudge off for that
-  workspace. An OFF switch, not an amputation — the default stays ON for every
-  install, the hook stays fail-open, and only the exact value `"off"` disables
-  it.
-- Added the **run-scratch WRITE-OPS coverage class** to the gate escalation
-  ladder: after GO, a dispatched run's own scratch housekeeping no longer
-  raises a raw operator ask. The class is a fixed allowlist of pure file-op
-  binaries (`rm`, `rmdir`, `mkdir`, `mv`, `cp`, `touch`) plus direct
-  `Edit`/`Write`/`MultiEdit` tool calls, and only when EVERY resolved target
-  sits inside the dispatch receipt's declared `scratchRoots`. Purely
-  deterministic — allowlist membership plus path containment; zero model
-  judgment.
-- **Exec is fail-closed**: interpreters and arbitrary binaries (`node`,
-  `python3`, `sh`, `npx`, `uvx`, ...) are never eligible for run-scratch
-  coverage and ask exactly as before, even when every path argument is inside
-  a scratch root — an exec's effects are not bounded by its argument paths.
-  Compound, piped and redirected commands are fail-closed the same way: any
-  Bash command that is not a single plain invocation of an allowlisted
-  write-op binary is never eligible.
-- **Escape containment**: targets are `..`-normalized and symlink-normalized
-  BEFORE prefix-matching against declared roots; any target resolving outside
-  the roots asks, and `mv`/`cp` crossing the scratch boundary in either
-  direction asks. Unresolvable tokens (`$VAR`, `~`, globs, braces) on a
-  scratch path can never count as inside and ask.
-- The dispatch receipt now declares a deterministic additive `scratchRoots`
-  list at dispatch time: the run's own artifacts dir by default, plus any
-  roots passed via the repeatable `--scratch-root` flag (normalized and
-  deduped). A root that cannot be named deterministically is omitted, never
-  approximated.
-- **Citation surface**: every auto-approval — the existing receipt scope-match
-  class AND the new run-scratch class — now carries the grep-provable citation
-  `approved <action> — in scope of your GO, receipt <runId>` in its decision
-  reason.
-- Unchanged, locked: gate-arming/arm-self-gate (still never auto-approvable,
-  still evaluated before run-scratch), non-goal precedence, hard mode,
-  never-auto-approvable classes, gray-zone always-ask, and the default
-  `gate.autoApprove` OFF behavior (byte-identical for default workspaces).
-- Added **auto-approval** (opt-in, default OFF — `gate.autoApprove` must be
-  explicitly `true`). When a tool call falls within the scope of an approved,
-  active dispatch receipt, the convergence gate can let it flow instead of
-  re-asking — a GO that already covers the action. Every auto-approval carries
-  a citation back to its receipt; nothing is trusted, it is enforced against a
-  boundary the human set in the brief. The gate is purely deterministic:
-  receipt provenance decides, with zero model judgment in the decision path;
-  anything outside the mechanical boundary/scope match always asks.
-- Added the **arm-self-gate**: writes to `.nogra/config.json` (where standing
-  delegations are armed) are *never* auto-approvable. Arming the gate always
-  requires explicit human review — deterministically, regardless of any
-  receipt. Elevation is never self-conferred, including elevation of the gate
-  itself.
-- Added **delegation visibility**: when auto-approval is enabled, the boot
-  context and statusline name it (`gateDelegations`); byte-absent when off.
-  A standing delegation can never be silent.
+- Add `/nogra:brain-init`: scaffolds an opt-in, empty `brain/` knowledge vault
+  (`raw/`, `wiki/`, `index.md`, a thin pull-first `brain/CLAUDE.md`).
+  Idempotent; a second run writes nothing.
+- Trim the shipped workspace `CLAUDE.md` (143 to 93 lines) and `.nogra/README.md`
+  (21 to 12 lines) without dropping a rule.
+- Add the MCP bridge: a plugin-root `.mcp.json` registers Nogra's MCP server on
+  install, exposing the 32 public tools. The server ships separately as
+  `nogra-mcp`; the plugin points at it and does not vendor it.
+- Add the MCP launcher (`scripts/mcp-launcher.mjs`): resolves a runner from
+  PATH (`npx` first, then `uvx`, then `pipx`) and, when none exists, prints one
+  instruction line and exits non-zero. It never auto-installs anything and never
+  touches the network itself.
+- Add the `verifyNudge: "off"` config toggle to turn the observe-only `Stop`
+  nudge off per workspace. The default stays on.
+- Add the run-scratch write-ops coverage class to the gate escalation ladder:
+  after GO, a dispatched run's own scratch housekeeping no longer raises an ask.
+  The class is a fixed allowlist of file-op binaries (`rm`, `rmdir`, `mkdir`,
+  `mv`, `cp`, `touch`) plus direct `Edit` / `Write` / `MultiEdit` calls, and
+  only when every resolved target sits inside the receipt's declared
+  `scratchRoots`. Interpreters, arbitrary binaries and compound, piped or
+  redirected commands are never eligible. Targets are `..`- and
+  symlink-normalized before prefix matching; unresolvable tokens can never count
+  as inside.
+- Declare a deterministic `scratchRoots` list on dispatch receipts: the run's
+  own artifacts directory plus any `--scratch-root` flags.
+- Cite every auto-approval in its decision reason:
+  `approved <action> — in scope of your GO, receipt <runId>`.
+- Add opt-in auto-approval (`gate.autoApprove`, default off): when a tool call
+  falls within the scope of an approved, active dispatch receipt, the
+  convergence gate lets it flow instead of re-asking. The decision is
+  deterministic; anything outside the mechanical boundary and scope match asks.
+- Add the arm-self-gate: writes to `.nogra/config.json` are never
+  auto-approvable, regardless of any receipt.
+- Name active delegations in the boot context and statusline (`gateDelegations`);
+  absent when off.
 
 ## 0.6.9 - 2026-06-26
 
-- Added an observe-only `Stop` verify-nudge: when a session ends on a completion
-  claim (verified / all passed / done / tests green / safe to merge) and no
-  Nogra verification ran this session, Nogra emits one non-blocking line
-  suggesting `/nogra:verify`. It never blocks the stop, never re-prompts the
-  model, and fires at most once per session — a preference signal, not a gate.
-- Made cross-model verify the default: under the default runtime profile the
-  verifier resolves to a different model than the executor, so the "done" check
-  is less likely to inherit the executor's blind spots. Claude Code's native
-  `/model` remains the source of truth; pinning a single model overrides it.
-- Added `/nogra:authorize` to authorize recognized action classes (e.g.
-  git-history) so the convergence gate stops re-asking about an approved class;
-  reversible at any time with `revoke` / `clear`.
-- Corrected stale post-compact test assertions left by the 0.6.8 SessionStart
-  re-homing so the smoke and routing-preconditions tests assert the shipped
-  design (post-compact on the `SessionStart`/`compact` channel, `hookEventName`
-  "SessionStart"); polished public docs wording. No change to published 0.6.8
-  runtime behavior.
+- Add an observe-only `Stop` verify nudge: when a session ends on a completion
+  claim and no Nogra verification ran, emit one non-blocking line suggesting
+  `/nogra:verify`. It never blocks, never re-prompts and fires at most once per
+  session.
+- Make cross-model verification the default: under the default runtime profile
+  the verifier resolves to a different model than the executor. Claude Code's
+  native `/model` remains the source of truth.
+- Add `/nogra:authorize` to authorize recognized action classes so the
+  convergence gate stops re-asking about an approved class; reversible with
+  `revoke` and `clear`.
+- Correct stale post-compact test assertions left by the 0.6.8 `SessionStart`
+  re-homing. No runtime change.
 
 ## 0.6.8 - 2026-06-19
 
-- Normalized terminal finalize-run workspace identity so returned/cancelled
-  ledger and transport events use the run/config workspace id instead of falling
-  back to generic `local` when finalize input omits `workspaceId`.
-- Added smoke coverage proving terminal run state, ledger events and transport
-  events preserve the same workspace id.
+- Normalize workspace identity on terminal finalize-run events so returned and
+  cancelled ledger and transport events use the run's workspace id instead of a
+  generic `local` fallback.
+- Add smoke coverage for workspace-id preservation across terminal run state,
+  ledger events and transport events.
 
 ## 0.6.7 - 2026-06-18
 
-- Added public test isolation diagnostics for private Nogra lanes such as
-  `nogra-private-beta`. Normal local dogfood remains a non-blocking warning,
-  while strict public-grade mode can block private-lane collisions before a
-  public plugin rehearsal is trusted.
-- Documented isolated public plugin testing for users who also dogfood private
-  Nogra lanes on the same machine.
-- Made `SessionStart` and `PostCompact` prefix context cache-safe by removing
-  per-turn ledger, checkpoint, receipt and index state from model-context hook
-  output while preserving local state pointers.
-- Added smoke and lifecycle coverage that proves cache-safe hook output omits
-  volatile prefix fields and stays byte-identical after ledger/run mutations.
-- Guided the brief skill to use main-loop `AskUserQuestion` for bounded
-  risk-intake batches and route-choice questions already present in the brief
-  flow.
-- Kept `PreToolUse` convergence checks and execution GO behavior unchanged;
-  GO remains an explicit chat act before dispatch, never a modal question.
+- Add public test-isolation diagnostics for private plugin lanes: local development use
+  remains a non-blocking warning, while strict public-grade mode can block a
+  private-lane collision before a public rehearsal is trusted.
+- Document isolated public plugin testing for users who also run private lanes
+  on the same machine.
+- Make `SessionStart` and `PostCompact` prefix context cache-safe by removing
+  per-turn ledger, checkpoint, receipt and index state from hook output while
+  preserving local state pointers, with smoke coverage proving the output stays
+  byte-identical after ledger and run mutations.
+- Guide the brief skill to use main-loop `AskUserQuestion` for bounded
+  risk-intake batches and route-choice questions.
+- Keep `PreToolUse` convergence checks and GO behaviour unchanged: GO remains an
+  explicit chat act before dispatch, never a modal question.
 
 ## 0.6.6 - 2026-06-17
 
-- Added a thin intent-router contract to help/reference docs, the bundled
-  workspace `CLAUDE.md` and reviewer README: explicit Nogra intent maps to the
-  matching skill, while ordinary work stays direct.
-- Added Nogra match reviews at deterministic `PreToolUse` action boundaries
-  without replacing Claude Code permission decisions.
-- Added local live hook/event observability under `.nogra/runtime/` and
-  `/nogra:watch` so operators can inspect recent Claude Code hook events without
-  storing prompt bodies, tool output, file contents or full shell commands.
-- Added a read-only statusline projector that reuses the local `/nogra:status`
-  payload and fails open instead of maintaining separate state.
-- Added deterministic review for instruction-surface writes such as `CLAUDE.md`,
-  `.claude` instruction subpaths, `SKILL.md`, plugin manifests and Nogra plugin
-  hooks.
-- Added Nogra's five-anchor local index and status metadata for risk intake,
-  behavior score, connections/risk registry, decision shape and expansion
+- Add Nogra match reviews at deterministic `PreToolUse` action boundaries
+  without replacing Claude Code's permission decisions.
+- Add local live hook and event observability under `.nogra/runtime/` and
+  `/nogra:watch`, without storing prompt bodies, tool output, file contents or
+  full shell commands.
+- Add a read-only statusline projector that reuses the `/nogra:status` payload
+  and fails open.
+- Add deterministic review for instruction-surface writes such as `CLAUDE.md`,
+  `.claude` instruction subpaths, `SKILL.md`, plugin manifests and Nogra hooks.
+- Add the five-anchor local index and status metadata for risk intake,
+  behaviour score, connections and risk registry, decision shape and expansion
   guidance.
-- Added dispatch sizing, agentic loop return handling and plain
-  partial/blocked continuation language when a runtime turn limit stops work
-  before a normal executor or verifier report.
-- Added skill quality gates, gotcha references and Bash-safe absolute-path
-  command recipes across setup, brief, dispatch, verify, create, update and
-  status flows.
-- Hardened public executor/verifier Agent contracts with explicit tool
-  allowlists that omit nested subagent spawn, context-bundle/prior-finding
-  handoff guidance and smoke assertions for the public no-nested-spawn wall.
-- Added `psql` mutation detection, read-only inspection softening, conservative
-  public fetch handling and production deploy detection to the local
-  convergence gate.
-- Added explicit off/uninstall guidance and clarified privacy/help copy so users
-  get workspace-vs-plugin answers and pull-first behavior stays clear.
-- Gave user-invocable skills lowercase `nogra-*` display labels while
-  preserving `/nogra:<skill>` command paths from their skill directories.
-- Aligned `/nogra:status`, `/nogra:adapt`, setup files and continuity docs with
-  the current `.nogra/state/*` and five-anchor local layout.
-- Removed core automatic-offer scoring, sensitivity controls and the PreToolUse
-  command tripwire. Nogra core is now pull-first: explicit `/nogra:*` requests
-  start Nogra flows, ordinary work stays direct, and Claude Code's native
-  permission model remains responsible for tool permissions.
-- Simplified core hooks to session boot context and workspace-hub project
-  focus only.
-- Split lifecycle state across event-aware hooks: `SessionStart` no longer
-  matches compact, `PostCompact` emits only a thin continuity pointer, and
-  `SessionEnd` silently updates the local session anchor.
-- Added init migration cleanup for obsolete automatic-offer routing controls in
-  existing `.nogra/config.json` files while preserving language/runtime values.
-- Removed separate brief/workspace release-version fields from fresh records,
-  schemas, init config and status output. The plugin version is now the product
-  release identity; schema ids remain the artifact-format contracts.
+- Add dispatch sizing, agentic-loop return handling and plain partial or
+  blocked continuation language when a runtime turn limit stops work early.
+- Add skill quality gates, gotcha references and Bash-safe absolute-path command
+  recipes across the setup, brief, dispatch, verify, create, update and status
+  flows.
+- Harden public executor and verifier agent contracts with explicit tool
+  allowlists that omit nested subagent spawn.
+- Add `psql` mutation detection, read-only inspection softening, conservative
+  public fetch handling and production deploy detection to the convergence gate.
+- Add explicit off and uninstall guidance and clarify privacy and help copy.
+- Give user-invocable skills lowercase `nogra-*` display labels while preserving
+  `/nogra:<skill>` command paths.
+- Align `/nogra:status`, `/nogra:adapt`, setup files and continuity docs with the
+  current `.nogra/state/*` layout.
 
 ## 0.6.5 - 2026-06-08
 
-- Added a thin intent-router contract to help/reference docs, the bundled
-  workspace `CLAUDE.md` and reviewer README: explicit Nogra intent maps to the
-  matching skill, while ordinary work stays direct.
-- Restored the public plugin display name to lowercase `nogra workflow` across
-  marketplace manifests so Claude Code menus match the intended listing label.
-- Removed core automatic-offer scoring, sensitivity controls and the PreToolUse
-  command tripwire. Nogra core is now pull-first: explicit `/nogra:*` requests
-  start Nogra flows, ordinary work stays direct, and Claude Code's native
-  permission model remains responsible for tool permissions.
-- Simplified core hooks to session boot context and workspace-hub project
-  focus only.
+- Add a thin intent-router contract to the help docs, the bundled workspace
+  `CLAUDE.md` and the README: explicit Nogra intent maps to the matching skill,
+  while ordinary work stays direct.
+- Restore the public plugin display name to lowercase `nogra workflow`.
+- Remove automatic-offer scoring, sensitivity controls and the `PreToolUse`
+  command tripwire. Nogra is pull-first: explicit `/nogra:*` requests start
+  Nogra flows, ordinary work stays direct, and Claude Code's native permission
+  model remains responsible for tool permissions.
+- Simplify core hooks to session boot context and workspace-hub project focus.
 - Split lifecycle state across event-aware hooks: `SessionStart` no longer
   matches compact, `PostCompact` emits only a thin continuity pointer, and
   `SessionEnd` silently updates the local session anchor.
-- Added init migration cleanup for obsolete automatic-offer routing controls in
-  existing `.nogra/config.json` files while preserving language/runtime values.
-- Removed separate brief/workspace release-version fields from fresh records,
-  schemas, init config and status output. The plugin version is now the product
-  release identity; schema ids remain the artifact-format contracts.
+- Add init migration cleanup for obsolete automatic-offer routing controls in
+  existing `.nogra/config.json` files.
+- Remove separate brief and workspace release-version fields. The plugin version
+  is the product release identity; schema ids remain the artifact-format
+  contracts.
 
 ## 0.6.3 - 2026-06-07
 
-- Changed brief sizing preview from a binary user prompt into a three-level
-  Manager surface: `silent`, `inform`, or `ask`.
-- Added Manager-owned split guidance with linked-versus-parallel criteria and
-  explicit escalation criteria for when sizing must be shown to the user.
-- Added `operatorDecomposed` preview deduplication so a phase that was already
-  split in the same brief flow does not re-ask on coupled follow-up work, while
-  clamped work still requires user confirmation.
+- Change the brief sizing preview from a binary prompt into a three-level
+  Manager surface: `silent`, `inform` or `ask`.
+- Add Manager-owned split guidance with linked-versus-parallel criteria and
+  explicit escalation criteria for when sizing must be shown.
+- Add `operatorDecomposed` preview deduplication so an already-split phase does
+  not re-ask on coupled follow-up work.
 
 ## 0.6.2 - 2026-06-07
 
-- Promoted the clean Continue/project-focus path validated on live BoligScout:
-  workspace-hub boot stays thin, project questions use the Nogra workspace
-  index, and project focus reads the selected project's local checkpoint only
-  after the user chooses it.
-- Extended SessionStart continuity context with ledger watermarks and checkpoint
-  freshness so resumed sessions can distinguish fresh checkpoints from stale
-  projections without loading full project state.
-- Added local-language no-Nogra bypass handling and kept automatic Nogra offers
-  advisory: scoped work stops for a brief/direct choice, while pure questions
-  stay direct.
+- Keep workspace-hub boot thin: project questions use the workspace index, and
+  project focus reads the selected project's local checkpoint only after the
+  user chooses it.
+- Extend `SessionStart` continuity context with ledger watermarks and
+  checkpoint freshness so resumed sessions can tell fresh checkpoints from
+  stale projections without loading full project state.
+- Add local-language no-Nogra bypass handling and keep automatic offers
+  advisory.
 
 ## 0.6.1 - 2026-06-06
 
-- Added `ledger-smoke` as a bounded diagnostic command for testing local ledger
-  watermarks without creating brief artifacts or touching app code.
-- Clarified then-current status wording around plugin and workspace version
-  fields.
-- Removed blank `source` and `model` fields from session-anchor writes when the
+- Add `ledger-smoke` as a bounded diagnostic for local ledger watermarks.
+- Clarify status wording around plugin and workspace version fields.
+- Omit blank `source` and `model` fields from session-anchor writes when the
   hook input does not provide them.
 
 ## 0.6.0 - 2026-06-06
 
-- Updated `/nogra:status` guidance to surface local continuity migration state
-  and point prior-layout workspaces at `/nogra:setup` for a merge-only layout
-  update.
+- Surface local continuity migration state in `/nogra:status` and point
+  prior-layout workspaces at `/nogra:setup` for a merge-only layout update.
 
 ## 0.5.9 - 2026-06-06
 
-- Added compatibility status for prior-layout local workspaces: missing
-  `routingPolicy` and `runtimePolicy` now resolve visibly to release defaults
-  instead of appearing as null runtime state.
-- Added setup migration for existing checkpoints without `SourceWatermark` and
-  existing workspaces without the `.nogra/ledger/` continuity lane.
-- Extended local runtime smoke with a prior-layout workspace migration case.
+- Resolve missing `routingPolicy` and `runtimePolicy` visibly to release
+  defaults for prior-layout workspaces.
+- Add setup migration for checkpoints without `SourceWatermark` and workspaces
+  without the `.nogra/ledger/` lane.
+- Extend the local runtime smoke with a prior-layout migration case.
 
 ## 0.5.8 - 2026-06-06
 
-- Added local session continuity anchors: existing hooks capture `sessionId` and a
+- Add local session continuity anchors: hooks capture `sessionId` and a
   transcript anchor into bounded local runtime state without reading transcript
   contents.
-- Added append-only `.nogra/ledger/` events with monotonic `ledgerWatermark`
+- Add append-only `.nogra/ledger/` events with monotonic `ledgerWatermark`
   values for brief, dispatch, verification and terminal run records.
-- Added checkpoint freshness reporting by comparing checkpoint `SourceWatermark`
-  with the current ledger watermark, so boot/status can detect stale projections
-  deterministically.
+- Report checkpoint freshness by comparing the checkpoint `SourceWatermark` with
+  the current ledger watermark.
 
 ## 0.5.7 - 2026-06-05
 
-- Added reviewer-facing working examples and sample workspaces for Anthropic
-  submission: setup, build a small local task tracker, and save a local
-  checkpoint.
-- Added README no-data and support guidance for the local-only plugin: no
-  account, no network calls, nothing collected, stored or shared by Nogra.
-- Promoted the public listing copy to `Nogra workflow` with the concise
-  approve-run-verify description.
+- Add reviewer-facing working examples and sample workspaces: setup, build a
+  small local task tracker, save a local checkpoint.
+- Add README no-data and support guidance: no account, no network calls,
+  nothing collected, stored or shared by Nogra.
+- Promote the public listing copy to `Nogra workflow` with the approve, run,
+  verify description.
 
 ## 0.5.6 - 2026-06-05
 
-- Added promoted brief file-link metadata so approval returns can show a bare
-  `[Open brief](file://...)` markdown link with URL-encoded local paths, without
-  editor-specific schemes, line-number suffixes or code-span wrapping.
+- Add promoted brief file-link metadata so approval returns can show a plain
+  `[Open brief](file://...)` link with URL-encoded local paths.
 
 ## 0.5.5 - 2026-06-05
 
-- Made local root resolution command-aware: setup commands target the requested
-  directory even when a parent `.nogra/` exists, while existing workspace
-  control-plane and ledger commands still resolve nested paths to the nearest
-  parent `.nogra/` workspace.
+- Make local root resolution command-aware: setup targets the requested
+  directory even when a parent `.nogra/` exists, while control-plane and ledger
+  commands resolve nested paths to the nearest parent workspace.
 
 ## 0.5.4 - 2026-06-05
 
-- Hardened local runtime root resolution so control-plane and ledger calls from
-  nested working directories resolve to the nearest parent `.nogra/` workspace
-  while fresh setup still falls back to the requested root when no `.nogra/`
-  exists.
+- Resolve control-plane and ledger calls from nested working directories to the
+  nearest parent `.nogra/` workspace, while fresh setup falls back to the
+  requested root.
 
 ## 0.5.3 - 2026-06-05
 
-- Promoted the reconciled runtime, setup and create-project payload under a
-  fresh version key so installs already on 0.5.2 receive the routing fixes and
-  expanded local workspace layout cleanly.
+- Republish the reconciled runtime, setup and create-project payload under a
+  fresh version so installs on 0.5.2 receive the routing fixes cleanly.
 
 ## 0.5.2 - 2026-06-04
 
-- Added a read-only draft brief sizing preview before brief save/promote, so
-  oversized work can be split or reduced before approval while dispatch remains
-  the authority for concrete `executionMaxTurns`.
+- Add a read-only draft brief sizing preview before save and promote, so
+  oversized work can be split before approval.
 
 ## 0.5.1 - 2026-06-03
 
-- Added Manager-derived execution sizing after brief approval and carried the
-  resulting max-turn budget through dispatch and handoff.
-- Added safe-continuation reporting for pre-flight blocks, so a blocked
-  executor can return the safe route without executing past the stop criterion.
-- Recentered verification on independent tree/artifact/command evidence:
-  executor self-reports are claim surfaces, whether complete, truncated or
-  missing.
+- Derive execution sizing after brief approval and carry the max-turn budget
+  through dispatch and handoff.
+- Add safe-continuation reporting for pre-flight blocks.
+- Recenter verification on independent tree, artifact and command evidence;
+  executor self-reports are claims.
 
 ## 0.4.3 - 2026-05-28
 
-- Lowercased the `unverified` verification verdict across dispatch and verify
-  surfaces so it matches the rest of the product-surface verdict words.
-- Added a verify-phase forcing reason for every non-ship verdict: what is
-  missing, deviating or blocking, and what evidence would move the result to
-  ship.
-- Added an additive local-runtime backstop that preserves fine-grained
-  `verdict` and `reason` fields on validation records and refuses to record a
-  non-ship verification without a reason.
+- Lowercase the `unverified` verification verdict to match the other verdict
+  words.
+- Require a reason on every non-ship verdict: what is missing, deviating or
+  blocking, and what evidence would move the result to ship.
+- Preserve fine-grained `verdict` and `reason` fields on validation records and
+  refuse to record a non-ship verification without a reason.
 
 ## 0.4.2 - 2026-05-28
 
-- Reworked the README and listing hook into plain-language newcomer framing:
-  approve a short plan, run it, then verify the result against that plan.
-- Corrected install guidance with the real setup order, explicit Node.js 18+
-  prerequisite and a setup pre-flight guard that stops cleanly before writing
-  partial files when Node is unavailable.
-- Made skill descriptions and runtime vocabulary more user-facing by defining
-  "Manager phase", moving the sensitivity formula out of the user flow and
-  keeping skill intent readable in command surfaces.
-- Reconciled the brief Handoff-Line guidance with the compact approval surface
-  and added a dispatch confirmation example for the reduced chat print.
-- Fixed manifest metadata drift from
-  `manager/nogra-public-readiness-audit-0.4.1-2026-05-28.md`: owner/author
-  email now uses the Nogra domain, repository metadata points at
-  `nograai/nogra-claude-marketplace`, and source/nested marketplace manifests
-  use the `nogra-claude` marketplace name.
+- Rewrite the README and listing hook in plain newcomer language: approve a
+  short plan, run it, verify the result against that plan.
+- Correct install guidance with the real setup order, an explicit Node.js 18+
+  prerequisite and a pre-flight guard that stops before writing partial files.
+- Define "Manager phase" and keep skill intent readable in command surfaces.
+- Reconcile the brief handoff guidance with the compact approval surface.
+- Fix manifest metadata: owner and author email, repository metadata and the
+  `nogra-claude` marketplace name.
 
 ## 0.4.1 - 2026-05-28
 
-- Tightened brief and dispatch skill output rules so full brief payloads and
-  dispatch telemetry stay in local `.nogra/` artifacts while chat receives the
-  compact approval or dispatch confirmation surface.
-- Rephrased brief-contract guidance so the contract remains the authority for
-  payload shape instead of hardcoding the public schema name in prose.
-- Added a runtime-profile glossary entry to keep model/effort preferences
-  distinct from the bundled local runtime scripts.
+- Keep full brief payloads and dispatch telemetry in local `.nogra/` artifacts
+  while chat receives the compact approval or dispatch confirmation.
+- Let the brief contract remain the authority for payload shape.
+- Add a runtime-profile glossary entry.
 
 ## 0.4.0 - 2026-05-27
 
-- Promoted the Brief #4 structural release: removed the default statusline
-  bundle, offer skill and playbook/version-field surfaces from the plugin
-  payload while keeping `/nogra:status` available.
+- Remove the default statusline bundle, the offer skill and the playbook and
+  version-field surfaces from the plugin payload while keeping `/nogra:status`.
 - Split dense skill material into references for setup, status, brief and
-  dispatch guidance, reducing default skill-body load without removing the
-  underlying workflow contracts.
-- Kept toggle handling mechanical through `/nogra:on` and `/nogra:off`, with
-  hooks surfacing visible context while skills own config writes.
-- Applied contextual Manager-role wording so internal phase guidance is precise
-  while agent-facing role anchors remain addressable.
+  dispatch.
+- Keep toggle handling mechanical through `/nogra:on` and `/nogra:off`.
+- Apply contextual Manager-role wording.
 
 ## 0.3.5 - 2026-05-27
 
-- Cleaned live wording surfaces across README, setup, adapt, settings, help,
-  routing, brief, dispatch, verify and statusline guidance.
-- Removed hardcoded sensitivity-step examples, duplicate verification wording,
-  deploy from the offer topic gate, provider-specific brand leakage and
-  internal claim-strength vocabulary from user-facing guidance.
-- Rephrased defensive copy into positive user-facing instructions while keeping
-  Nogra's explicit brief, dispatch, evidence and verification behavior intact.
+- Clean wording across README, setup, adapt, settings, help, routing, brief,
+  dispatch, verify and statusline guidance.
+- Remove hardcoded sensitivity-step examples, duplicate verification wording,
+  provider brand leakage and internal claim-strength vocabulary from
+  user-facing guidance.
 
 ## 0.3.4 - 2026-05-26
 
-- Fixed preflight guard integrity: natural-language guard assertions now run
-  case-insensitively, while canonical `NOGRA_*` symbol checks remain
-  case-sensitive.
-- Re-ran the hardened guard and cleaned setup/help/runtime wording that the
-  previous case-sensitive modal phrase check missed.
-- Extended negative-test discipline to cover lowercase, sentence-start-capital
-  and uppercase variants for natural-language guard patterns.
+- Run natural-language pre-flight guard assertions case-insensitively while
+  `NOGRA_*` symbol checks stay case-sensitive.
+- Clean setup, help and runtime wording the previous check missed.
 
 ## 0.3.3 - 2026-05-26
 
-- Added glossary definition of "local runtime" in
-  `skills/help/references/runtime.md`: local runtime means the plugin-bundled
-  scripts under `scripts/` that maintain `.nogra/` workspace state.
-- Standardized vocabulary: replaced redundant "plugin-local runtime" with
-  canonical "local runtime" across skills, contracts and hooks. The
-  plugin-bundling is implicit in the defined term.
-- Extended preflight checks to enforce no bare "plugin-local runtime" in public
-  docs mechanically.
+- Define "local runtime" in `skills/help/references/runtime.md`: the
+  plugin-bundled scripts under `scripts/` that maintain `.nogra/` state.
+- Standardize the vocabulary across skills, contracts and hooks.
 
 ## 0.3.2 - 2026-05-26
 
-- Removed internal-experimental vocabulary from public skill docs: persona and
-  research references in `skills/verify/SKILL.md` replaced with neutral
-  equivalents.
-- Swept skill, contract, agent, and hook docs for other persona-names,
-  research terms, private evaluation vocabulary, and project-codename leaks;
-  applied fixes where found.
-- Extended preflight checks to enforce no-internal-experimental-vocab in public
-  docs mechanically, excluding CHANGELOG, LICENSE and NOTICE historical
-  exemptions.
+- Remove experimental vocabulary from public skill docs and sweep skill,
+  contract, agent and hook docs for codename leaks.
+- Extend pre-flight checks to enforce the sweep mechanically.
 
 ## 0.3.1 - 2026-05-26
 
-- Polished README copy doctrine: replaced defensive "does not X" and
-  "without Y" framings with positive-form descriptions. Same information, no
-  implicit alternative suggestion.
-- Removed "local runtime" jargon in favor of three-primitive framing ("brief,
-  dispatch, verify, plus the local .nogra/ ledger"). Matches nogra.ai landing
-  vocabulary.
-- Removed internal hook-context symbol from public README; replaced it with
-  neutral "judgment-fallback marker" description.
-- Extended preflight checks to enforce no-symbol-leak, no-modal-scare-phrases,
-  and no-known-defensive-patterns mechanically.
+- Rewrite README copy in positive form and describe the product as brief,
+  dispatch, verify plus the local `.nogra/` ledger.
+- Extend pre-flight checks for symbol leaks and defensive phrasing.
 
 ## 0.3.0 - 2026-05-26
 
-- Renamed the setup command to `/nogra:setup` to avoid collision with Claude
-  Code's built-in setup command in the autocomplete picker. The new setup
-  command writes `.nogra/config.json` plus `CLAUDE.md`; project-state
-  templates moved to `/nogra:adapt` time-of-need generation per Item 1.10
-  scope split.
-- Added NOTICE file for explicit attribution per Apache 2.0 section 4(d).
-- Polished stable copy: removed backward-compat scare framing from README,
-  removed internal tooling names from public changelog, and confirmed skills do
-  not lead with local-mode wording.
-- Dampened statusline orange saturation from xterm-208 to xterm-214.
-- Extended preflight checks to enforce NOTICE-required, setup-rename-applied,
-  no internal tooling-name leak, and no backward-compat scare-language
-  mechanically.
+- Rename the setup command to `/nogra:setup` to avoid a collision with Claude
+  Code's built-in setup command. Setup writes `.nogra/config.json` plus
+  `CLAUDE.md`; project-state templates move to `/nogra:adapt`.
+- Add the NOTICE file for attribution under Apache 2.0 section 4(d).
+- Soften the statusline orange from xterm-208 to xterm-214.
 
 ## 0.2.9 - 2026-05-26
 
-- Changed the PreToolUse offer guard from hard `deny` to native
-  `permissionDecision: "ask"` so Claude Code asks the user before continuing
-  direct instead of surfacing a tool error to Claude.
-- Made the PreToolUse prompt ask once per routed prompt by recording the ask in
-  local routing telemetry, preventing repeated permission prompts on every
-  subsequent tool call for the same user request.
-- Removed hook-owned writes and `decision: "block"` from `/nogra:on` and
-  `/nogra:off` routing hooks. Hooks now only add visible context; the on/off
-  skills own `.nogra/config.json` updates and user-visible confirmation.
+- Change the `PreToolUse` offer guard from `deny` to native
+  `permissionDecision: "ask"`, asked once per routed prompt.
+- Remove hook-owned writes from the `/nogra:on` and `/nogra:off` hooks; the
+  skills own `.nogra/config.json` updates.
 
 ## 0.2.8 - 2026-05-25
 
-- Removed internal budget config detail from README runtime examples while
-  keeping detailed settings reference docs available through `/nogra:help`.
-- Polished stable copy: removed defensive statusline framing and internal
-  dev-state language from README; lowercased plugin displayName values for
-  visual consistency with other Claude Code plugins.
-- Aligned routing sensitivity language with the HIT-drop doctrine: skill
-  descriptions and README skill listings now refer to sensitivity, while HIT
-  telemetry remains development-only behind `NOGRA_STATUSLINE_DEBUG=1`.
-- Extended preflight checks to enforce no connector language, no
-  dev-state leak, lowercase displayName values, and no sensitivity-metric
-  jargon in public docs.
-- Removed tier-language and Manager/Nogra category-conflation from stable copy.
-  Identity-anchor in init-bundle CLAUDE.md now says "user's Manager" with
-  Manager as chat-layer role and Nogra as workspace discipline.
-- Extended preflight checks to mechanically enforce no forbidden
-  compound concepts, no CLAUDE.md self-licensing language, and canonical
-  Manager identity-anchor phrasing.
-- Trimmed init-bundle CLAUDE.md template to identity-only content. Routing
-  thresholds, runtime preferences and status reporting mechanics moved to
-  plugin reference docs accessible via `/nogra:help`.
-- Extended preflight checks to enforce CLAUDE.md template stays
-  config-schema-free.
-- Removed orphan optional renderer references from stable manifest and docs;
-  the renderer feature is not shipped in this release.
-- Extended preflight checks to enforce manifest file references resolve
-  to existing files, preventing future orphan-reference drift.
-- Removed the HIT% telemetry metric from default statusline output to keep the
-  user surface clean. HIT% remains available behind
-  `NOGRA_STATUSLINE_DEBUG=1` for development; the telemetry layer is tracked
-  separately and not relied on by default surfaces.
-- Hardened the Nogra offer guard so promptless `PreToolUse` events still stop
-  first tool use when the previous user prompt triggered a brief/direct offer.
-- Kept `nogra:` tools allowed through that promptless guard so the required
-  offer or brief flow can proceed instead of blocking itself.
-- Added routing smoke coverage for promptless high-scope tool use, promptless
-  `nogra:offer`, and direct follow-up clearing of pending routing state.
+- Remove budget config detail and dev-state language from the README and
+  lowercase plugin display names.
+- Align routing sensitivity language and keep hit-rate telemetry behind
+  `NOGRA_STATUSLINE_DEBUG=1`.
+- Trim the init-bundle `CLAUDE.md` template to identity-only content; routing
+  thresholds and runtime preferences move to reference docs.
+- Remove orphan renderer references from the manifest and docs and enforce that
+  manifest file references resolve.
+- Harden the offer guard so promptless `PreToolUse` events still stop first
+  tool use after an offer, while `nogra:` tools stay allowed.
 
 ## 0.2.7 - 2026-05-25
 
-- Cleaned public marketplace package metadata and docs so the copied package no
-  longer exposes old marketplace names, private source paths or internal launch
-  language.
-- Made the local runtime smoke harness portable when run from a copied or cached
-  plugin package outside the source repository layout.
-- Updated the optional Nogra Codex plugin metadata to the public
-  `nogra-marketplace` repository and added display metadata for marketplace
-  surfaces.
+- Clean public marketplace metadata and docs of old marketplace names and
+  private source paths.
+- Make the local runtime smoke harness portable when run from a copied or
+  cached plugin package.
 
 ## 0.2.6 - 2026-05-25
 
-- Reduced plugin-mode init to the minimal local footprint:
-  `.nogra/config.json` plus root `CLAUDE.md` when missing.
-- Moved project-specific state expectations to adapt-time guidance so init no
-  longer pre-fills empty checkpoint, task, decision or project-structure files.
-- Updated status guidance to keep workspace mode hidden from the human status
-  surface while local is the only shipped mode.
-- Extended the local runtime smoke test to assert the new minimal init
-  contract.
+- Reduce plugin-mode init to the minimal footprint: `.nogra/config.json` plus
+  root `CLAUDE.md` when missing. Project-state expectations move to adapt time.
 
 ## 0.2.5 - 2026-05-23
 
-- Changed runtime policy to a two-state model: `default` means no concrete
-  executor/verifier runtime choice is written, while `custom` carries
-  user-selected executor/verifier model and effort guidance.
-- Documented this release's default runtime resolver as Sonnet/medium for both
-  executor and verifier, with legacy `roles.agent` read as an executor fallback.
-- Updated the optional statusline to show runtime state as Default/Custom only;
-  concrete live model/effort display remains Claude Code's own surface truth.
-- Cleaned local plugin role, skill and init surfaces so runtime details live in
-  runtime policy and dispatch metadata instead of generated brief prose.
-- Reduced bundled brief-writing guidance to six core rules and tightened stop
-  criteria around pre-flight checks and non-zero exit handling.
+- Change runtime policy to a two-state model: `default` writes no concrete
+  executor or verifier choice; `custom` carries user-selected model and effort.
+- Show runtime state as Default or Custom in the optional statusline.
+- Reduce bundled brief-writing guidance to six core rules and tighten stop
+  criteria around pre-flight checks.
 
 ## 0.2.4 - 2026-05-22
 
-- Added methodology guidance that treats existing routing sensitivity/signals and
-  runtime-policy facts as advisory inputs for Manager judgment, without adding
-  budget routing behavior or parallel score tables.
-- Clarified UI-heavy brief and verification guidance so static preview quality
-  and interaction/use craft are checked as separate claims when visual product
-  work makes that relevant.
-- Added claim-strength discipline for methodology notes: observation,
-  hypothesis, finding and locked doctrine.
-- Framed tunnel/live-preview assumptions as examples of pre-flight stop
-  criteria, not universal framework rules.
+- Treat routing signals and runtime-policy facts as advisory inputs for Manager
+  judgment.
+- Check static preview quality and interaction craft as separate claims in
+  UI-heavy briefs.
+- Add claim-strength discipline for methodology notes: observation,
+  hypothesis, finding, locked doctrine.
 
 ## 0.2.3 - 2026-05-22
 
-- Added non-blocking plugin diagnostics for multiple installed Nogra plugin
-  refs and marketplace/plugin version drift.
-- Added deterministic brief overview text alongside local brief draft saves and
-  promotion refreshes.
-- Standardized verification-status guidance on English-first tokens:
-  `deviation` and `decision_required`.
-- Added brief stop-criteria guidance for pre-flight environment checks before
-  executor scope work begins.
-- Removed pre-launch tier and hosted architecture claims from public plugin
-  copy and bundled guidance.
+- Add non-blocking diagnostics for multiple installed plugin refs and
+  marketplace version drift.
+- Add deterministic brief overview text alongside draft saves and promotions.
+- Standardize verification-status tokens on `deviation` and
+  `decision_required`.
+- Add pre-flight environment checks to brief stop criteria.
 
 ## 0.2.2 - 2026-05-21
 
-- Clarified the role/runtime split for plugin-provided executor and verifier
-  contracts: Nogra ships workflow roles, while Claude Code supplies the runtime
-  that takes those roles.
-- Updated local handoff contracts to expose plugin-scoped roles and derive
-  model/effort/maxTurns hints from agent frontmatter instead of hardcoded prose.
-- Added explicit execution role/runtime pairing to dispatch receipts, run state,
-  status payloads, events and validation artifacts.
-- Added optional verifier role/runtime pairing to terminal run state and events
-  when an independent verifier-role pass is actually used.
-- Added a release-gate check for the plugin `agents/` bundle so executor and
-  verifier role contracts must exist with valid frontmatter before shipping.
+- Clarify the role and runtime split: Nogra ships workflow roles, Claude Code
+  supplies the runtime.
+- Derive model, effort and max-turn hints from agent frontmatter.
+- Record the execution role and runtime pairing on dispatch receipts, run
+  state, status payloads, events and validation artifacts.
+- Add a release-gate check for the `agents/` bundle.
 
 ## 0.2.1 - 2026-05-19
 
-- Clarified native-first evidence discipline: Nogra acceptance criteria
-  must be verifiable with common Claude Code primitives; browser screenshots,
-  Playwright, Puppeteer, local HTTP servers and console/network checks are
-  optional adapter evidence, not default acceptance gates.
-- Cleaned executor/verifier user-facing role language so `nogra:executor`
-  remains an internal Claude Code plugin-agent route while the product surface
-  says `Executor` / `Verifier` plus runtime when needed.
-- Added verification-status inference for local runs when all acceptance rows
-  are met and no deviations are recorded.
+- Make acceptance criteria verifiable with common Claude Code primitives;
+  browser screenshots, Playwright, Puppeteer, local HTTP servers and console or
+  network checks are optional adapter evidence.
+- Keep `nogra:executor` as an internal route while the product surface says
+  Executor and Verifier.
+- Infer verification status for local runs when all acceptance rows are met.
 
 ## 0.2.0 - 2026-05-19
 
-- Added plugin-bundled public contracts, schemas, templates and init assets for
-  the default local runtime.
-- Added `scripts/nogra-local.mjs`, a no-dependency local runtime for status,
-  init, brief validation/save/promote, dispatch receipts, handoff contracts and
-  verification support.
-- Changed the product boundary so default workflows use local plugin contracts
-  and `.nogra/` records.
-- Normalized existing plugin workspaces to the local runtime while
-  preserving their config files.
-- Documented the local workspace architecture in the bundled architecture note.
+- Add plugin-bundled public contracts, schemas, templates and init assets.
+- Add `scripts/nogra-local.mjs`, a dependency-free local runtime for status,
+  init, brief validation, save and promote, dispatch receipts, handoff contracts
+  and verification support.
+- Use local plugin contracts and `.nogra/` records for default workflows.
 
 ## 0.1.2 - 2026-05-19
 
-- Kept local-language routing phrases in workspace dictionaries while retaining
-  an explicit English routing fallback in the plugin defaults.
+- Keep local-language routing phrases in workspace dictionaries with an
+  explicit English fallback.
 
 ## 0.1.1 - 2026-05-18
 
-- Clarified execution-shape guidance so Manager declares evidence/tool needs
-  once and the adapter derives toolbank families mechanically.
+- Let the Manager declare evidence and tool needs once; the adapter derives
+  tool families mechanically.
 
 ## 0.1.0 - 2026-05-18
 
-- Added Nogra dispatch scope-shaping guidance for one-run, phased and review
-  execution choices without turning execution shapes into hard enums.
-- Added optional brief execution-shape guidance so adapter tools can derive
-  toolbank families from Manager-authored evidence/tool needs without requiring
-  a provider-tool enum.
-- Added the local ledger helper for safe `.nogra/` writes, terminal run
+- Add dispatch scope-shaping guidance for one-run, phased and review execution.
+- Add optional brief execution-shape guidance.
+- Add the local ledger helper for safe `.nogra/` writes, terminal run
   finalization and consistency checks.
-- Added statusline support for active local transport runs without provider
-  polling or synthetic heartbeats.
-- Added smoke checks for routing, ledger consistency and statusline rendering.
-- Added marketplace metadata for author, license, homepage and repository.
+- Add statusline support for active local transport runs.
+- Add smoke checks for routing, ledger consistency and statusline rendering.
+- Add marketplace metadata for author, license, homepage and repository.
