@@ -24,7 +24,8 @@ import { appendLedger } from "./walls.mjs";
 
 export const MEMORY_WINDOW = Object.freeze({
   indexLines: 200,
-  indexBytes: 25 * 1024,
+  indexBytes: 25000, // platformens spliceCap (2.1.251: GF=25000) — ikke 25*1024 (dom 73, 2a)
+  entryChars: 200,   // platformen: "Keep index entries to one line under ~200 chars" (dom 73, 2a)
   marginLines: 150,
   marginBytes: 15 * 1024,
   checkpointLines: 150
@@ -168,6 +169,8 @@ export function measureMemory({ root, hookInput = {}, env = process.env } = {}) 
     indexExists: index !== null,
     indexLines: index === null ? 0 : countLines(index),
     indexBytes: index === null ? 0 : Buffer.byteLength(index),
+    indexLongestEntry: index === null ? 0 : Math.max(0, ...index.split("\n").map((l) => l.length)),
+    indexEntriesOver: index === null ? 0 : index.split("\n").filter((l) => l.length > MEMORY_WINDOW.entryChars).length,
     checkpointExists: checkpoint !== null,
     checkpointLines: checkpoint === null ? 0 : countLines(checkpoint),
     userBytes: user === null ? 0 : Buffer.byteLength(user),
@@ -195,6 +198,7 @@ export function windowBreaches(measurement, window = MEMORY_WINDOW) {
   const out = [];
   if (measurement.indexLines > window.indexLines) out.push(`MEMORY.md ${measurement.indexLines} lines > ${window.indexLines}`);
   if (measurement.indexBytes > window.indexBytes) out.push(`MEMORY.md ${measurement.indexBytes} bytes > ${window.indexBytes}`);
+  if ((measurement.indexEntriesOver ?? 0) > 0) out.push(`MEMORY.md ${measurement.indexEntriesOver} entries > ${MEMORY_WINDOW.entryChars} chars (longest ${measurement.indexLongestEntry}) — the platform truncates long entries`);
   return out;
 }
 

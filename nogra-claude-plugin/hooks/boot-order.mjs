@@ -6,6 +6,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { resolveBootContext } from "../runtime/local/boot-context.mjs";
+import { resolveProjectRoot } from "../runtime/local/gate-decision.mjs";
 
 function emit(context) {
   process.stdout.write(
@@ -62,7 +63,7 @@ function render(boot) {
 
 try {
   const input = readInput();
-  const root = resolve(process.env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd());
+  const root = resolveProjectRoot(input); // 29/08 (A#12): samme resolver som session-start/memory-load — laeseren staar hvor skriveren staar
   const boot = resolveBootContext({ cwd: root, sessionSource: input.source });
   emit(render(boot));
 } catch {

@@ -53,11 +53,34 @@ function stampNow(date = new Date()) {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function boundDecisionCount(event) {
+  const summary = event?.summary && typeof event.summary === "object" ? event.summary : {};
+  const candidates = [event?.metadata?.decisions, summary.decisions, summary.domme];
+  for (const candidate of candidates) {
+    const count = Number(candidate);
+    if (Number.isSafeInteger(count) && count >= 0) return count;
+  }
+  const text = [event?.summary, event?.message, event?.details]
+    .filter((value) => typeof value === "string")
+    .join(" ");
+  const match = text.match(/(?:^|\D)(\d+)\s+(?:domme|decisions)\b/iu);
+  return match ? Number(match[1]) : null;
+}
+
+function boundClock(event) {
+  const raw = String(event?.createdAt || event?.ts || "");
+  const date = new Date(raw);
+  if (!Number.isNaN(date.getTime())) {
+    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  return (raw.match(/(?:T|\s)(\d{2}:\d{2})/u) || [])[1] || "—";
+}
+
 // ------------------------------------------------------------------------------- measurements
 
 export function measureLedger(file) {
   const text = readText(file);
-  if (text === null) return { lines: 0, events: 0, newest: [], newestTs: "" };
+  if (text === null) return { lines: 0, events: 0, newest: [], newestTs: "", bound: null };
   const lines = countLines(text);
   const parsed = [];
   for (const line of text.split("\n")) {
@@ -74,7 +97,17 @@ export function measureLedger(file) {
     type: String(event.eventType || event.event || event.type || ""),
     text: String(event.summary || event.message || event.details || "").replace(/\s+/gu, " ").slice(0, 180)
   }));
-  return { lines, events: parsed.length, newest, newestTs: newest[0]?.ts || "" };
+  const boundEvents = parsed.filter((event) => String(event.eventType || event.event || event.type || "") === "paper-bound");
+  const newestBound = boundEvents.reduce((best, event) => {
+    if (!best) return event;
+    const eventTs = Date.parse(event.createdAt || event.ts || "") || 0;
+    const bestTs = Date.parse(best.createdAt || best.ts || "") || 0;
+    return eventTs >= bestTs ? event : best;
+  }, null);
+  const bound = newestBound
+    ? { decisions: boundDecisionCount(newestBound), time: boundClock(newestBound) }
+    : null;
+  return { lines, events: parsed.length, newest, newestTs: newest[0]?.ts || "", bound };
 }
 
 export function measureDoors(doors) {
@@ -104,7 +137,7 @@ export function measureOpenDecisions(decisionsText, markers = DEFAULT_OPEN_MARKE
     const heading = section.title.toLowerCase();
     return needles.some((needle) => heading.includes(needle));
   });
-  return { total: sections.length, open };
+  return { open };
 }
 
 export function measureFunds(fundText, limit = 5) {
@@ -114,7 +147,23 @@ export function measureFunds(fundText, limit = 5) {
     .filter((line) => line.trimStart().startsWith("- **"))
     .slice(-limit)
     .reverse()
-    .map((line) => line.trim().replace(/^-\s*/u, "").replace(/\s+/gu, " ").slice(0, 200));
+    .map((line) => {
+      // 26/08 kur: fund-linjerne er MARKDOWN i FUND-INDEKS.md og blev sat raat ind i HTML.
+      // Paa siden stod der bogstaveligt "**2026-08-26** `[binding]` ..." — maskinens kildekode
+      // vist for et menneske. Vi laeser datoen og klassen ud og skriver dem som tekst.
+      const raa = line.trim().replace(/^-\s*/u, "").replace(/\s+/gu, " ");
+      const dato = (raa.match(/\*\*([0-9]{4}-[0-9]{2}-[0-9]{2})\*\*/u) || [])[1] || "";
+      const klasse = (raa.match(/`\[([^\]]+)\]`/u) || [])[1] || "";
+      const tekst = raa
+        .replace(/\*\*[0-9-]{10}\*\*/u, "")
+        .replace(/`\[[^\]]+\]`/u, "")
+        .replace(/\*\*/gu, "")
+        .replace(/`/gu, "")
+        .replace(/\s+/gu, " ")
+        .trim();
+      const hoved = [dato, klasse].filter(Boolean).join(" · ");
+      return (hoved ? hoved + " — " : "") + tekst.slice(0, 190);
+    });
 }
 
 export function runCommandHook(command, cwd) {
@@ -151,6 +200,11 @@ function listOr(items, empty) {
 }
 
 export function buildNowSection({ stamp, ledger, doors, decisions, funds, commandOut, markers }) {
+  const boundDomme = ledger.bound === null
+    ? "domme: UMÅLT (intet paper-bound)"
+    : ledger.bound.decisions === null
+      ? "domme: UMÅLT (paper-bound uden domtal)"
+      : `${ledger.bound.decisions} domme (bundet ${escapeHtml(ledger.bound.time)})`;
   const lines = [
     START,
     '<section class="page">',
@@ -161,7 +215,7 @@ export function buildNowSection({ stamp, ledger, doors, decisions, funds, comman
     "  <table><tr><th>flade</th><th>nu</th></tr>",
     `  <tr><td>Uret</td><td><b>${ledger.lines}</b> linjer · <b>${ledger.events}</b> events · seneste <span class="k">${escapeHtml(ledger.newestTs || "—")}</span></td></tr>`,
     `  <tr><td>Døre</td><td>${doorCell(doors)}</td></tr>`,
-    `  <tr><td>Domme</td><td><b>${decisions.total}</b> i DECISIONS.md · <b>${decisions.open.length}</b> åbne (heuristik: overskriften nævner ${escapeHtml(markers.join(" / "))})</td></tr>`,
+    `  <tr><td>Domme</td><td>${boundDomme} · <b>${decisions.open.length}</b> åbne (heuristik: overskriften nævner ${escapeHtml(markers.join(" / "))})</td></tr>`,
     "  </table>",
     "  <h3>Seneste i uret</h3>",
     `  ${listOr(
@@ -253,14 +307,15 @@ export function paperNow({ root, paper = "", now = "", writeEvent = true } = {})
       source: "scripts/paper-now.mjs",
       message:
         `paper-now: ledger ${ledger.lines} lines / ${ledger.events} events · ${doors.length} doors ` +
-        `(${doors.filter((door) => /^2/u.test(String(door.code))).length} ok) · ${decisions.open.length}/${decisions.total} open decisions · ` +
+        `(${doors.filter((door) => /^2/u.test(String(door.code))).length} ok) · ${decisions.open.length} open decisions · ` +
+        `bound decisions ${ledger.bound?.decisions ?? -1} · ` +
         `${funds.length} finds · ${htmlLines} html lines`,
       metadata: {
         ledgerLines: ledger.lines,
         ledgerEvents: ledger.events,
         doors: doors.length,
         doorsOk: doors.filter((door) => /^2/u.test(String(door.code))).length,
-        decisions: decisions.total,
+        decisions: ledger.bound?.decisions ?? -1,
         openDecisions: decisions.open.length,
         funds: funds.length,
         commandHook: commandOut === null ? 0 : 1,
@@ -311,6 +366,7 @@ function main() {
       paper: result.paper,
       htmlLines: result.htmlLines,
       ledgerLines: result.ledger.lines,
+      boundDecisions: result.ledger.bound?.decisions ?? null,
       doors: result.doors,
       openDecisions: result.decisions.open.length,
       funds: result.funds.length,
@@ -319,7 +375,8 @@ function main() {
   } else {
     console.log(
       `paper-now: ${result.ledger.lines} urets-linjer · ${result.doors.length} døre · ` +
-      `${result.decisions.open.length}/${result.decisions.total} åbne domme · ${result.funds.length} fund · ` +
+      `${result.decisions.open.length} åbne domme · ` +
+      `${result.ledger.bound?.decisions ?? "UMÅLT"} bundne domme · ${result.funds.length} fund · ` +
       `${result.htmlLines} html-linjer (${result.now})`
     );
   }

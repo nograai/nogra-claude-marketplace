@@ -13,6 +13,9 @@ import {
   readRunRecord,
   safeRunId as safeContractRunId
 } from "../runtime/local/contract-spine.mjs";
+// ONE ledger door (0.9.8): every nogra.ledger.event.v1 append goes through the
+// locked workspace rule (highest watermark + 1, refusal on collision/skip).
+import { appendLedgerEvent as appendThroughLedgerDoor, nextLedgerWatermark } from "../runtime/local/ledger-append.mjs";
 
 const TERMINAL_STATUSES = new Set(["ok", "partial", "blocked", "failed", "cancelled"]);
 const TERMINAL_EVENT_TYPES = new Set([
@@ -449,22 +452,21 @@ function appendLedgerEvent(root, type, extra = {}) {
     ? parseJsonl(ledgerEventsFile(root)).find((item) => String(item?.eventId ?? "") === eventId)
     : null;
   if (existing) return existing;
-  const ledgerWatermark = nonEmptyLineCount(ledgerEventsFile(root)) + 1;
   const at = now();
+  const { ledgerWatermark: _neverSuppliedHere, ...extraWithoutWatermark } = safeExtra;
   const event = {
     schema: "nogra.ledger.event.v1",
     eventId,
-    ledgerWatermark,
     generatedAt: at,
     createdAt: at,
     workspaceId: resolvedWorkspaceId(root, safeExtra.workspaceId),
     sessionId: session.sessionId,
     transcriptId: session.transcriptId,
     type,
-    ...safeExtra
+    ...extraWithoutWatermark
   };
-  appendJsonlIfMissing(ledgerEventsFile(root), JSON.stringify(event), "eventId", event.eventId);
-  return event;
+  // The door numbers the event under the lock; a caller never chooses a watermark.
+  return appendThroughLedgerDoor(root, event).event;
 }
 
 function localTarget(root, localPath) {
@@ -503,7 +505,7 @@ function canonicalRunEvent(root, eventType, record, extra = {}) {
     lifecycle: record.lifecycle,
     outcome: record.outcome,
     verdict: record.verdict,
-    ledgerWatermark: nonEmptyLineCount(ledgerEventsFile(root)) + 1,
+    ledgerWatermark: nextLedgerWatermark(ledgerEventsFile(root)),
     createdAt: at,
     generatedAt: at,
     sessionId: cleanInline(extra.sessionId || session.sessionId),
@@ -519,8 +521,11 @@ function canonicalRunEvent(root, eventType, record, extra = {}) {
     nextOwner: cleanInline(extra.nextOwner || record.nextOwner)
   };
   assertRunEventSemantics(event);
-  const result = appendJsonlIfMissing(ledgerEventsFile(root), JSON.stringify(event), "eventId", event.eventId);
-  return { event, result };
+  // Append through the ONE door: the lock + the workspace rule number the event.
+  // The expected watermark computed above is passed along so a concurrent writer
+  // that changed the file in between is REFUSED loudly (collision), never repaired silently.
+  const door = appendThroughLedgerDoor(root, event);
+  return { event: door.event, result: door.status };
 }
 
 function finalizeCanonicalRun(root, record, sourcePath, input, options = {}) {
@@ -565,7 +570,7 @@ function finalizeCanonicalRun(root, record, sourcePath, input, options = {}) {
   const eventType = outcome === "cancelled" ? "run_cancelled" : "run_returned";
   const eventId = cleanInline(input.eventId) || `run-event-${runId}-${eventType}-${outcome}`;
   const existingEvent = parseJsonl(ledgerEventsFile(root)).find((item) => item?.eventId === eventId);
-  const ledgerWatermark = existingEvent?.ledgerWatermark || nonEmptyLineCount(ledgerEventsFile(root)) + 1;
+  const ledgerWatermark = existingEvent?.ledgerWatermark || nextLedgerWatermark(ledgerEventsFile(root));
   const updated = {
     ...record,
     updatedAt: now(),

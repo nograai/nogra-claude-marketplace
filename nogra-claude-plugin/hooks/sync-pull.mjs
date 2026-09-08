@@ -28,7 +28,13 @@ try {
   try {
     nudge = syncNudge(root, { hookInput: input });
   } catch {}
-  const note = await syncPull(root, { hookInput: input });
+  let note = "";
+  try {
+    note = await syncPull(root, { hookInput: input });
+  } catch {
+    // An unexpected adapter failure must not suppress the local operator pin.
+    note = "<nogra-sync>Sync adapter unavailable; continuing with local memory.</nogra-sync>";
+  }
   const memory = memoryContext(input);
   emit([nudge, note, memory].filter(Boolean).join("\n"));
 } catch {

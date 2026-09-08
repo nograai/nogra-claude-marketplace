@@ -160,9 +160,58 @@ function localStamp(date = new Date()) {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+// --------------------------------------------------------------------------------- laert i dag
+
+// Foerste udsnit af streg 4 i Compounding memory (02/09/2026): Papiret som laeringskurve. Uret-events af
+// typen fund/rettelse/kur/kur-stop fra de sidste 24 timer bliver til en sektion oeverst i
+// blokken — det huset LAERTE, ikke kun hvad det gjorde. Kilden er uret alene; ingen haand.
+const LEARNED_TYPES = new Set(["fund", "rettelse", "kur", "kur-stop"]);
+
+export function learnedToday(events, { now = new Date(), hours = 24 } = {}) {
+  const until = now.getTime();
+  const since = until - hours * 3600 * 1000;
+  const out = [];
+  events.forEach((event, index) => {
+    if (!event || typeof event !== "object" || Array.isArray(event)) return;
+    if (!LEARNED_TYPES.has(String(event.type ?? ""))) return;
+    const at = Date.parse(event.createdAt || event.generatedAt || event.ts || "");
+    if (!Number.isFinite(at) || at < since || at > until) return;
+    const text = String(event.summary ?? event.message ?? event.details ?? event.note ?? "").replace(/\s+/gu, " ").trim();
+    if (!text) return;
+    const hasWatermark = Number.isInteger(event.ledgerWatermark) && event.ledgerWatermark > 0;
+    out.push({
+      index: hasWatermark ? event.ledgerWatermark : index + 1,
+      identity: hasWatermark ? "watermark" : "legacy-parsed-entry",
+      ts: sliceCodePoints(new Date(at).toISOString(), 16).replaceAll("T", " "),
+      type: String(event.type),
+      text: sliceCodePoints(text, 320) + (Array.from(text).length > 320 ? "…" : "")
+    });
+  });
+  return out;
+}
+
+function learnedBlock(events, now) {
+  const items = learnedToday(events, { now });
+  if (!items.length) return "";
+  const lis = items
+    .map(
+      (item) =>
+        `<li><span class="k">${item.identity === "watermark" ? "#" : "legacy "}${escapeHtml(String(item.index))}</span> ${escapeHtml(item.ts)} UTC · ` +
+        `<b>${escapeHtml(item.type)}</b> · ${escapeHtml(item.text)}</li>`
+    )
+    .join("");
+  return (
+    `<details open><summary><b>Lært i dag</b> · ${items.length} fund/rettelser fra uret (sidste 24 t)</summary>` +
+    `<p class="small">Det huset lærte, ikke kun hvad det gjorde. Hver linje er et uret-event af typen fund, rettelse eller kur; ` +
+    `loven bag står i tegningen <span class="k">drawings/compounding-memory-2026-09-02.md</span>. ` +
+    `# angiver ledger-watermark; legacy angiver placering blandt læste JSON-poster.</p>` +
+    `<ul class="small">${lis}</ul></details>`
+  );
+}
+
 // ------------------------------------------------------------------------------------- the block
 
-export function buildBlock({ decisions, ledger, now, marker, generator }) {
+export function buildBlock({ decisions, ledger, now, marker, generator, nowDate = new Date() }) {
   const sections = parseDecisions(decisions);
   const events = parseLedger(ledger);
   const parts = [
@@ -172,6 +221,8 @@ export function buildBlock({ decisions, ledger, now, marker, generator }) {
       '<span class="k">.nogra/ledger/events.jsonl</span>). Genereres af ' +
       `<span class="k">${generator}</span>, aldrig i hånden.</p>`
   ];
+  const learned = learnedBlock(events, nowDate);
+  if (learned) parts.push(learned);
   // python's sorted(reverse=True) is stable; an inverted comparator on a stable sort matches it.
   const ordered = sections.slice().sort((left, right) => compareKeys(right.id, left.id));
   for (const { id, title, body } of ordered) {

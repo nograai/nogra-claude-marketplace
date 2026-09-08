@@ -20,6 +20,8 @@ const anchorCheck = path.join(pluginRoot, "scripts", "smoke-anchor-v1.mjs");
 const evidenceFactCheck = path.join(pluginRoot, "scripts", "smoke-evidence-fact-v1.mjs");
 const roleIsolationCheck = path.join(pluginRoot, "scripts", "smoke-role-isolation-v1.mjs");
 const bootMemoryCheck = path.join(pluginRoot, "scripts", "smoke-boot-memory-v1.mjs");
+const contextContinuityCheck = path.join(pluginRoot, "scripts", "smoke-context-continuity.mjs");
+const learnedTodayCheck = path.join(pluginRoot, "scripts", "smoke-learned-today.mjs");
 const hiddenScoringIsolationCheck = path.join(pluginRoot, "scripts", "smoke-hidden-scoring-isolation-v1.mjs");
 const treeSyncCheck = path.join(pluginRoot, "scripts", "smoke-tree-sync.mjs");
 const changelogLoopCheck = path.join(pluginRoot, "scripts", "smoke-changelog-loop.mjs");
@@ -344,6 +346,14 @@ function main() {
     encoding: "utf8",
     stdio: "inherit"
   });
+  execFileSync(process.execPath, [contextContinuityCheck], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  execFileSync(process.execPath, [learnedTodayCheck], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
   execFileSync(process.execPath, [hiddenScoringIsolationCheck], {
     cwd: pluginRoot,
     encoding: "utf8",
@@ -460,7 +470,7 @@ function main() {
   // model than the executor so the "done" check does not inherit the executor's
   // blind spots. The verifier dispatch receipt below proves it in run state.
   assert(displayRuntime(expectedExecutorRuntime) !== displayRuntime(expectedVerifierRuntime), "default profile should verify cross-model: verifier model must differ from executor model");
-  assert(hooksConfig.hooks?.SessionStart?.[0]?.matcher === "startup|resume|clear", "SessionStart slot 0 should handle startup/resume/clear, not compact");
+  assert(hooksConfig.hooks?.SessionStart?.[0]?.matcher === "startup|resume|clear|fork", "SessionStart slot 0 should handle startup/resume/clear/fork (fork since CC 2.1.214), not compact");
   assert(hooksConfig.hooks?.SessionStart?.some((entry) => entry.matcher === "compact"), "post-compact rehydration should be homed on the SessionStart/compact channel");
   assert(!Object.hasOwn(hooksConfig.hooks ?? {}, "PostCompact"), "PostCompact event should not be wired (side-effect-only in Claude Code 2.1.x; re-homed onto SessionStart/compact)");
   assert(Boolean(hooksConfig.hooks?.SessionEnd?.[0]), "SessionEnd should record lifecycle anchor");
@@ -468,6 +478,17 @@ function main() {
   assert(hooksConfig.hooks?.PreToolUse?.[1]?.matcher === "Read|Grep|Glob", "PreToolUse should require role leases for the read-only role operation set");
   const stopHookCommands = (hooksConfig.hooks?.Stop || []).flatMap((group) => (group.hooks || []).map((hook) => hook.command || ""));
   assert(stopHookCommands.some((command) => command.includes("observe-event.mjs")), "Stop should still record lifecycle events");
+  // 0.9.8 — bind tighter to the platform's own events (all documented in the hooks reference):
+  const preCompactCommands = (hooksConfig.hooks?.PreCompact || []).flatMap((group) => (group.hooks || []).map((hook) => hook.command || ""));
+  assert(preCompactCommands[0]?.includes("pre-compact.mjs"), "PreCompact should stamp the compaction in the ledger FIRST (pre-compact.mjs), then observe");
+  assert(preCompactCommands.some((command) => command.includes("observe-event.mjs")), "PreCompact should still be observed in the live log");
+  const subagentStopCommands = (hooksConfig.hooks?.SubagentStop || []).flatMap((group) => (group.hooks || []).map((hook) => hook.command || ""));
+  assert(subagentStopCommands.some((command) => command.includes("observe-event.mjs")), "SubagentStop should be platform-observed (executor/verifier/consolidator ends reach the live log)");
+  assert((hooksConfig.hooks?.PostToolUse || []).some((group) => group.matcher === "Edit|Write|MultiEdit|NotebookEdit"), "PostToolUse should observe successful write-tool effects, not only failures");
+  assert((hooksConfig.hooks?.PostToolUse || []).some((group) => group.matcher === "TaskUpdate"), "PostToolUse TaskUpdate wiring must survive the write-tool addition");
+  // Role model/effort stay OUT of agent frontmatter on purpose (asserted below: "should not hardcode model"):
+  // the plugin's runtime profile (/nogra:settings) and Claude Code's live /model own them; a frontmatter
+  // model would silently override both. 0.9.8 measured this and corrected the convergence doc instead.
   assert(stopHookCommands.some((command) => command.includes("stop-nudge.mjs")), "Stop should run the observe-only verify nudge");
   assert(!stopHookCommands.some((command) => command.includes("stop-intent.mjs")), "Stop should not run active-intent semantic feedback (nudge is observe-only, never a gate)");
   assert(!executorFrontmatter.model, "executor role frontmatter should not hardcode model");

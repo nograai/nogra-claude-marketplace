@@ -53,7 +53,7 @@ function runHook(script, root, input) {
   const res = spawnSync(process.execPath, [script], {
     input: JSON.stringify({ cwd: root, ...input }),
     encoding: "utf8",
-    env: { ...process.env, CLAUDE_PROJECT_ROOT: root }
+    env: { ...process.env, CLAUDE_PROJECT_DIR: root }
   });
   assert(res.status === 0, `${path.basename(script)} exited ${res.status}: ${res.stderr}`);
   const out = res.stdout.trim();

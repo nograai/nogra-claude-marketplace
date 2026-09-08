@@ -24,7 +24,8 @@ const entries = [];
 html = html.replace(/<section class="page"( id="[^"]*")?>([\s\S]*?)<\/section>/gu, (m, hadId, body) => {
   const pn = (body.match(/<p class="pn">([^<]+)<\/p>/u) || [])[1]?.trim() || "";
   const ed = (body.match(/<div class="ed">([\s\S]*?)<\/div>/u) || [])[1] || "";
-  const h2 = (body.match(/<h2>([\s\S]*?)<\/h2>/u) || [])[1] || "";
+  // 26/08 kur (portet 29/08, C#2): sidens TITEL er h1 ELLER h2 — kun-h2 gjorde indekset til en mur af maskin-meta
+  const h2 = (body.match(/<h1[^>]*>([\s\S]*?)<\/h1>/u) || body.match(/<h2[^>]*>([\s\S]*?)<\/h2>/u) || [])[1] || "";
   const title = h2.replace(/<[^>]+>/gu, "").trim() || ed.replace(/<[^>]+>/gu, "").trim().slice(0, 80);
   // Runde-2-fund 8: en sektion med haandsat id men uden pn fik sit id STRIPPET — bevar det.
   const id = pn ? `side-${pn.replace(/[^a-z0-9æøå]/giu, "")}` : (hadId ? hadId.match(/id="([^"]*)"/u)[1] : "");

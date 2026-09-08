@@ -1,5 +1,101 @@
 # Changelog
 
+## 0.9.9 - 2026-09-08
+
+- Repin the local `USER.md` profile on `SessionStart:compact`, retaining its
+  advisory boundary and the existing recovery pointer. Disabled native memory
+  remains disabled; compact recovery reads only the profile.
+- Measure the loaded memory index against the shared 200-line/25,000-byte window.
+  Large topic files no longer trigger an index-overflow warning, and startup
+  avoids reading every topic body merely to measure memory size.
+- Preserve the local memory pin when an unexpected sync adapter exception occurs.
+  The fallback reports local-memory use without exposing raw exception details.
+- Add hook-process regression checks for profile continuity, bounded reads,
+  disabled memory, adapter failure and UTF-8 byte limits to the runtime smoke suite.
+
+- Add a "Learned today" section at the top of the bound Paper block: ledger
+  events of type `fund`, `rettelse`, `kur` and `kur-stop` from the last 24 hours,
+  read from the ledger alone (`learnedToday(events)` is exported). The Paper now
+  shows what the house learned, not only what it did. This is the first slice of
+  the compounding-memory drawing (`drawings/compounding-memory-2026-09-02.md`).
+- Grade follow-up: exclude future-dated learning events from the last-24-hour
+  projection, skip non-object ledger values, and measure ellipsis truncation in
+  Unicode code points. Add ten deterministic learned-today checks to the core
+  runtime suite, including timestamp boundaries and HTML escaping.
+- Label learned-event timestamps as UTC and distinguish ledger watermarks from
+  legacy parsed-entry references. This is the block-level summary slice of the
+  drawing; per-page klasse/hegn/kvittering fields and the cumulative last page
+  remain outside this implementation.
+
+- Fix the lifecycle wiring test that still encoded the pre-2.1.214 SessionStart
+  matcher; the invariant it guards is that slot 0 never carries `compact`.
+- Release cut: this version publishes `nogra-claude-plugin` only. The
+  function-hook experiments in the candidate repository stay private.
+
+## 0.9.8 - 2026-09-02
+
+- Added ONE locked ledger door for plugin code (`runtime/local/ledger-append.mjs`):
+  next watermark = highest existing `ledgerWatermark` + 1 (never the line count),
+  a supplied watermark that collides or skips is refused, idempotent by `eventId`,
+  exclusive lock file with mtime-judged stale recovery. Measured before the change
+  on the hub ledger: the plugin would have numbered the next event 5508 while the
+  workspace's own door (`bin/uret-append`) numbers it 4890 — two authorities on one
+  file (4,299 legacy lines carry no watermark). `nogra-ledger.mjs` (three sites) and
+  the evidence writer in `fact-store.mjs` (`events.length + 1`, a third authority)
+  now append through the door. Smoke test pins the rule with 48 concurrent writes
+  from six processes; its first run caught a fresh-lock steal (duplicate #28) that
+  content-based staleness allowed — staleness is now judged by the lock's mtime.
+- Added `hooks/pre-compact.mjs`: PreCompact stamps a `compaction` event (trigger
+  manual|auto, session, transcript) in the ledger through the door BEFORE the
+  context folds; the observer still records the live event. Fail-open.
+- Added `SubagentStop` (observed) and `PostToolUse` for `Edit|Write|MultiEdit|NotebookEdit`
+  (observed) so successful write effects and subagent ends reach the live-hook log —
+  the evidence layer no longer watches only failures. `TaskUpdate` wiring unchanged.
+- Corrected the convergence doc: role agents deliberately carry NO `model:`/`effort:`
+  frontmatter (the runtime smoke test pins "should not hardcode model"). Authority
+  is the plugin's runtime profile (`/nogra:settings`) plus Claude Code's live
+  `/model`; a frontmatter model would silently override both — and the doc claimed
+  the opposite. Verified against the sub-agents reference (fields exist: `model`,
+  `effort`); the choice not to use them is the contract, now written down.
+- Released the `PreModelSwitch`/`PostModelSwitch` observer registration that 0.9.7
+  left unreleased (same version number on two artifacts — the drift the 0.9.5/0.9.6
+  entries forbid).
+- Not yet through the door (they write `nogra.event.v1` without a watermark and do
+  not compete for numbers): `pace.mjs`, `delivery-gate.mjs`, `active-intent.mjs`,
+  `paper-chapter.mjs`, `walls.appendLedger`. Follow-up: route them for torn-write
+  protection.
+
+## 0.9.7 - 2026-08-29
+
+- Added the paper `page` verb and generated chapter ordering, so the book's chapter
+  order is produced from the ledger instead of maintained by hand.
+- Fixed the local-runtime smoke test that still encoded the pre-2.1.214 SessionStart
+  matcher set (missing `fork`): 0.9.6 fixed hooks.json without fixing the test's
+  expected value, so the suite guarded the old platform assumption.
+
+## 0.9.6 - 2026-08-29
+
+- Fixed seven hooks and scripts to resolve the workspace root via `CLAUDE_PROJECT_DIR`
+  first — the platform never sets `CLAUDE_PROJECT_ROOT` — with smoke tests pinning the
+  contract so the assumption cannot silently return.
+- Fixed the SessionStart matcher to include `fork` (Claude Code 2.1.214 added it).
+- Changed the brain valve to measure against the platform's real load window (25,000
+  bytes, ~200 characters per index line), reporting the longest line and the entries
+  over the limit instead of a guessed threshold.
+- Fixed boot-order to use the same root resolver as session-start, so the two hooks can
+  never disagree about which workspace they are in.
+- Added the task-deleted hook wiring (PostToolUse on TaskUpdate).
+- Fixed post-compact context labels to say SessionStart:compact.
+- Fixed a permission-rule comment that implied allow could override deny; it never does.
+- Fixed paper-cards to accept both h1 and h2 headings and carried the paper-now finds
+  cure (both Aug 26 fixes, previously uncommitted, now in the cut).
+- Changed dayclose step 7 to the full paper chain — close → open → cards → bind → now →
+  audit → republish — with a paper-published receipt; publish is the Manager's stamped
+  step, and only paper-chapter-opened/closed are chapter events.
+- Changed the status skill to point at /tasks instead of the removed /ps.
+- Release note: a cached 0.9.5 build differed from the candidate under the same number;
+  from this cut onward a version number names exactly one artifact.
+
 ## 0.9.5 - 2026-08-24
 
 - Fixed the paper writers so a green receipt always means a measured write: the bind and

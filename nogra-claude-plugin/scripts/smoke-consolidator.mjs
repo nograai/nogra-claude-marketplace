@@ -5,16 +5,14 @@
 //       under-window stays silent.
 //   (B) the nogra:consolidator agent contract holds its non-negotiable invariants.
 // Sabotage-tested: remove "never delete", drop the ask, or let the agent self-start, and
-// this smoke goes red. Isolated fixtures under ~/.claude/projects/<temp slug>/memory (the
-// path memory-load resolves from CLAUDE_PROJECT_DIR); every fixture is cleaned up. Real
-// memory is untouched (unique temp slugs never collide with a real project).
+// this smoke goes red. Isolated temporary memory/config fixtures are resolved through
+// the native-memory runtime bridge; every fixture is cleaned up.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,9 +24,13 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-function runMemoryLoad(projectDir) {
+function runMemoryLoad({ projectDir, memDir }) {
   return execFileSync(process.execPath, [memoryLoadPath], {
-    env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir },
+    env: {
+      ...process.env, CLAUDE_PROJECT_DIR: projectDir,
+      CLAUDE_CONFIG_DIR: path.join(projectDir, "config"),
+      NOGRA_NATIVE_MEMORY_DIR: memDir, CLAUDE_CODE_DISABLE_AUTO_MEMORY: ""
+    },
     input: "",
     encoding: "utf8",
   });
@@ -42,22 +44,19 @@ function nudge(output) {
   }
 }
 
-// Build a fake native-memory folder that memory-load.mjs will resolve from
-// CLAUDE_PROJECT_DIR: ~/.claude/projects/<slugified project dir>/memory.
+// Keep operator settings and memory outside the test's inputs.
 function makeFixture(files) {
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "nogra-consolidator-smoke-"));
-  const slug = projectDir.replace(/\//g, "-");
-  const projectSlugDir = path.join(homedir(), ".claude", "projects", slug);
-  const memDir = path.join(projectSlugDir, "memory");
+  const memDir = path.join(projectDir, "memory");
   fs.mkdirSync(memDir, { recursive: true });
   for (const [name, body] of Object.entries(files)) {
     fs.writeFileSync(path.join(memDir, name), body, "utf8");
   }
   return {
     projectDir,
+    memDir,
     cleanup() {
       fs.rmSync(projectDir, { recursive: true, force: true });
-      fs.rmSync(projectSlugDir, { recursive: true, force: true });
     },
   };
 }
@@ -67,14 +66,12 @@ function main() {
   try {
     // (A1) OVER window -> the Manager-middleman nudge fires with the full flow.
     const over = makeFixture({
-      "MEMORY.md": "# Memory Index\n" + "- pointer line\n".repeat(30),
-      "a.md": "x".repeat(9000),
-      "b.md": "y".repeat(9000),
+      "MEMORY.md": "# Memory Index\n" + "- pointer line\n".repeat(200),
     });
     fixtures.push(over);
-    const overCtx = nudge(runMemoryLoad(over.projectDir));
+    const overCtx = nudge(runMemoryLoad(over));
     assert(overCtx !== null, "over-window: memory-load must emit valid JSON");
-    assert(/grown past the load window/.test(overCtx), "over-window: the load-window nudge must fire");
+    assert(/index exceeds the load window/.test(overCtx), "over-window: the load-window nudge must fire");
     assert(/nogra\.memory\.resolution\.v1/.test(overCtx), "over-window: nudge must carry the exact native-memory resolution contract");
     assert(/spin the consolidator/.test(overCtx), "over-window: nudge must OFFER the one-line housekeeping ask");
     assert(/nogra:consolidator agent/.test(overCtx), "over-window: nudge must delegate to the nogra:consolidator agent");
@@ -82,9 +79,13 @@ function main() {
     assert(/never\s+delete/.test(overCtx), "over-window: nudge must carry the never-delete rule");
 
     // (A2) UNDER window -> silent (empty context, no nudge).
-    const under = makeFixture({ "MEMORY.md": "# Memory Index\n- one small pointer\n" });
+    const under = makeFixture({
+      "MEMORY.md": "# Memory Index\n- one small pointer\n",
+      "a.md": "x".repeat(9000),
+      "b.md": "y".repeat(9000),
+    });
     fixtures.push(under);
-    const underCtx = nudge(runMemoryLoad(under.projectDir));
+    const underCtx = nudge(runMemoryLoad(under));
     assert(underCtx === "", "under-window: memory-load must stay silent (empty context)");
 
     // (B) the nogra:consolidator agent contract holds its non-negotiable invariants.

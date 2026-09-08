@@ -103,7 +103,7 @@ Use provider-native truth. Show local Nogra heartbeat/ledger state only when
 `.nogra/ledger/` or `.nogra/runtime/` records exist. Do not poll continuously.
 This status command is an explicit on-demand read.
 
-Do not build a parallel task UI. Claude Code's native `/status`, `/ps` and task
+Do not build a parallel task UI. Claude Code's native `/status`, `/tasks` and task
 notifications remain the live session/task surfaces. `/nogra:status` is only
 the compact inspection surface for local Nogra ledger truth.
 

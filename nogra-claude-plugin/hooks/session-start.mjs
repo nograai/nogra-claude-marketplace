@@ -48,7 +48,7 @@ function nearestNograRoot(start) {
 }
 
 function projectRoot(input) {
-  const explicitRoot = process.env.CLAUDE_PROJECT_ROOT || process.env.CURSOR_PROJECT_DIR || "";
+  const explicitRoot = process.env.CLAUDE_PROJECT_DIR || process.env.CLAUDE_PROJECT_ROOT || process.env.CURSOR_PROJECT_DIR || "";
   if (explicitRoot) return resolve(explicitRoot);
 
   const workspaceRoot = firstWorkspaceRoot(input);
@@ -140,7 +140,7 @@ function bootContextBlock(root, source) {
 
 function sessionStartSource(input) {
   const source = cleanLabel(input.source || input.trigger || input.sessionStartSource || "", "").toLowerCase();
-  return ["startup", "resume", "clear", "compact"].includes(source) ? source : "startup";
+  return ["startup", "resume", "clear", "compact", "fork"].includes(source) ? source : "startup";
 }
 
 function sessionBootContext(root, config, source) {

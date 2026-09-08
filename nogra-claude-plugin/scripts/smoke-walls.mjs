@@ -32,7 +32,7 @@ function ws() {
   return root;
 }
 function hook(script, root, input) {
-  const r = spawnSync(process.execPath, [script], { input: JSON.stringify({ cwd: root, ...input }), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_ROOT: root } });
+  const r = spawnSync(process.execPath, [script], { input: JSON.stringify({ cwd: root, ...input }), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
   assert(r.status === 0, `${path.basename(script)} exited ${r.status}: ${r.stderr}`);
   return r.stdout.trim() ? JSON.parse(r.stdout) : null;
 }

@@ -88,6 +88,9 @@ Papirets "Lige nu"-side **måler**, den husker ikke. Alt på siden læses i samm
 - **dørene** — URL'erne i `paper.doors` måles med `curl` og et loft på 10 sekunder. Koden
   farves med papirets egne klasser (2xx grøn · 3xx/4xx gul · alt andet rød). Ingen døre i
   config → linjen siger `ingen døre i config`, og der gættes aldrig en status;
+- **domtotal** — læses fra det nyeste `paper-bound`-event (`metadata.decisions`, med
+  kompatibel summary-læsning). Siden skriver `N domme (bundet HH:MM)`; uden event skriver den
+  `domme: UMÅLT (intet paper-bound)`. `now` tæller aldrig selv dommene i `DECISIONS.md`;
 - **åbne domme** — heuristikken er eksplicit: en dom er åben når dens **overskrift** nævner
   `GO?`, `afventer` eller `udestår`. Listen kan skiftes pr. workspace med
   `paper.openMarkers`. Siden skriver heuristikken ud, så et nul kan læses som *"ingen
@@ -112,15 +115,31 @@ Papiret er en BOG: ét kapitel pr. dag (dagsider → aften-luk → nattesider �
 "er siden tjekket?" bliver dermed en måling mod uret, ikke en fornemmelse.
 
 ```bash
-node "<plugin-root>/scripts/paper-chapter.mjs" <open|close|audit|status> --root "<workspace-root>"
+node "<plugin-root>/scripts/paper-chapter.mjs" <open|page|close|audit|status> --root "<workspace-root>"
 ```
 
-- `open [--title]` — åbner dagens kapitel (ét `paper-chapter-opened`-event).
+- `open [--chapter N] [--title]` — åbner dagens kapitel i ét greb: START/END-markører,
+  `<section class="skille" id="skille-kN">`, én genereret CSS-order-regel mellem
+  `<!-- PAPER-ORDER START/END -->` og ét `paper-chapter-opened`-event. Reglen opdateres, aldrig
+  dubleres, og kapitelværdierne giver `K1 < K2 < …`.
+- `page --pn "K8 · s.7" --title "Titel" --body <fil.html|-> [--chapter N] [--append]` —
+  tilføjer en side umiddelbart efter kapitlets START-markør; `--append` lægger den efter sidste
+  side i kapitlet. `pn` normaliseres til fx `id="side-K8s7"`; siden får `.ed`-kolofon, `<h2>`,
+  den angivne HTML-krop og `<p class="pn">`. Samme `pn` erstatter samme side og giver aldrig en
+  dublet. Ved reel ændring tages først en kopi i
+  `.nogra/paper/archive/papiret-foer-page-<stempel>.html`, hvorefter ét `paper-page-added`-event
+  bærer `count`, `pn` og `chapter` — ingen prosa. Indsætningspunkter inde i `PAPER-KORT`,
+  `PAPER-BIND` eller `PAPER-NOW` stopper før enhver skrivning.
 - `close [--summary]` — lukker kapitlet: alle sider som INTET tidligere luk dækker, stemples
   i ét `paper-chapter-closed`-event med sideliste. Aften-lukket og morgen-lukket er samme verb.
 - `audit` — måler utjekkede sider (findes i papiret, dækket af intet kapitel-luk). Exit 3 når
-  noget er utjekket — så et dayclose-trin kan GATE på bogen.
+  noget er utjekket, et kapitel mangler sin genererede order-regel, eller samme HTML-id findes
+  mere end én gang — så et dayclose-trin kan GATE på bogen.
 - `status` — én linje: `bogen: N lukkede kapitler · M utjekkede sider · sidst lukket …`.
+
+Exit-koder: `0` = grebet lykkedes; `2` = audit kan ikke finde papiret; `3` = audit fandt et
+utjekket forhold; `64` = forkert brug (bl.a. manglende `--pn`/`--body`); `65` = papiret eller
+indsætningspunktet er usikkert, og der er ikke skrevet.
 
 Tegningen er kilden: `drawings/bogen-papirets-kapitelform-2026-08-24.md` (CEO's ord ordret).
 
@@ -135,7 +154,7 @@ titel med klik-ankre, `id="side-<pn>"` injiceres deterministisk) og **PAPER-KORT
 `CURRENT-TASKS.md`-kortene: åbne med numre øverst, lukkede som kvitteringslinjer). Skrives KUN
 mellem markørerne; to kørsler = samme fil. Kort-numrene er bogens krydshenvisninger.
 
-### `publish` (ikke implementeret endnu)
+### `publish` (Managers hånd — et STEMPLET trin, dom 73 5a)
 
 Artifact-værktøjet er **sessionens**, ikke skillens. `publish` bliver derfor en instruks: den
 siger præcis hvilket kald Manager skal lave for at republicere `paper.file` til `paper.artifactUrl`,
@@ -160,4 +179,4 @@ Papiret er ikke et sted man husker at gå hen — det følger med:
 
 ## Events
 
-`paper-bound` · (senere) `paper-now` · `paper-published`. Tal, stier, sha — aldrig prosa.
+`paper-bound` · `paper-page-added` · `paper-now` · `paper-published`. Tal, stier, sha — aldrig prosa.

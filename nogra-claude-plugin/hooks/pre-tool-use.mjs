@@ -25,7 +25,7 @@ function emitReview(result) {
   } else if (result.shouldAllow && result.allowReason) {
     // Receipt-driven auto-approval: only reachable when the workspace opted in
     // (gate.autoApprove) and a valid GO receipt mechanically covers this
-    // action's boundary class and scope. 'allow' bypasses Claude Code's
+    // action's boundary class and scope. 'allow' does NOT bypass deny rules (since 2.1.77/2.1.101 an allow never overrides a deny, incl. managed settings) — it only answers the prompt for otherwise-permitted actions.
     // permission prompt.
     hookSpecificOutput.permissionDecision = "allow";
     hookSpecificOutput.permissionDecisionReason = result.allowReason;

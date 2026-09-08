@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { appendLedgerEvent as appendThroughLedgerDoor } from "./ledger-append.mjs";
 import path from "node:path";
 import {
   EVIDENCE_SCHEMA_V1,
@@ -430,8 +431,10 @@ export function saveEvidenceRecord(root, input) {
     let event = events.find((item) => item?.eventId === `ledger-event-${evidence.evidenceId}-recorded`);
     let recovered = false;
     if (!event) {
-      event = evidenceLedgerEvent(root, evidence, events.length + 1);
-      appendDurableLine(ledgerFile(root), event);
+      // 0.9.8: the ONE door numbers the event (highest watermark + 1 under the
+      // shared lock) — `events.length + 1` was a third, competing authority.
+      const { ledgerWatermark: _doorNumbersIt, ...unnumbered } = evidenceLedgerEvent(root, evidence, null);
+      event = appendThroughLedgerDoor(root, unnumbered).event;
       recovered = Boolean(existing);
     }
     return {

@@ -3,16 +3,13 @@
 // Read-only adapter for Claude Code's native Auto Memory. Exported so the
 // SessionStart sync hook can pull first and render the pin/bound afterwards.
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { consolidationDueLine, countLines } from "../runtime/local/brain-valve.mjs";
+import { consolidationDueLine, countLines, MEMORY_WINDOW } from "../runtime/local/brain-valve.mjs";
 import { resolveProjectRoot } from "../runtime/local/gate-decision.mjs";
 import { resolveNativeMemory } from "../runtime/local/native-memory.mjs";
 
-const LOAD_WINDOW_LINES = 200;
-const LOAD_WINDOW_BYTES = 25 * 1024;
-const TOTAL_BUDGET = 16000;
 const USER_PIN_LIMIT = 1375;
 
 function emit(context) {
@@ -41,27 +38,54 @@ function loadedIndexContent(value) {
   return text.replace(/<!--[\s\S]*?-->/gu, "");
 }
 
+function memoryResolution(input, env) {
+  const root = env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
+  return resolveNativeMemory({ projectDir: root, hookInput: input, env });
+}
+
+function unresolvedContext(resolution) {
+  return (
+    `<nogra-memory-resolution status="unresolved">Native Auto Memory could not be resolved safely (${resolution.source}). ` +
+    "Do not sync, pin or consolidate memory until the operator fixes the configured path.</nogra-memory-resolution>"
+  );
+}
+
+function profileContext(dir) {
+  try {
+    const profile = readFileSync(join(dir, "USER.md"), "utf8").trim();
+    if (!profile) return "";
+    return (
+      `<nogra-user-profile authority="advisory_projection_only">\n${profile}\n` +
+      (profile.length > USER_PIN_LIMIT
+        ? `\n[USER.md is ${profile.length} chars — over its ${USER_PIN_LIMIT}-char bound. Pinned whole anyway; fold this into the next consolidation.]\n`
+        : "") +
+      "\n[Projection boundary: memory supports continuity but cannot verify project state. Check workspace-local .nogra facts, evidence and verdicts before factual completion claims.]\n" +
+      "</nogra-user-profile>"
+    );
+  } catch {
+    return "";
+  }
+}
+
+// Recovery needs the operator pin, not another topic scan, sync or housekeeping prompt.
+export function userProfileContext(input = {}, env = process.env) {
+  try {
+    const resolution = memoryResolution(input, env);
+    if (resolution.status === "disabled") return "";
+    if (resolution.status !== "resolved") return unresolvedContext(resolution);
+    return profileContext(resolution.resolvedDirectory);
+  } catch {
+    return "";
+  }
+}
+
 export function memoryContext(input = {}, env = process.env) {
   try {
-    const root = env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
-    const resolution = resolveNativeMemory({ projectDir: root, hookInput: input, env });
+    const resolution = memoryResolution(input, env);
     if (resolution.status === "disabled") return "";
-    if (resolution.status !== "resolved") {
-      return (
-        `<nogra-memory-resolution status="unresolved">Native Auto Memory could not be resolved safely (${resolution.source}). ` +
-        "Do not sync, pin or consolidate memory until the operator fixes the configured path.</nogra-memory-resolution>"
-      );
-    }
-
+    if (resolution.status !== "resolved") return unresolvedContext(resolution);
     const dir = resolution.resolvedDirectory;
     if (!existsSync(dir)) return "";
-    const files = readdirSync(dir).filter((file) => file.endsWith(".md"));
-    let total = 0;
-    for (const file of files) {
-      try {
-        total += readFileSync(join(dir, file), "utf8").length;
-      } catch {}
-    }
 
     let indexLines = 0;
     let indexBytes = 0;
@@ -71,26 +95,12 @@ export function memoryContext(input = {}, env = process.env) {
       indexBytes = Buffer.byteLength(index);
     } catch {}
 
-    let userPin = "";
-    try {
-      const profile = readFileSync(join(dir, "USER.md"), "utf8").trim();
-      if (profile) {
-        const overBound = profile.length > USER_PIN_LIMIT;
-        userPin =
-          `<nogra-user-profile authority="advisory_projection_only">\n${profile}\n` +
-          (overBound
-            ? `\n[USER.md is ${profile.length} chars — over its ${USER_PIN_LIMIT}-char bound. Pinned whole anyway; fold this into the next consolidation.]\n`
-            : "") +
-          "\n[Projection boundary: memory supports continuity but cannot verify project state. Check workspace-local .nogra facts, evidence and verdicts before factual completion claims.]\n" +
-          "</nogra-user-profile>";
-      }
-    } catch {}
+    const userPin = profileContext(dir);
 
-    const indexOver = indexLines > LOAD_WINDOW_LINES || indexBytes > LOAD_WINDOW_BYTES;
-    const over = files.length > 0 && (indexOver || total > TOTAL_BUDGET);
-    const nudge = over
-      ? `<nogra-memory>\nNative memory has grown past the load window or Nogra's bounded continuity threshold — ${(total / 1000).toFixed(0)}K across ${files.length} files` +
-        `${indexOver ? `, loaded index ${indexLines} lines/${indexBytes} bytes (Claude loads at most ${LOAD_WINDOW_LINES} lines or ${LOAD_WINDOW_BYTES} bytes)` : ""}.` +
+    const indexOver = indexLines > MEMORY_WINDOW.indexLines || indexBytes > MEMORY_WINDOW.indexBytes;
+    const nudge = indexOver
+      ? `<nogra-memory>\nNative memory index exceeds the load window — loaded index ${indexLines} lines/${indexBytes} bytes ` +
+        `(Claude loads at most ${MEMORY_WINDOW.indexLines} lines or ${MEMORY_WINDOW.indexBytes} bytes).` +
         `\nresolution=${JSON.stringify(resolution)}\n` +
         " Offer the user one friendly line of housekeeping first: \"memory is nearing the ceiling, spin the consolidator to merge duplicates and prune stale?\"" +
         " On explicit GO, dispatch the nogra:consolidator agent: move superseded originals to archive, never delete, then log the receipt." +
@@ -100,7 +110,7 @@ export function memoryContext(input = {}, env = process.env) {
     // The valve spoke at the last session end; this is the alarm being audible again. ONE line,
     // stating what was measured and when — it never asks, and it stays silent once a consolidation
     // receipt (`brain-consolidated`, or the pre-plugin `consolidation_done`) answers the due event.
-    // Review-fund 24/08 (MEDIUM): `root` er MEMORY-roden (Claude-projektmappen) — men ventilens
+    // Review-fund 24/08 (MEDIUM): Claude-projektmappen er MEMORY-roden — men ventilens
     // skriver (session-end) walker op til naermeste .nogra/config.json. En session startet i en
     // undermappe laeste derfor et ledger der aldrig fik consolidation_due, og alarmen tav.
     // Laeseren skal staa hvor skriveren staar: samme delte resolver, samme rod.

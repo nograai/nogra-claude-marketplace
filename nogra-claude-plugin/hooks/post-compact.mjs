@@ -7,6 +7,7 @@ import { resolveBootContext } from "../runtime/local/boot-context.mjs";
 import { renderCacheSafeConvergenceGuardContext } from "../runtime/local/convergence-guard.mjs";
 import { captureLiveHookEvent } from "../runtime/local/live-log.mjs";
 import { captureSessionAnchor } from "../runtime/local/session-anchor.mjs";
+import { userProfileContext } from "./memory-load.mjs";
 
 function openWallsBlock(root) {
   try {
@@ -59,7 +60,7 @@ function nearestNograRoot(start) {
 }
 
 function projectRoot(input) {
-  const explicitRoot = process.env.CLAUDE_PROJECT_ROOT || process.env.CURSOR_PROJECT_DIR || "";
+  const explicitRoot = process.env.CLAUDE_PROJECT_DIR || process.env.CLAUDE_PROJECT_ROOT || process.env.CURSOR_PROJECT_DIR || "";
   if (explicitRoot) return resolve(explicitRoot);
 
   const workspaceRoot = firstWorkspaceRoot(input);
@@ -98,10 +99,10 @@ if (!hasNograConfig(root)) {
   process.exit(0);
 }
 
-captureSessionAnchor(root, input, "PostCompact");
+captureSessionAnchor(root, input, "SessionStart:compact"); // hooken er registreret som SessionStart matcher compact — etiketten skal sige det (A#15)
 const source = compactSource(input);
 const boot = resolveBootContext({ cwd: root, sessionSource: "compact" });
-captureLiveHookEvent(root, input, { eventName: "PostCompact", decision: "context", reason: source });
+captureLiveHookEvent(root, input, { eventName: "SessionStart:compact", decision: "context", reason: source });
 
 emitContext(`<!-- nogra-plugin:post-compact source=${source} -->
 <NOGRA_COMPACT_POINTER>
@@ -115,4 +116,6 @@ This is a thin recovery pointer after context compaction. Recovery is not Nogra 
 
 ${renderCacheSafeConvergenceGuardContext({ root, eventName: "PostCompact" })}
 
-${openWallsBlock(root)}`);
+${openWallsBlock(root)}
+
+${userProfileContext(input)}`);

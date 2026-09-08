@@ -132,8 +132,8 @@ ok("measured checkpoint lines == what the test wrote", meta.checkpointLines === 
 ok("measured file count == files on disk", meta.files === 2, String(meta.files));
 // native-memory.mjs realpaths what it resolves (/var -> /private/var on macOS); compare realpaths.
 ok("measured memory dir == the resolved native dir", meta.memoryDir === realpathSync.native(loud.memDir), String(meta.memoryDir));
-ok("window is dom 34 (200 lines / 25 KB, margin 150 / 15 KB, checkpoint 150)",
-  meta.window?.indexLines === 200 && meta.window?.indexBytes === 25 * 1024 &&
+ok("window is dom 34+73 (200 lines / 25000 B / 200 chars per entry, margin 150 / 15 KB, checkpoint 150)",
+  meta.window?.indexLines === 200 && meta.window?.indexBytes === 25000 && meta.window?.entryChars === 200 &&
   meta.window?.marginLines === 150 && meta.window?.marginBytes === 15 * 1024 &&
   meta.window?.checkpointLines === 150, JSON.stringify(meta.window));
 

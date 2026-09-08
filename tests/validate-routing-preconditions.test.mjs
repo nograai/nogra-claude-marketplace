@@ -146,7 +146,10 @@ function assertCacheSafePrefixContext(context, label) {
 console.log("Lifecycle hook wiring:");
 {
   const hooksConfig = JSON.parse(fs.readFileSync(hooksConfigPath, "utf8"));
-  assert(hooksConfig.hooks?.SessionStart?.[0]?.matcher === "startup|resume|clear", "SessionStart slot 0 excludes compact");
+  // Claude Code 2.1.214 added the `fork` source; 0.9.6 wired it. The invariant is
+  // that slot 0 never carries `compact` (that rehydration has its own slot).
+  const slot0 = hooksConfig.hooks?.SessionStart?.[0]?.matcher ?? "";
+  assert(slot0.split("|").includes("startup") && !slot0.split("|").includes("compact"), "SessionStart slot 0 excludes compact");
   assert(hooksConfig.hooks?.SessionStart?.some((entry) => entry.matcher === "compact"), "post-compact rehydration is homed on SessionStart/compact");
   assert(!Object.hasOwn(hooksConfig.hooks ?? {}, "PostCompact"), "PostCompact event is not wired (re-homed onto SessionStart/compact)");
   assert(Boolean(hooksConfig.hooks?.SessionEnd?.[0]), "SessionEnd is wired");

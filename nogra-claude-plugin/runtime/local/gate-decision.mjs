@@ -54,7 +54,7 @@ function nearestNograRoot(start) {
 }
 
 export function resolveProjectRoot(input) {
-  const explicitRoot = process.env.CLAUDE_PROJECT_ROOT || process.env.CURSOR_PROJECT_DIR || "";
+  const explicitRoot = process.env.CLAUDE_PROJECT_DIR || process.env.CLAUDE_PROJECT_ROOT || process.env.CURSOR_PROJECT_DIR || "";
   if (explicitRoot) return resolve(explicitRoot);
 
   const workspaceRoot = firstWorkspaceRoot(input);

@@ -72,7 +72,8 @@ Use this skill when the user:
 6. **Git honesty.** For every repo touched today: name the uncommitted state explicitly —
    committed (with sha), or PARKED with a reason and an owner. Never leave a dirty tree
    unnamed. Do not commit as part of the close unless the operator says so.
-7. **Refresh the Paper's "Lige nu" — the last projection before the measured close.**
+7. **Close the chapter and refresh the Paper — the last projections before the measured close (dom 73, 29/08).**
+   The chain, in this order: `paper-chapter.mjs close --summary` → `paper-chapter.mjs open --title` (tomorrow's chapter) → the workspace's cards writer (Y26: `bin/papir-kort`) → `paper-bind.mjs` → `paper-now.mjs` → `paper-chapter.mjs audit` (exit 3 = something unchecked: GATE, say it) → **republish** `paper.file` to `paper.artifactUrl` with the session's Artifact tool and stamp ONE `paper-published` event. A bind without a republish leaves the reader N decisions behind; say the number if you cannot republish.
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/paper-now.mjs" --root "<absolute-workspace-root>"

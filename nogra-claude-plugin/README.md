@@ -332,9 +332,10 @@ project focus. `SessionStart` projects the explicit
 `fresh -> detected -> focused -> resumed -> recovering` boot state. A checkpoint
 is only a detection signal: startup with a checkpoint remains `focused`; only
 Claude Code's native `resume` source produces `resumed`. No boot state grants
-GO, loads broad state or authorizes continuation. `PostCompact`
-rehydrates a thin continuity pointer plus that same convergence guard after
-context compaction. `SessionEnd` updates the local session anchor and event log
+GO, loads broad state or authorizes continuation. The `SessionStart:compact`
+hook rehydrates a thin continuity pointer plus that same convergence guard and
+repins the local `USER.md` profile with its advisory boundary after context
+compaction. This memory read loads only the profile. `SessionEnd` updates the local session anchor and event log
 without reading transcript contents or producing a language score.
 `UserPromptSubmit` may add project-focus context when the user
 clearly selects an indexed project from a workspace hub. `PreToolUse` is a
@@ -360,7 +361,10 @@ receipts require explicit `--write`, and its output cannot affect permission,
 GO, routing, dispatch, evidence level, fact level or verdict.
 
 SessionStart memory work is ordered in one adapter: optional sync pull first,
-then USER pin/bound measurement from the same resolved directory. If
+then USER pin/bound measurement from the same resolved directory. An unexpected
+sync adapter exception still allows the local profile to load. Bound measurement
+reads `MEMORY.md` and `USER.md`, without scanning topic bodies, and checks the
+index against the shared 200-line/25,000-byte window. If
 `autoMemoryDirectory` comes from a CLI-only or remotely delivered setting that
 hooks cannot observe, set `NOGRA_NATIVE_MEMORY_DIR` to the same absolute path;
 ambiguous, disabled or unsafe default resolutions fail closed without touching

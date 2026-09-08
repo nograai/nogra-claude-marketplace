@@ -2,7 +2,8 @@
 // Falsifiable smoke for the Path B memory-load SessionStart hook.
 // Proves: it reads Claude's NATIVE memory folder (~/.claude/projects/<slug>/memory/), injects
 // NOTHING when the folder is absent or within the bound, and injects exactly one consolidate-NUDGE
-// when it drifts over the bound (index > 200 lines, or > 16K chars total). Never breaks — always
+// when the loaded index drifts over 200 lines or 25,000 bytes. Topic file count/size is free.
+// Never breaks — always
 // valid JSON. Every check can FAIL if the claim it makes were wrong.
 
 import { execFileSync } from "node:child_process";
@@ -47,10 +48,11 @@ ok("absent native memory -> empty context (valid JSON)", run(null) === "");
 // 2. under-budget native -> quiet (no nudge, no double-loading what Claude already loads)
 ok("under-budget native -> no nudge", run({ "MEMORY.md": "- one small memory\n" }) === "");
 
-// 3. over TOTAL budget -> exactly one consolidate nudge
+// 3. large topics do not consume the always-loaded index window
 const big = run({ "project-huge.md": "x".repeat(17000) });
-ok("over-budget native -> nudge injected + wrapped", big.startsWith("<nogra-memory>") && /consolidat/i.test(big));
-ok("nudge names the bounded continuity drift", /bounded continuity threshold/i.test(big));
+ok("large topic alone -> no index-window warning", big === "");
+const wideIndex = run({ "MEMORY.md": "x".repeat(25001) });
+ok("index above byte window -> nudge injected + wrapped", wideIndex.startsWith("<nogra-memory>") && /25001 bytes/.test(wideIndex));
 
 // 4. index over the 200-line load cutoff -> nudge (important stuff now below Claude's cutoff)
 const longIdx = run({ "MEMORY.md": Array.from({ length: 260 }, (_, i) => `- line ${i}`).join("\n") });
@@ -71,7 +73,7 @@ ok("over-bound USER.md -> pinned whole", overPin.includes("u".repeat(1500)));
 ok("over-bound USER.md -> flagged for consolidation", /over its 1375-char bound/i.test(overPin));
 
 // 8. pin + drift together -> both blocks, pin first
-const both = run({ "USER.md": "The user profile.", "project-huge.md": "x".repeat(17000) });
+const both = run({ "USER.md": "The user profile.", "MEMORY.md": "x".repeat(25001) });
 ok("pin + over-budget -> profile first, then nudge",
   both.indexOf("<nogra-user-profile authority=\"advisory_projection_only\">") === 0 && both.indexOf("<nogra-memory>") > both.indexOf("</nogra-user-profile>"));
 
